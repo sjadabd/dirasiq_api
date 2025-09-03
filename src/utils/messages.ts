@@ -78,8 +78,10 @@ export const Messages = {
     ALREADY_EXISTS: 'المرحلة الدراسية موجودة بالفعل',
     NAME_REQUIRED: 'اسم المرحلة مطلوب',
     DESCRIPTION_REQUIRED: 'وصف المرحلة مطلوب',
-    TEACHER_NOT_FOUND: 'المعلم غير موجود',
-    UNAUTHORIZED: 'غير مصرح لك بالوصول لهذه المرحلة الدراسية'
+    IS_ACTIVE_REQUIRED: 'حالة التفعيل مطلوبة',
+    INVALID_IS_ACTIVE: 'حالة التفعيل يجب أن تكون true أو false',
+    UNAUTHORIZED: 'غير مصرح لك بالوصول لهذه المرحلة الدراسية',
+    SUPER_ADMIN_ACCESS_REQUIRED: 'يتطلب وصول السوبر أدمن'
   },
   COURSE: {
     CREATED: 'تم إنشاء الكورس بنجاح',

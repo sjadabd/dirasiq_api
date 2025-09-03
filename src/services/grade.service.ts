@@ -1,24 +1,13 @@
 import { GradeModel } from '@/models/grade.model';
-import { UserModel } from '@/models/user.model';
 import { ApiResponse, CreateGradeRequest, UpdateGradeRequest } from '@/types';
 import { getMessage } from '@/utils/messages';
 
 export class GradeService {
-  // Create new grade
-  static async create(teacherId: string, data: CreateGradeRequest): Promise<ApiResponse> {
+  // Create new grade (Super Admin only)
+  static async create(data: CreateGradeRequest): Promise<ApiResponse> {
     try {
-      // Validate teacher exists and is a teacher
-      const teacher = await UserModel.findById(teacherId);
-      if (!teacher || teacher.userType !== 'teacher') {
-        return {
-          success: false,
-          message: getMessage('GRADE.TEACHER_NOT_FOUND'),
-          errors: [getMessage('GRADE.TEACHER_NOT_FOUND')]
-        };
-      }
-
-      // Check if grade name already exists for this teacher
-      const existingGrade = await GradeModel.nameExistsForTeacher(teacherId, data.name);
+      // Check if grade name already exists
+      const existingGrade = await GradeModel.nameExists(data.name);
       if (existingGrade) {
         return {
           success: false,
@@ -28,7 +17,7 @@ export class GradeService {
       }
 
       // Create grade
-      const grade = await GradeModel.create(teacherId, data);
+      const grade = await GradeModel.create(data);
 
       return {
         success: true,
@@ -45,20 +34,10 @@ export class GradeService {
     }
   }
 
-  // Get all grades for a teacher with pagination
-  static async getAllByTeacher(teacherId: string, page: number = 1, limit: number = 10, search?: string): Promise<ApiResponse> {
+  // Get all grades with pagination (Super Admin only)
+  static async getAll(page: number = 1, limit: number = 10, search?: string): Promise<ApiResponse> {
     try {
-      // Validate teacher exists and is a teacher
-      const teacher = await UserModel.findById(teacherId);
-      if (!teacher || teacher.userType !== 'teacher') {
-        return {
-          success: false,
-          message: getMessage('GRADE.TEACHER_NOT_FOUND'),
-          errors: [getMessage('GRADE.TEACHER_NOT_FOUND')]
-        };
-      }
-
-      const result = await GradeModel.findAllByTeacher(teacherId, page, limit, search);
+      const result = await GradeModel.findAll(page, limit, search);
 
       return {
         success: true,
@@ -76,10 +55,30 @@ export class GradeService {
     }
   }
 
-  // Get grade by ID
-  static async getById(id: string, teacherId: string): Promise<ApiResponse> {
+  // Get active grades only (for public use)
+  static async getActive(): Promise<ApiResponse> {
     try {
-      const grade = await GradeModel.findByIdAndTeacher(id, teacherId);
+      const grades = await GradeModel.findActive();
+
+      return {
+        success: true,
+        message: getMessage('GENERAL.SUCCESS'),
+        data: grades
+      };
+    } catch (error) {
+      console.error('Error getting active grades:', error);
+      return {
+        success: false,
+        message: getMessage('GENERAL.OPERATION_FAILED'),
+        errors: [getMessage('SERVER.INTERNAL_ERROR')]
+      };
+    }
+  }
+
+  // Get grade by ID
+  static async getById(id: string): Promise<ApiResponse> {
+    try {
+      const grade = await GradeModel.findById(id);
 
       if (!grade) {
         return {
@@ -104,11 +103,11 @@ export class GradeService {
     }
   }
 
-  // Update grade
-  static async update(id: string, teacherId: string, data: UpdateGradeRequest): Promise<ApiResponse> {
+  // Update grade (Super Admin only)
+  static async update(id: string, data: UpdateGradeRequest): Promise<ApiResponse> {
     try {
-      // Check if grade exists and belongs to teacher
-      const existingGrade = await GradeModel.findByIdAndTeacher(id, teacherId);
+      // Check if grade exists
+      const existingGrade = await GradeModel.findById(id);
       if (!existingGrade) {
         return {
           success: false,
@@ -117,9 +116,9 @@ export class GradeService {
         };
       }
 
-      // Check if new name already exists for this teacher (if name is being updated)
+      // Check if new name conflicts with existing grade
       if (data.name && data.name !== existingGrade.name) {
-        const nameExists = await GradeModel.nameExistsForTeacher(teacherId, data.name, id);
+        const nameExists = await GradeModel.nameExists(data.name, id);
         if (nameExists) {
           return {
             success: false,
@@ -130,9 +129,9 @@ export class GradeService {
       }
 
       // Update grade
-      const grade = await GradeModel.update(id, teacherId, data);
+      const updatedGrade = await GradeModel.update(id, data);
 
-      if (!grade) {
+      if (!updatedGrade) {
         return {
           success: false,
           message: getMessage('GRADE.NOT_FOUND'),
@@ -143,7 +142,7 @@ export class GradeService {
       return {
         success: true,
         message: getMessage('GRADE.UPDATED'),
-        data: { grade }
+        data: { grade: updatedGrade }
       };
     } catch (error) {
       console.error('Error updating grade:', error);
@@ -155,11 +154,11 @@ export class GradeService {
     }
   }
 
-  // Delete grade
-  static async delete(id: string, teacherId: string): Promise<ApiResponse> {
+  // Delete grade (Super Admin only)
+  static async delete(id: string): Promise<ApiResponse> {
     try {
-      // Check if grade exists and belongs to teacher
-      const existingGrade = await GradeModel.findByIdAndTeacher(id, teacherId);
+      // Check if grade exists
+      const existingGrade = await GradeModel.findById(id);
       if (!existingGrade) {
         return {
           success: false,
@@ -168,14 +167,14 @@ export class GradeService {
         };
       }
 
-      // Delete grade
-      const deleted = await GradeModel.delete(id, teacherId);
+      // Soft delete grade
+      const deleted = await GradeModel.delete(id);
 
       if (!deleted) {
         return {
           success: false,
-          message: getMessage('GRADE.NOT_FOUND'),
-          errors: [getMessage('GRADE.NOT_FOUND')]
+          message: getMessage('GENERAL.OPERATION_FAILED'),
+          errors: [getMessage('SERVER.INTERNAL_ERROR')]
         };
       }
 

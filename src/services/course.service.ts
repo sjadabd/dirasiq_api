@@ -30,13 +30,13 @@ export class CourseService {
         };
       }
 
-      // Validate grade exists and belongs to teacher
-      const grade = await GradeModel.findByIdAndTeacher(data.grade_id, teacherId);
+      // Validate grade exists
+      const grade = await GradeModel.findById(data.grade_id);
       if (!grade) {
         return {
           success: false,
           message: getMessage('COURSE.GRADE_NOT_FOUND'),
-          errors: [getMessage('COURSE.GRADE_NOT_OWNED')]
+          errors: [getMessage('COURSE.GRADE_NOT_FOUND')]
         };
       }
 
@@ -215,14 +215,14 @@ export class CourseService {
         }
       }
 
-      // Validate grade exists and belongs to teacher if provided
+      // Validate grade exists if provided
       if (data.grade_id) {
-        const grade = await GradeModel.findByIdAndTeacher(data.grade_id, teacherId);
+        const grade = await GradeModel.findById(data.grade_id);
         if (!grade) {
           return {
             success: false,
             message: getMessage('COURSE.GRADE_NOT_FOUND'),
-            errors: [getMessage('COURSE.GRADE_NOT_OWNED')]
+            errors: [getMessage('COURSE.GRADE_NOT_FOUND')]
           };
         }
       }

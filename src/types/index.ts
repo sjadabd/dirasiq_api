@@ -83,6 +83,8 @@ export interface RegisterTeacherRequest {
   experienceYears: number;
   visitorId?: string;
   deviceInfo?: string;
+  gradeIds: string[];
+  studyYear: string;
 }
 
 export interface RegisterStudentRequest {
@@ -145,6 +147,29 @@ export interface CreateStudentGradeRequest {
 }
 
 export interface UpdateStudentGradeRequest {
+  gradeId?: string;
+  studyYear?: string;
+  isActive?: boolean;
+}
+
+// Teacher Grade types
+export interface TeacherGrade {
+  id: string;
+  teacherId: string;
+  gradeId: string;
+  studyYear: string;
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface CreateTeacherGradeRequest {
+  teacherId: string;
+  gradeId: string;
+  studyYear: string;
+}
+
+export interface UpdateTeacherGradeRequest {
   gradeId?: string;
   studyYear?: string;
   isActive?: boolean;
@@ -226,21 +251,23 @@ export interface UpdateSubjectRequest {
 // Grade types
 export interface Grade {
   id: string;
-  teacher_id: string;
   name: string;
   description?: string;
-  created_at: Date;
-  updated_at: Date;
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 export interface CreateGradeRequest {
   name: string;
   description?: string;
+  isActive?: boolean;
 }
 
 export interface UpdateGradeRequest {
   name?: string;
   description?: string;
+  isActive?: boolean;
 }
 
 // Course types

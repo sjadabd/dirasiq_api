@@ -4,13 +4,14 @@ import { Request, Response } from 'express';
 import { body, param, query, validationResult } from 'express-validator';
 
 export class GradeController {
-  // Create new grade
+  // Create new grade (Super Admin only)
   static async create(req: Request, res: Response): Promise<void> {
     try {
       // Validate request body
       await Promise.all([
         body('name').notEmpty().withMessage(getMessage('GRADE.NAME_REQUIRED')).run(req),
-        body('description').optional().isString().withMessage('Description must be a string').run(req)
+        body('description').optional().isString().withMessage('Description must be a string').run(req),
+        body('isActive').optional().isBoolean().withMessage('isActive must be a boolean').run(req)
       ]);
 
       const errors = validationResult(req);
@@ -23,8 +24,7 @@ export class GradeController {
         return;
       }
 
-      const teacherId = (req as any).user.id;
-      const result = await GradeService.create(teacherId, req.body);
+      const result = await GradeService.create(req.body);
 
       if (result.success) {
         res.status(201).json(result);
@@ -41,7 +41,7 @@ export class GradeController {
     }
   }
 
-  // Get all grades for the authenticated teacher
+  // Get all grades with pagination (Super Admin only)
   static async getAll(req: Request, res: Response): Promise<void> {
     try {
       // Validate query parameters
@@ -61,17 +61,16 @@ export class GradeController {
         return;
       }
 
-      const teacherId = (req as any).user.id;
       const page = parseInt(req.query['page'] as string) || 1;
       const limit = parseInt(req.query['limit'] as string) || 10;
 
-      // Handle search parameter properly - treat "null", "undefined", empty string as null
+      // Handle search parameter properly
       let search: string | undefined = req.query['search'] as string;
       if (search === 'null' || search === 'undefined' || search === '' || search === undefined) {
         search = undefined;
       }
 
-      const result = await GradeService.getAllByTeacher(teacherId, page, limit, search);
+      const result = await GradeService.getAll(page, limit, search);
 
       if (result.success) {
         res.status(200).json(result);
@@ -80,6 +79,26 @@ export class GradeController {
       }
     } catch (error) {
       console.error('Error in get all grades controller:', error);
+      res.status(500).json({
+        success: false,
+        message: getMessage('SERVER.INTERNAL_ERROR'),
+        errors: [getMessage('SERVER.SOMETHING_WENT_WRONG')]
+      });
+    }
+  }
+
+  // Get active grades only (for public use)
+  static async getActive(_req: Request, res: Response): Promise<void> {
+    try {
+      const result = await GradeService.getActive();
+
+      if (result.success) {
+        res.status(200).json(result);
+      } else {
+        res.status(500).json(result);
+      }
+    } catch (error) {
+      console.error('Error in get active grades controller:', error);
       res.status(500).json({
         success: false,
         message: getMessage('SERVER.INTERNAL_ERROR'),
@@ -103,10 +122,8 @@ export class GradeController {
         return;
       }
 
-      const teacherId = (req as any).user.id;
       const id = req.params['id'] || '';
-
-      const result = await GradeService.getById(id, teacherId);
+      const result = await GradeService.getById(id);
 
       if (result.success) {
         res.status(200).json(result);
@@ -123,14 +140,15 @@ export class GradeController {
     }
   }
 
-  // Update grade
+  // Update grade (Super Admin only)
   static async update(req: Request, res: Response): Promise<void> {
     try {
       // Validate request parameters and body
       await Promise.all([
         param('id').isUUID().withMessage('ID must be a valid UUID').run(req),
         body('name').optional().notEmpty().withMessage(getMessage('GRADE.NAME_REQUIRED')).run(req),
-        body('description').optional().isString().withMessage('Description must be a string').run(req)
+        body('description').optional().isString().withMessage('Description must be a string').run(req),
+        body('isActive').optional().isBoolean().withMessage('isActive must be a boolean').run(req)
       ]);
 
       const errors = validationResult(req);
@@ -143,10 +161,8 @@ export class GradeController {
         return;
       }
 
-      const teacherId = (req as any).user.id;
       const id = req.params['id'] || '';
-
-      const result = await GradeService.update(id, teacherId, req.body);
+      const result = await GradeService.update(id, req.body);
 
       if (result.success) {
         res.status(200).json(result);
@@ -163,7 +179,7 @@ export class GradeController {
     }
   }
 
-  // Delete grade
+  // Delete grade (Super Admin only)
   static async delete(req: Request, res: Response): Promise<void> {
     try {
       await param('id').isUUID().withMessage('ID must be a valid UUID').run(req);
@@ -178,10 +194,8 @@ export class GradeController {
         return;
       }
 
-      const teacherId = (req as any).user.id;
       const id = req.params['id'] || '';
-
-      const result = await GradeService.delete(id, teacherId);
+      const result = await GradeService.delete(id);
 
       if (result.success) {
         res.status(200).json(result);

@@ -63,7 +63,10 @@ export class AuthController {
         body('phone').notEmpty().withMessage(getMessage('VALIDATION.PHONE_REQUIRED')).run(req),
         body('address').notEmpty().withMessage(getMessage('VALIDATION.ADDRESS_REQUIRED')).run(req),
         body('bio').notEmpty().withMessage(getMessage('VALIDATION.BIO_REQUIRED')).run(req),
-        body('experienceYears').isInt({ min: 0 }).withMessage(getMessage('VALIDATION.EXPERIENCE_YEARS_REQUIRED')).run(req)
+        body('experienceYears').isInt({ min: 0 }).withMessage(getMessage('VALIDATION.EXPERIENCE_YEARS_REQUIRED')).run(req),
+        body('gradeIds').isArray({ min: 1 }).withMessage(getMessage('STUDENT.GRADE_ID_REQUIRED')).run(req),
+        body('gradeIds.*').isUUID().withMessage(getMessage('STUDENT.GRADE_NOT_FOUND')).run(req),
+        body('studyYear').notEmpty().withMessage(getMessage('STUDENT.STUDY_YEAR_REQUIRED')).matches(/^[0-9]{4}-[0-9]{4}$/).withMessage(getMessage('STUDENT.INVALID_STUDY_YEAR_FORMAT')).run(req)
       ]);
 
       const errors = validationResult(req);
@@ -85,7 +88,9 @@ export class AuthController {
         bio,
         experienceYears,
         visitorId,
-        deviceInfo
+        deviceInfo,
+        gradeIds,
+        studyYear
       } = req.body;
 
       const result = await AuthService.registerTeacher({
@@ -97,7 +102,9 @@ export class AuthController {
         bio,
         experienceYears,
         visitorId,
-        deviceInfo
+        deviceInfo,
+        gradeIds,
+        studyYear
       });
 
       if (result.success) {

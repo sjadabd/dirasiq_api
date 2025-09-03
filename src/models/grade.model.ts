@@ -2,41 +2,35 @@ import pool from '@/config/database';
 import { CreateGradeRequest, Grade, UpdateGradeRequest } from '@/types';
 
 export class GradeModel {
-  // Create new grade
-  static async create(teacherId: string, data: CreateGradeRequest): Promise<Grade> {
+  // Create new grade (Super Admin only)
+  static async create(data: CreateGradeRequest): Promise<Grade> {
     const query = `
-      INSERT INTO grades (teacher_id, name, description)
+      INSERT INTO grades (name, description, is_active)
       VALUES ($1, $2, $3)
       RETURNING *
     `;
-    const values = [teacherId, data.name, data.description];
+    const values = [data.name, data.description, data.isActive !== false];
     const result = await pool.query(query, values);
-    return result.rows[0];
+    return this.mapDatabaseGradeToGrade(result.rows[0]);
   }
 
   // Get grade by ID
   static async findById(id: string): Promise<Grade | null> {
-    const query = 'SELECT * FROM grades WHERE id = $1';
+    const query = 'SELECT * FROM grades WHERE id = $1 AND deleted_at IS NULL';
     const result = await pool.query(query, [id]);
-    return result.rows[0] || null;
+    if (result.rows.length === 0) return null;
+    return this.mapDatabaseGradeToGrade(result.rows[0]);
   }
 
-  // Get grade by ID and teacher ID (for authorization)
-  static async findByIdAndTeacher(id: string, teacherId: string): Promise<Grade | null> {
-    const query = 'SELECT * FROM grades WHERE id = $1 AND teacher_id = $2';
-    const result = await pool.query(query, [id, teacherId]);
-    return result.rows[0] || null;
-  }
-
-  // Get all grades for a teacher with pagination
-  static async findAllByTeacher(teacherId: string, page: number = 1, limit: number = 10, search?: string): Promise<{ grades: Grade[], total: number }> {
-    let query = 'SELECT * FROM grades WHERE teacher_id = $1';
-    let countQuery = 'SELECT COUNT(*) FROM grades WHERE teacher_id = $1';
-    const params: any[] = [teacherId];
-    let paramIndex = 2;
+  // Get all grades with pagination (Super Admin only)
+  static async findAll(page: number = 1, limit: number = 10, search?: string): Promise<{ grades: Grade[], total: number }> {
+    let query = 'SELECT * FROM grades WHERE deleted_at IS NULL';
+    let countQuery = 'SELECT COUNT(*) FROM grades WHERE deleted_at IS NULL';
+    const params: any[] = [];
+    let paramIndex = 1;
     let whereConditions: string[] = [];
 
-    // Add search condition if provided and not empty/null
+    // Add search condition if provided
     if (search && search.trim() !== '' && search !== 'null' && search !== 'undefined') {
       whereConditions.push(`name ILIKE $${paramIndex}`);
       params.push(`%${search.trim()}%`);
@@ -61,17 +55,24 @@ export class GradeModel {
     // Execute queries
     const [result, countResult] = await Promise.all([
       pool.query(query, params),
-      pool.query(countQuery, whereConditions.length > 0 ? [teacherId, ...params.slice(1, whereConditions.length + 1)] : [teacherId])
+      pool.query(countQuery, whereConditions.length > 0 ? params.slice(0, whereConditions.length) : [])
     ]);
 
     return {
-      grades: result.rows,
+      grades: result.rows.map(row => this.mapDatabaseGradeToGrade(row)),
       total: parseInt(countResult.rows[0].count)
     };
   }
 
-  // Update grade
-  static async update(id: string, teacherId: string, data: UpdateGradeRequest): Promise<Grade | null> {
+  // Get active grades only (for public use)
+  static async findActive(): Promise<Grade[]> {
+    const query = 'SELECT * FROM grades WHERE is_active = true AND deleted_at IS NULL ORDER BY name ASC';
+    const result = await pool.query(query);
+    return result.rows.map(row => this.mapDatabaseGradeToGrade(row));
+  }
+
+  // Update grade (Super Admin only)
+  static async update(id: string, data: UpdateGradeRequest): Promise<Grade | null> {
     const fields: string[] = [];
     const values: any[] = [];
     let paramIndex = 1;
@@ -88,49 +89,72 @@ export class GradeModel {
       paramIndex++;
     }
 
-    if (fields.length === 0) {
-      return this.findByIdAndTeacher(id, teacherId);
+    if (data.isActive !== undefined) {
+      fields.push(`is_active = $${paramIndex}`);
+      values.push(data.isActive);
+      paramIndex++;
     }
 
-    values.push(id, teacherId);
+    if (fields.length === 0) {
+      return this.findById(id);
+    }
+
+    values.push(id);
     const query = `
       UPDATE grades
       SET ${fields.join(', ')}, updated_at = CURRENT_TIMESTAMP
-      WHERE id = $${paramIndex} AND teacher_id = $${paramIndex + 1}
+      WHERE id = $${paramIndex}
       RETURNING *
     `;
 
     const result = await pool.query(query, values);
-    return result.rows[0] || null;
+    if (result.rows.length === 0) return null;
+    return this.mapDatabaseGradeToGrade(result.rows[0]);
   }
 
-  // Delete grade
-  static async delete(id: string, teacherId: string): Promise<boolean> {
-    const query = 'DELETE FROM grades WHERE id = $1 AND teacher_id = $2';
-    const result = await pool.query(query, [id, teacherId]);
+  // Soft delete grade (Super Admin only)
+  static async delete(id: string): Promise<boolean> {
+    const query = `
+      UPDATE grades
+      SET deleted_at = CURRENT_TIMESTAMP
+      WHERE id = $1 AND deleted_at IS NULL
+    `;
+    const result = await pool.query(query, [id]);
     return (result.rowCount || 0) > 0;
   }
 
   // Check if grade exists
   static async exists(id: string): Promise<boolean> {
-    const query = 'SELECT EXISTS(SELECT 1 FROM grades WHERE id = $1)';
+    const query = 'SELECT EXISTS(SELECT 1 FROM grades WHERE id = $1 AND deleted_at IS NULL)';
     const result = await pool.query(query, [id]);
     return result.rows[0].exists;
   }
 
-  // Check if grade name already exists for the same teacher
-  static async nameExistsForTeacher(teacherId: string, name: string, excludeId?: string): Promise<boolean> {
+  // Check if grade name already exists
+  static async nameExists(name: string, excludeId?: string): Promise<boolean> {
     let query: string;
-    const params: any[] = [teacherId, name];
+    const params: any[] = [name];
 
     if (excludeId) {
-      query = 'SELECT EXISTS(SELECT 1 FROM grades WHERE teacher_id = $1 AND name = $2 AND id != $3)';
+      query = 'SELECT EXISTS(SELECT 1 FROM grades WHERE name = $1 AND id != $2 AND deleted_at IS NULL)';
       params.push(excludeId);
     } else {
-      query = 'SELECT EXISTS(SELECT 1 FROM grades WHERE teacher_id = $1 AND name = $2)';
+      query = 'SELECT EXISTS(SELECT 1 FROM grades WHERE name = $1 AND deleted_at IS NULL)';
     }
 
     const result = await pool.query(query, params);
     return result.rows[0].exists;
+  }
+
+  // Map database grade to Grade interface
+  private static mapDatabaseGradeToGrade(dbGrade: any): Grade {
+    return {
+      id: dbGrade.id,
+      name: dbGrade.name,
+      description: dbGrade.description,
+      isActive: dbGrade.is_active,
+      createdAt: dbGrade.created_at,
+      updatedAt: dbGrade.updated_at,
+    };
   }
 }

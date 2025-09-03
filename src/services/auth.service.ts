@@ -1,5 +1,6 @@
 import { sendPasswordResetEmail, sendVerificationEmail } from '@/config/email';
 import { StudentGradeModel } from '@/models/student-grade.model';
+import { TeacherGradeModel } from '@/models/teacher-grade.model';
 import { TokenModel } from '@/models/token.model';
 import { UserModel } from '@/models/user.model';
 import {
@@ -77,6 +78,16 @@ export class AuthService {
       if (data.deviceInfo) teacherData.deviceInfo = data.deviceInfo;
 
       const teacher = await UserModel.create(teacherData);
+
+      // Create teacher grade relationships
+      if (data.gradeIds && data.gradeIds.length > 0 && data.studyYear) {
+        try {
+          await TeacherGradeModel.createMany(teacher.id, data.gradeIds, data.studyYear);
+        } catch (error) {
+          console.error('Error creating teacher grade relationships:', error);
+          // Continue with registration even if grade relationships fail
+        }
+      }
 
       // Get verification code from database
       const verificationCode = await UserModel.getVerificationCode(data.email);

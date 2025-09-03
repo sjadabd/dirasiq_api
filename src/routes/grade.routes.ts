@@ -1,14 +1,17 @@
 import { GradeController } from '@/controllers/grade.controller';
-import { authenticateToken, requireTeacher } from '@/middleware/auth.middleware';
+import { authenticateToken, requireSuperAdmin } from '@/middleware/auth.middleware';
 import { Router } from 'express';
 
 const router = Router();
 
-// All routes require authentication and teacher role
-router.use(authenticateToken);
-router.use(requireTeacher);
+// Public route - no authentication required
+router.get('/active', GradeController.getActive);
 
-// Grade routes
+// Protected routes - require authentication and super admin role
+router.use(authenticateToken);
+router.use(requireSuperAdmin);
+
+// Grade management routes (Super Admin only)
 router.post('/', GradeController.create);
 router.get('/', GradeController.getAll);
 router.get('/:id', GradeController.getById);
