@@ -3,6 +3,7 @@ import authRoutes from '@/routes/auth.routes';
 import studentRoutes from '@/routes/student';
 import academicYearRoutes from '@/routes/super_admin/academic-year.routes';
 import gradeRoutes from '@/routes/super_admin/grade.routes';
+import teacherSearchRoutes from '@/routes/teacher-search.routes';
 import courseRoutes from '@/routes/teacher/course.routes';
 import subjectRoutes from '@/routes/teacher/subject.routes';
 import { getMessage } from '@/utils/messages';
@@ -94,6 +95,7 @@ app.use('/api/subjects', subjectRoutes);
 app.use('/api/grades', gradeRoutes);
 app.use('/api/courses', courseRoutes);
 app.use('/api/student', studentRoutes);
+app.use('/api/teacher-search', teacherSearchRoutes);
 
 // 404 handler
 app.use('*', (req, res) => {

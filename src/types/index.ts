@@ -32,6 +32,12 @@ export interface BaseUser {
   status: UserStatus;
   latitude?: number;
   longitude?: number;
+  governorate?: string;
+  city?: string;
+  district?: string;
+  street?: string;
+  country_code?: string;
+  postcode?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -89,6 +95,12 @@ export interface RegisterTeacherRequest {
   studyYear: string;
   latitude?: number;
   longitude?: number;
+  governorate?: string;
+  city?: string;
+  district?: string;
+  street?: string;
+  country_code?: string;
+  postcode?: string;
 }
 
 export interface RegisterStudentRequest {
@@ -104,6 +116,12 @@ export interface RegisterStudentRequest {
   studyYear: string;
   latitude?: number;
   longitude?: number;
+  governorate?: string;
+  city?: string;
+  district?: string;
+  street?: string;
+  country_code?: string;
+  postcode?: string;
 }
 
 // Student-Course relationship types
