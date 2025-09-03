@@ -30,6 +30,8 @@ export interface BaseUser {
   password: string;
   userType: UserType;
   status: UserStatus;
+  latitude?: number;
+  longitude?: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -85,6 +87,8 @@ export interface RegisterTeacherRequest {
   deviceInfo?: string;
   gradeIds: string[];
   studyYear: string;
+  latitude?: number;
+  longitude?: number;
 }
 
 export interface RegisterStudentRequest {
@@ -98,6 +102,8 @@ export interface RegisterStudentRequest {
   birthDate?: string;
   gradeId: string;
   studyYear: string;
+  latitude?: number;
+  longitude?: number;
 }
 
 // Student-Course relationship types

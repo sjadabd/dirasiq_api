@@ -1,4 +1,4 @@
-import { CourseController } from '@/controllers/course.controller';
+import { CourseController } from '@/controllers/teacher/course.controller';
 import { authenticateToken, requireTeacher } from '@/middleware/auth.middleware';
 import { Router } from 'express';
 

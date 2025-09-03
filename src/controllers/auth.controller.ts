@@ -66,7 +66,9 @@ export class AuthController {
         body('experienceYears').isInt({ min: 0 }).withMessage(getMessage('VALIDATION.EXPERIENCE_YEARS_REQUIRED')).run(req),
         body('gradeIds').isArray({ min: 1 }).withMessage(getMessage('STUDENT.GRADE_ID_REQUIRED')).run(req),
         body('gradeIds.*').isUUID().withMessage(getMessage('STUDENT.GRADE_NOT_FOUND')).run(req),
-        body('studyYear').notEmpty().withMessage(getMessage('STUDENT.STUDY_YEAR_REQUIRED')).matches(/^[0-9]{4}-[0-9]{4}$/).withMessage(getMessage('STUDENT.INVALID_STUDY_YEAR_FORMAT')).run(req)
+        body('studyYear').notEmpty().withMessage(getMessage('STUDENT.STUDY_YEAR_REQUIRED')).matches(/^[0-9]{4}-[0-9]{4}$/).withMessage(getMessage('STUDENT.INVALID_STUDY_YEAR_FORMAT')).run(req),
+        body('latitude').optional().isFloat({ min: -90, max: 90 }).withMessage(getMessage('VALIDATION.INVALID_LATITUDE')).run(req),
+        body('longitude').optional().isFloat({ min: -180, max: 180 }).withMessage(getMessage('VALIDATION.INVALID_LONGITUDE')).run(req)
       ]);
 
       const errors = validationResult(req);
@@ -90,10 +92,12 @@ export class AuthController {
         visitorId,
         deviceInfo,
         gradeIds,
-        studyYear
+        studyYear,
+        latitude,
+        longitude
       } = req.body;
 
-      const result = await AuthService.registerTeacher({
+      const teacherData: any = {
         name,
         email,
         password,
@@ -105,7 +109,12 @@ export class AuthController {
         deviceInfo,
         gradeIds,
         studyYear
-      });
+      };
+
+      if (latitude) teacherData.latitude = Number(latitude);
+      if (longitude) teacherData.longitude = Number(longitude);
+
+      const result = await AuthService.registerTeacher(teacherData);
 
       if (result.success) {
         res.status(201).json(result);
@@ -141,7 +150,9 @@ export class AuthController {
         body('gender').optional().isIn(['male', 'female']).withMessage(getMessage('VALIDATION.INVALID_GENDER')).run(req),
         body('birthDate').optional().isISO8601().withMessage(getMessage('STUDENT.INVALID_BIRTH_DATE_FORMAT')).run(req),
         body('gradeId').notEmpty().withMessage(getMessage('STUDENT.GRADE_ID_REQUIRED')).isUUID().withMessage(getMessage('STUDENT.GRADE_NOT_FOUND')).run(req),
-        body('studyYear').notEmpty().withMessage(getMessage('STUDENT.STUDY_YEAR_REQUIRED')).matches(/^[0-9]{4}-[0-9]{4}$/).withMessage(getMessage('STUDENT.INVALID_STUDY_YEAR_FORMAT')).run(req)
+        body('studyYear').notEmpty().withMessage(getMessage('STUDENT.STUDY_YEAR_REQUIRED')).matches(/^[0-9]{4}-[0-9]{4}$/).withMessage(getMessage('STUDENT.INVALID_STUDY_YEAR_FORMAT')).run(req),
+        body('latitude').optional().isFloat({ min: -90, max: 90 }).withMessage(getMessage('VALIDATION.INVALID_LATITUDE')).run(req),
+        body('longitude').optional().isFloat({ min: -180, max: 180 }).withMessage(getMessage('VALIDATION.INVALID_LONGITUDE')).run(req)
       ]);
 
       const errors = validationResult(req);
@@ -164,7 +175,9 @@ export class AuthController {
         gender,
         birthDate,
         gradeId,
-        studyYear
+        studyYear,
+        latitude,
+        longitude
       } = req.body;
 
       // Validate birth date if provided
@@ -197,7 +210,7 @@ export class AuthController {
         }
       }
 
-      const result = await AuthService.registerStudent({
+      const studentData: any = {
         name,
         email,
         password,
@@ -208,7 +221,12 @@ export class AuthController {
         birthDate,
         gradeId,
         studyYear
-      });
+      };
+
+      if (latitude) studentData.latitude = Number(latitude);
+      if (longitude) studentData.longitude = Number(longitude);
+
+      const result = await AuthService.registerStudent(studentData);
 
       if (result.success) {
         res.status(201).json(result);

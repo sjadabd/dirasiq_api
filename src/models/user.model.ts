@@ -18,8 +18,9 @@ export class UserModel {
           name, email, password, user_type, status,
           phone, address, bio, experience_years, visitor_id, device_info,
           student_phone, parent_phone, school_name, gender, birth_date,
+          latitude, longitude,
           email_verified, verification_code, verification_code_expires
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
         RETURNING *
       `;
 
@@ -40,6 +41,8 @@ export class UserModel {
         userData.userType === UserType.STUDENT ? (userData as Student).schoolName : null,
         userData.userType === UserType.STUDENT ? (userData as Student).gender : null,
         userData.userType === UserType.STUDENT ? (userData as Student).birthDate : null,
+        userData.latitude || null,
+        userData.longitude || null,
         userData.userType === UserType.SUPER_ADMIN ? true : false, // Super admin is auto verified
         userData.userType === UserType.TEACHER || userData.userType === UserType.STUDENT ? this.generateVerificationCode() : null,
         userData.userType === UserType.TEACHER || userData.userType === UserType.STUDENT ? new Date(Date.now() + 10 * 60 * 1000) : null, // 10 minutes
@@ -226,7 +229,7 @@ export class UserModel {
 
   // Update user
   static async update(id: string, updateData: Partial<User>): Promise<User | null> {
-    const allowedFields = ['name', 'phone', 'address', 'bio', 'experience_years', 'status', 'student_phone', 'parent_phone', 'school_name', 'gender', 'birth_date'];
+    const allowedFields = ['name', 'phone', 'address', 'bio', 'experience_years', 'status', 'student_phone', 'parent_phone', 'school_name', 'gender', 'birth_date', 'latitude', 'longitude'];
     const updates: string[] = [];
     const values: any[] = [];
     let paramCount = 1;
@@ -289,6 +292,8 @@ export class UserModel {
       password: dbUser.password,
       userType: dbUser.user_type as UserType,
       status: dbUser.status as UserStatus,
+      latitude: dbUser.latitude,
+      longitude: dbUser.longitude,
       createdAt: dbUser.created_at,
       updatedAt: dbUser.updated_at,
     };

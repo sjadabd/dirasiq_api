@@ -1,4 +1,4 @@
-import { AcademicYearController } from '@/controllers/academic-year.controller';
+import { AcademicYearController } from '@/controllers/super_admin/academic-year.controller';
 import { authenticateToken, requireSuperAdmin } from '@/middleware/auth.middleware';
 import { Router } from 'express';
 

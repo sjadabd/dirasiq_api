@@ -22,6 +22,10 @@ CREATE TABLE IF NOT EXISTS users (
     gender VARCHAR(10) CHECK (gender IN ('male', 'female')),
     birth_date DATE,
 
+    -- Location fields (for both teachers and students)
+    latitude DECIMAL(10, 8),
+    longitude DECIMAL(11, 8),
+
     -- Verification fields
     email_verified BOOLEAN DEFAULT FALSE,
     verification_code VARCHAR(6),
@@ -44,6 +48,7 @@ CREATE INDEX IF NOT EXISTS idx_users_created_at ON users(created_at);
 CREATE INDEX IF NOT EXISTS idx_users_student_phone ON users(student_phone);
 CREATE INDEX IF NOT EXISTS idx_users_parent_phone ON users(parent_phone);
 CREATE INDEX IF NOT EXISTS idx_users_birth_date ON users(birth_date);
+CREATE INDEX IF NOT EXISTS idx_users_location ON users(latitude, longitude);
 
 -- Create trigger to update updated_at timestamp
 CREATE OR REPLACE FUNCTION update_updated_at_column()

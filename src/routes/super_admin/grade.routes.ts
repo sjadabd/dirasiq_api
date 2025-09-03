@@ -1,4 +1,4 @@
-import { GradeController } from '@/controllers/grade.controller';
+import { GradeController } from '@/controllers/super_admin/grade.controller';
 import { authenticateToken, requireSuperAdmin } from '@/middleware/auth.middleware';
 import { Router } from 'express';
 

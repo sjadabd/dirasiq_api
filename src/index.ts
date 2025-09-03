@@ -1,9 +1,10 @@
 import { initializeDatabase } from '@/database/init';
-import academicYearRoutes from '@/routes/academic-year.routes';
 import authRoutes from '@/routes/auth.routes';
-import courseRoutes from '@/routes/course.routes';
-import gradeRoutes from '@/routes/grade.routes';
-import subjectRoutes from '@/routes/subject.routes';
+import studentRoutes from '@/routes/student';
+import academicYearRoutes from '@/routes/super_admin/academic-year.routes';
+import gradeRoutes from '@/routes/super_admin/grade.routes';
+import courseRoutes from '@/routes/teacher/course.routes';
+import subjectRoutes from '@/routes/teacher/subject.routes';
 import { getMessage } from '@/utils/messages';
 import compression from 'compression';
 import cors from 'cors';
@@ -92,6 +93,7 @@ app.use('/api/academic-years', academicYearRoutes);
 app.use('/api/subjects', subjectRoutes);
 app.use('/api/grades', gradeRoutes);
 app.use('/api/courses', courseRoutes);
+app.use('/api/student', studentRoutes);
 
 // 404 handler
 app.use('*', (req, res) => {

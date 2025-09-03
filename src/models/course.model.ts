@@ -255,4 +255,65 @@ export class CourseModel {
     const result = await pool.query(query, [id, teacherId]);
     return result.rows[0] || null;
   }
+
+  // Find courses by grades and location for students
+  static async findByGradesAndLocation(
+    gradeIds: string[],
+    studentLocation: { latitude: number; longitude: number },
+    maxDistance: number = 5,
+    limit: number = 10,
+    offset: number = 0
+  ): Promise<Course[]> {
+    const query = `
+      SELECT 
+        c.*,
+        u.name as teacher_name,
+        u.phone as teacher_phone,
+        u.address as teacher_address,
+        u.bio as teacher_bio,
+        u.experience_years as teacher_experience_years,
+        u.latitude as teacher_latitude,
+        u.longitude as teacher_longitude,
+        g.name as grade_name,
+        s.name as subject_name,
+        (
+          6371 * acos(
+            cos(radians($1)) * cos(radians(u.latitude)) * 
+            cos(radians(u.longitude) - radians($2)) + 
+            sin(radians($1)) * sin(radians(u.latitude))
+          )
+        ) as distance
+      FROM courses c
+      INNER JOIN users u ON c.teacher_id = u.id
+      INNER JOIN grades g ON c.grade_id = g.id
+      INNER JOIN subjects s ON c.subject_id = s.id
+      WHERE c.grade_id = ANY($3)
+        AND c.is_deleted = false
+        AND u.user_type = 'teacher'
+        AND u.status = 'active'
+        AND u.latitude IS NOT NULL
+        AND u.longitude IS NOT NULL
+        AND (
+          6371 * acos(
+            cos(radians($1)) * cos(radians(u.latitude)) * 
+            cos(radians(u.longitude) - radians($2)) + 
+            sin(radians($1)) * sin(radians(u.latitude))
+          )
+        ) <= $4
+      ORDER BY distance ASC, c.created_at DESC
+      LIMIT $5 OFFSET $6
+    `;
+
+    const values = [
+      studentLocation.latitude,
+      studentLocation.longitude,
+      gradeIds,
+      maxDistance,
+      limit,
+      offset
+    ];
+
+    const result = await pool.query(query, values);
+    return result.rows;
+  }
 }

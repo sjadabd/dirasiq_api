@@ -76,6 +76,8 @@ export class AuthService {
       if (data.experienceYears) teacherData.experienceYears = data.experienceYears;
       if (data.visitorId) teacherData.visitorId = data.visitorId;
       if (data.deviceInfo) teacherData.deviceInfo = data.deviceInfo;
+      if (data.latitude !== undefined) teacherData.latitude = data.latitude;
+      if (data.longitude !== undefined) teacherData.longitude = data.longitude;
 
       const teacher = await UserModel.create(teacherData);
 
@@ -142,6 +144,8 @@ export class AuthService {
       if (data.schoolName) studentData.schoolName = data.schoolName;
       if (data.gender) studentData.gender = data.gender;
       if (data.birthDate) studentData.birthDate = new Date(data.birthDate);
+      if (data.latitude !== undefined) studentData.latitude = data.latitude;
+      if (data.longitude !== undefined) studentData.longitude = data.longitude;
 
       const student = await UserModel.create(studentData);
 

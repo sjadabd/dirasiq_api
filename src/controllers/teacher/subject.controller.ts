@@ -1,23 +1,15 @@
-import { CourseService } from '@/services/course.service';
+import { SubjectService } from '@/services/teacher/subject.service';
 import { getMessage } from '@/utils/messages';
 import { Request, Response } from 'express';
 import { body, param, query, validationResult } from 'express-validator';
 
-export class CourseController {
-  // Create new course
+export class SubjectController {
+  // Create new subject
   static async create(req: Request, res: Response): Promise<void> {
     try {
       // Validate request body
       await Promise.all([
-        body('study_year').notEmpty().withMessage(getMessage('COURSE.STUDY_YEAR_REQUIRED')).run(req),
-        body('grade_id').isUUID().withMessage('Grade ID must be a valid UUID').run(req),
-        body('subject_id').isUUID().withMessage('Subject ID must be a valid UUID').run(req),
-        body('course_name').notEmpty().withMessage(getMessage('COURSE.NAME_REQUIRED')).run(req),
-        body('start_date').isISO8601().withMessage('Start date must be a valid date').run(req),
-        body('end_date').isISO8601().withMessage('End date must be a valid date').run(req),
-        body('price').isFloat({ min: 0 }).withMessage(getMessage('COURSE.INVALID_PRICE')).run(req),
-        body('seats_count').isInt({ min: 1 }).withMessage(getMessage('COURSE.INVALID_SEATS_COUNT')).run(req),
-        body('course_images').optional().isArray().withMessage('Course images must be an array').run(req),
+        body('name').notEmpty().withMessage(getMessage('SUBJECT.NAME_REQUIRED')).run(req),
         body('description').optional().isString().withMessage('Description must be a string').run(req)
       ]);
 
@@ -32,7 +24,7 @@ export class CourseController {
       }
 
       const teacherId = (req as any).user.id;
-      const result = await CourseService.create(teacherId, req.body);
+      const result = await SubjectService.create(teacherId, req.body);
 
       if (result.success) {
         res.status(201).json(result);
@@ -40,7 +32,7 @@ export class CourseController {
         res.status(400).json(result);
       }
     } catch (error) {
-      console.error('Error in create course controller:', error);
+      console.error('Error in create subject controller:', error);
       res.status(500).json({
         success: false,
         message: getMessage('SERVER.INTERNAL_ERROR'),
@@ -49,34 +41,14 @@ export class CourseController {
     }
   }
 
-  // Get all courses for the authenticated teacher
+  // Get all subjects for the authenticated teacher
   static async getAll(req: Request, res: Response): Promise<void> {
     try {
       // Validate query parameters
       await Promise.all([
         query('page').optional().isInt({ min: 1 }).withMessage('Page must be a positive integer').run(req),
         query('limit').optional().isInt({ min: 1, max: 100 }).withMessage('Limit must be between 1 and 100').run(req),
-        query('search').optional().isString().withMessage('Search must be a string').run(req),
-        query('study_year').optional().isString().withMessage('Study year must be a string').run(req),
-        query('deleted').optional().isIn(['true', 'false']).withMessage('Deleted must be true or false').run(req),
-        query('grade_id').optional().custom((value) => {
-          if (value && value !== 'null' && value !== 'undefined' && value !== '') {
-            const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-            if (!uuidRegex.test(value)) {
-              throw new Error('Grade ID must be a valid UUID');
-            }
-          }
-          return true;
-        }).run(req),
-        query('subject_id').optional().custom((value) => {
-          if (value && value !== 'null' && value !== 'undefined' && value !== '') {
-            const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-            if (!uuidRegex.test(value)) {
-              throw new Error('Subject ID must be a valid UUID');
-            }
-          }
-          return true;
-        }).run(req)
+        query('search').optional().isString().withMessage('Search must be a string').run(req)
       ]);
 
       const errors = validationResult(req);
@@ -99,32 +71,7 @@ export class CourseController {
         search = undefined;
       }
 
-      // Handle filter parameters
-      let studyYear: string | undefined = req.query['study_year'] as string;
-      if (studyYear === 'null' || studyYear === 'undefined' || studyYear === '' || studyYear === undefined) {
-        studyYear = undefined;
-      }
-
-      let gradeId: string | undefined = req.query['grade_id'] as string;
-      if (gradeId === 'null' || gradeId === 'undefined' || gradeId === '' || gradeId === undefined) {
-        gradeId = undefined;
-      }
-
-      let subjectId: string | undefined = req.query['subject_id'] as string;
-      if (subjectId === 'null' || subjectId === 'undefined' || subjectId === '' || subjectId === undefined) {
-        subjectId = undefined;
-      }
-
-      // Handle deleted parameter
-      let deleted: boolean | undefined = undefined;
-      const deletedParam = req.query['deleted'] as string;
-      if (deletedParam === 'true') {
-        deleted = true;
-      } else if (deletedParam === 'false') {
-        deleted = false;
-      }
-
-      const result = await CourseService.getAllByTeacher(teacherId, page, limit, search, studyYear, gradeId, subjectId, deleted);
+      const result = await SubjectService.getAllByTeacher(teacherId, page, limit, search);
 
       if (result.success) {
         res.status(200).json(result);
@@ -132,7 +79,7 @@ export class CourseController {
         res.status(500).json(result);
       }
     } catch (error) {
-      console.error('Error in get all courses controller:', error);
+      console.error('Error in get all subjects controller:', error);
       res.status(500).json({
         success: false,
         message: getMessage('SERVER.INTERNAL_ERROR'),
@@ -141,7 +88,7 @@ export class CourseController {
     }
   }
 
-  // Get course by ID
+  // Get subject by ID
   static async getById(req: Request, res: Response): Promise<void> {
     try {
       await param('id').isUUID().withMessage('ID must be a valid UUID').run(req);
@@ -159,7 +106,7 @@ export class CourseController {
       const teacherId = (req as any).user.id;
       const id = req.params['id'] || '';
 
-      const result = await CourseService.getById(id, teacherId);
+      const result = await SubjectService.getById(id, teacherId);
 
       if (result.success) {
         res.status(200).json(result);
@@ -167,7 +114,7 @@ export class CourseController {
         res.status(404).json(result);
       }
     } catch (error) {
-      console.error('Error in get course by ID controller:', error);
+      console.error('Error in get subject by ID controller:', error);
       res.status(500).json({
         success: false,
         message: getMessage('SERVER.INTERNAL_ERROR'),
@@ -176,21 +123,13 @@ export class CourseController {
     }
   }
 
-  // Update course
+  // Update subject
   static async update(req: Request, res: Response): Promise<void> {
     try {
       // Validate request parameters and body
       await Promise.all([
         param('id').isUUID().withMessage('ID must be a valid UUID').run(req),
-        body('study_year').optional().isString().withMessage('Study year must be a string').run(req),
-        body('grade_id').optional().isUUID().withMessage('Grade ID must be a valid UUID').run(req),
-        body('subject_id').optional().isUUID().withMessage('Subject ID must be a valid UUID').run(req),
-        body('course_name').optional().notEmpty().withMessage(getMessage('COURSE.NAME_REQUIRED')).run(req),
-        body('start_date').optional().isISO8601().withMessage('Start date must be a valid date').run(req),
-        body('end_date').optional().isISO8601().withMessage('End date must be a valid date').run(req),
-        body('price').optional().isFloat({ min: 0 }).withMessage(getMessage('COURSE.INVALID_PRICE')).run(req),
-        body('seats_count').optional().isInt({ min: 1 }).withMessage(getMessage('COURSE.INVALID_SEATS_COUNT')).run(req),
-        body('course_images').optional().isArray().withMessage('Course images must be an array').run(req),
+        body('name').optional().notEmpty().withMessage(getMessage('SUBJECT.NAME_REQUIRED')).run(req),
         body('description').optional().isString().withMessage('Description must be a string').run(req)
       ]);
 
@@ -207,7 +146,7 @@ export class CourseController {
       const teacherId = (req as any).user.id;
       const id = req.params['id'] || '';
 
-      const result = await CourseService.update(id, teacherId, req.body);
+      const result = await SubjectService.update(id, teacherId, req.body);
 
       if (result.success) {
         res.status(200).json(result);
@@ -215,7 +154,7 @@ export class CourseController {
         res.status(404).json(result);
       }
     } catch (error) {
-      console.error('Error in update course controller:', error);
+      console.error('Error in update subject controller:', error);
       res.status(500).json({
         success: false,
         message: getMessage('SERVER.INTERNAL_ERROR'),
@@ -224,7 +163,7 @@ export class CourseController {
     }
   }
 
-  // Delete course (soft delete)
+  // Delete subject
   static async delete(req: Request, res: Response): Promise<void> {
     try {
       await param('id').isUUID().withMessage('ID must be a valid UUID').run(req);
@@ -242,7 +181,7 @@ export class CourseController {
       const teacherId = (req as any).user.id;
       const id = req.params['id'] || '';
 
-      const result = await CourseService.delete(id, teacherId);
+      const result = await SubjectService.delete(id, teacherId);
 
       if (result.success) {
         res.status(200).json(result);
@@ -250,7 +189,7 @@ export class CourseController {
         res.status(404).json(result);
       }
     } catch (error) {
-      console.error('Error in delete course controller:', error);
+      console.error('Error in delete subject controller:', error);
       res.status(500).json({
         success: false,
         message: getMessage('SERVER.INTERNAL_ERROR'),

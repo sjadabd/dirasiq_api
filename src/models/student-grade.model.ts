@@ -36,16 +36,12 @@ export class StudentGradeModel {
     return result.rows.map((row: any) => this.mapDatabaseStudentGradeToStudentGrade(row));
   }
 
-  // Find active student grade by student ID
-  static async findActiveByStudentId(studentId: string): Promise<StudentGrade | null> {
-    const query = 'SELECT * FROM student_grades WHERE student_id = $1 AND is_active = true AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 1';
+  // Find active student grades by student ID
+  static async findActiveByStudentId(studentId: string): Promise<StudentGrade[]> {
+    const query = 'SELECT * FROM student_grades WHERE student_id = $1 AND is_active = true AND deleted_at IS NULL ORDER BY created_at DESC';
     const result = await pool.query(query, [studentId]);
 
-    if (result.rows.length === 0) {
-      return null;
-    }
-
-    return this.mapDatabaseStudentGradeToStudentGrade(result.rows[0]);
+    return result.rows.map((row: any) => this.mapDatabaseStudentGradeToStudentGrade(row));
   }
 
   // Update student grade

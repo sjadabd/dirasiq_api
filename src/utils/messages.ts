@@ -107,7 +107,10 @@ export const Messages = {
     SUBJECT_NOT_OWNED: 'المادة الدراسية لا تخصك',
     TEACHER_NOT_FOUND: 'المعلم غير موجود',
     UNAUTHORIZED: 'غير مصرح لك بالوصول لهذا الكورس',
-    IMAGE_PROCESSING_ERROR: 'خطأ في معالجة الصور'
+    IMAGE_PROCESSING_ERROR: 'خطأ في معالجة الصور',
+    COURSES_FOUND: 'تم العثور على الكورسات',
+    COURSE_FOUND: 'تم العثور على الكورس',
+    NO_COURSES_FOUND: 'لا توجد كورسات متاحة'
   },
 
   // Student messages
@@ -132,10 +135,17 @@ export const Messages = {
     INVALID_BIRTH_DATE_FORMAT: 'تنسيق تاريخ الميلاد غير صحيح (يجب أن يكون YYYY-MM-DD)',
     STUDENT_TOO_YOUNG: 'عمر الطالب يجب أن يكون 5 سنوات على الأقل',
     STUDENT_TOO_OLD: 'عمر الطالب يجب أن يكون 25 سنة على الأكثر',
+    INVALID_LATITUDE: 'خط العرض غير صحيح (يجب أن يكون بين -90 و 90)',
+    INVALID_LONGITUDE: 'خط الطول غير صحيح (يجب أن يكون بين -180 و 180)',
     GRADE_ID_REQUIRED: 'معرف المرحلة مطلوب',
     STUDY_YEAR_REQUIRED: 'السنة الدراسية مطلوبة',
     INVALID_STUDY_YEAR_FORMAT: 'تنسيق السنة الدراسية غير صحيح (يجب أن يكون YYYY-YYYY)',
-    GRADE_NOT_FOUND: 'المرحلة الدراسية غير موجودة'
+    GRADE_NOT_FOUND: 'المرحلة الدراسية غير موجودة',
+    NO_ACTIVE_GRADE: 'لا توجد مرحلة دراسية نشطة للطالب',
+    LOCATION_NOT_SET: 'موقع الطالب غير محدد',
+    GRADES_FOUND: 'تم العثور على المراحل الدراسية',
+    STUDENT_FOUND: 'تم العثور على الطالب',
+    LOCATION_VALID: 'موقع الطالب صحيح'
   },
 
   // Validation messages
@@ -154,6 +164,13 @@ export const Messages = {
     INVALID_GENDER: 'الجنس يجب أن يكون ذكر أو أنثى',
     INVALID_BIRTH_DATE: 'تاريخ الميلاد غير صحيح',
     BIRTH_DATE_FUTURE: 'تاريخ الميلاد لا يمكن أن يكون في المستقبل',
+    INVALID_LATITUDE: 'خط العرض غير صحيح (يجب أن يكون بين -90 و 90)',
+    INVALID_LONGITUDE: 'خط الطول غير صحيح (يجب أن يكون بين -180 و 180)',
+    INVALID_MAX_DISTANCE: 'المسافة القصوى غير صحيحة (يجب أن تكون بين 0.1 و 50 كم)',
+    INVALID_PAGE: 'رقم الصفحة غير صحيح',
+    INVALID_LIMIT: 'عدد العناصر في الصفحة غير صحيح',
+    SEARCH_QUERY_REQUIRED: 'نص البحث مطلوب',
+    COURSE_ID_REQUIRED: 'معرف الكورس مطلوب',
     VERIFICATION_CODE_REQUIRED: 'رمز التحقق مطلوب',
     VERIFICATION_CODE_6_DIGITS: 'رمز التحقق يجب أن يكون 6 أرقام',
     RESET_CODE_REQUIRED: 'رمز إعادة التعيين مطلوب',
