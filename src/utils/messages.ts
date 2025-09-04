@@ -282,6 +282,160 @@ export const Messages = {
     SEARCH_TOO_LONG: 'نص البحث طويل جداً (الحد الأقصى 100 حرف)',
     INVALID_SORT_KEY: 'مفتاح الترتيب غير صحيح',
     INVALID_SORT_ORDER: 'ترتيب الترتيب يجب أن يكون asc أو desc'
+  },
+
+  // =====================================================
+  // Course Enrollment System Messages
+  // =====================================================
+
+  // Enrollment Request messages
+  ENROLLMENT_REQUEST: {
+    CREATED: 'تم إرسال طلب التسجيل بنجاح',
+    UPDATED: 'تم تحديث طلب التسجيل بنجاح',
+    DELETED: 'تم حذف طلب التسجيل بنجاح',
+    NOT_FOUND: 'طلب التسجيل غير موجود',
+    ALREADY_EXISTS: 'طلب التسجيل موجود بالفعل',
+    APPROVED: 'تم قبول طلب التسجيل بنجاح',
+    REJECTED: 'تم رفض طلب التسجيل',
+    EXPIRED: 'انتهت صلاحية طلب التسجيل',
+    CANNOT_APPROVE_EXPIRED: 'لا يمكن قبول طلب منتهي الصلاحية',
+    CANNOT_APPROVE_OWN_REQUEST: 'لا يمكنك الموافقة على طلبك الخاص',
+    STUDENT_MESSAGE_TOO_LONG: 'رسالة الطالب طويلة جداً (الحد الأقصى 1000 حرف)',
+    TEACHER_RESPONSE_TOO_LONG: 'رد المعلم طويل جداً (الحد الأقصى 1000 حرف)',
+    COURSE_ID_REQUIRED: 'معرف الكورس مطلوب',
+    STUDY_YEAR_REQUIRED: 'السنة الدراسية مطلوبة',
+    INVALID_STUDY_YEAR_FORMAT: 'تنسيق السنة الدراسية غير صحيح (يجب أن يكون YYYY-YYYY)',
+    COURSE_NOT_FOUND: 'الكورس غير موجود',
+    TEACHER_NOT_FOUND: 'المعلم غير موجود',
+    STUDENT_NOT_FOUND: 'الطالب غير موجود',
+    UNAUTHORIZED: 'غير مصرح لك بالوصول لطلب التسجيل هذا',
+    COURSE_NOT_OWNED_BY_TEACHER: 'الكورس لا يخص هذا المعلم',
+    REQUEST_LIMIT_REACHED: 'تم الوصول للحد الأقصى من الطلبات',
+    DUPLICATE_REQUEST: 'طلب التسجيل موجود بالفعل لهذا الكورس'
+  },
+
+  // Student Course Enrollment messages
+  ENROLLMENT: {
+    CREATED: 'تم تسجيل الطالب في الكورس بنجاح',
+    UPDATED: 'تم تحديث التسجيل بنجاح',
+    DELETED: 'تم حذف التسجيل بنجاح',
+    NOT_FOUND: 'التسجيل غير موجود',
+    ALREADY_EXISTS: 'التسجيل موجود بالفعل',
+    ACTIVATED: 'تم تفعيل التسجيل بنجاح',
+    SUSPENDED: 'تم إيقاف التسجيل مؤقتاً',
+    COMPLETED: 'تم إكمال التسجيل بنجاح',
+    CANCELLED: 'تم إلغاء التسجيل',
+    EXPIRED: 'انتهت صلاحية التسجيل',
+    TEACHER_LIMIT_REACHED: 'تم الوصول للحد الأقصى من الطلاب المسموح به للمعلم',
+    TEACHER_NO_ACTIVE_SUBSCRIPTION: 'المعلم ليس لديه اشتراك نشط',
+    INVALID_DATES: 'تواريخ الكورس غير صحيحة',
+    RESERVATION_AMOUNT_TOO_HIGH: 'مبلغ الحجز يتجاوز المبلغ الإجمالي للكورس',
+    INVALID_RESERVATION_AMOUNT: 'مبلغ الحجز يجب أن يكون أكبر من أو يساوي صفر',
+    COURSE_START_DATE_REQUIRED: 'تاريخ بداية الكورس مطلوب',
+    COURSE_END_DATE_REQUIRED: 'تاريخ انتهاء الكورس مطلوب',
+    TOTAL_AMOUNT_REQUIRED: 'المبلغ الإجمالي للكورس مطلوب',
+    INVALID_TOTAL_AMOUNT: 'المبلغ الإجمالي يجب أن يكون أكبر من صفر',
+    ENROLLMENT_REQUEST_ID_REQUIRED: 'معرف طلب التسجيل مطلوب',
+    ENROLLMENT_REQUEST_NOT_FOUND: 'طلب التسجيل غير موجود',
+    ENROLLMENT_REQUEST_NOT_APPROVED: 'طلب التسجيل لم يتم قبوله بعد',
+    UNAUTHORIZED: 'غير مصرح لك بالوصول لهذا التسجيل',
+    CANNOT_MODIFY_COMPLETED: 'لا يمكن تعديل تسجيل مكتمل',
+    CANNOT_MODIFY_CANCELLED: 'لا يمكن تعديل تسجيل ملغي'
+  },
+
+  // Course Invoice messages
+  INVOICE: {
+    CREATED: 'تم إنشاء الفاتورة بنجاح',
+    UPDATED: 'تم تحديث الفاتورة بنجاح',
+    DELETED: 'تم حذف الفاتورة بنجاح',
+    NOT_FOUND: 'الفاتورة غير موجودة',
+    ALREADY_EXISTS: 'الفاتورة موجودة بالفعل',
+    PAID: 'تم دفع الفاتورة بنجاح',
+    PARTIALLY_PAID: 'تم دفع جزء من الفاتورة',
+    OVERDUE: 'الفاتورة متأخرة الدفع',
+    CANCELLED: 'تم إلغاء الفاتورة',
+    INVOICE_NUMBER_REQUIRED: 'رقم الفاتورة مطلوب',
+    INVOICE_NUMBER_EXISTS: 'رقم الفاتورة موجود بالفعل',
+    INVOICE_TYPE_REQUIRED: 'نوع الفاتورة مطلوب',
+    INVALID_INVOICE_TYPE: 'نوع الفاتورة غير صحيح',
+    AMOUNT_DUE_REQUIRED: 'المبلغ المطلوب مطلوب',
+    INVALID_AMOUNT_DUE: 'المبلغ المطلوب يجب أن يكون أكبر من صفر',
+    DUE_DATE_REQUIRED: 'تاريخ الاستحقاق مطلوب',
+    INVALID_DUE_DATE: 'تاريخ الاستحقاق يجب أن يكون في المستقبل',
+    ENROLLMENT_ID_REQUIRED: 'معرف التسجيل مطلوب',
+    ENROLLMENT_NOT_FOUND: 'التسجيل غير موجود',
+    ENROLLMENT_NOT_ACTIVE: 'التسجيل غير نشط',
+    UNAUTHORIZED: 'غير مصرح لك بالوصول لهذه الفاتورة',
+    CANNOT_MODIFY_PAID: 'لا يمكن تعديل فاتورة مدفوعة',
+    CANNOT_MODIFY_CANCELLED: 'لا يمكن تعديل فاتورة ملغية',
+    AMOUNT_PAID_TOO_HIGH: 'المبلغ المدفوع يتجاوز المبلغ المطلوب',
+    INVALID_AMOUNT_PAID: 'المبلغ المدفوع يجب أن يكون أكبر من أو يساوي صفر',
+    NOTES_TOO_LONG: 'الملاحظات طويلة جداً (الحد الأقصى 1000 حرف)',
+    BULK_CREATION_SUCCESS: 'تم إنشاء الفواتير بنجاح',
+    BULK_CREATION_PARTIAL: 'تم إنشاء بعض الفواتير بنجاح',
+    BULK_CREATION_FAILED: 'فشل في إنشاء الفواتير'
+  },
+
+  // Payment Installment messages
+  INSTALLMENT: {
+    CREATED: 'تم إنشاء القسط بنجاح',
+    UPDATED: 'تم تحديث القسط بنجاح',
+    DELETED: 'تم حذف القسط بنجاح',
+    NOT_FOUND: 'القسط غير موجود',
+    ALREADY_EXISTS: 'القسط موجود بالفعل',
+    PAID: 'تم دفع القسط بنجاح',
+    PARTIALLY_PAID: 'تم دفع جزء من القسط',
+    OVERDUE: 'القسط متأخر الدفع',
+    INSTALLMENT_NUMBER_REQUIRED: 'رقم القسط مطلوب',
+    INSTALLMENT_NUMBER_EXISTS: 'رقم القسط موجود بالفعل',
+    INSTALLMENT_AMOUNT_REQUIRED: 'مبلغ القسط مطلوب',
+    INVALID_INSTALLMENT_AMOUNT: 'مبلغ القسط يجب أن يكون أكبر من صفر',
+    DUE_DATE_REQUIRED: 'تاريخ استحقاق القسط مطلوب',
+    INVALID_DUE_DATE: 'تاريخ استحقاق القسط يجب أن يكون في المستقبل',
+    INVOICE_ID_REQUIRED: 'معرف الفاتورة مطلوب',
+    INVOICE_NOT_FOUND: 'الفاتورة غير موجودة',
+    INVOICE_NOT_ACTIVE: 'الفاتورة غير نشطة',
+    UNAUTHORIZED: 'غير مصرح لك بالوصول لهذا القسط',
+    CANNOT_MODIFY_PAID: 'لا يمكن تعديل قسط مدفوع',
+    AMOUNT_PAID_TOO_HIGH: 'المبلغ المدفوع يتجاوز مبلغ القسط',
+    INVALID_AMOUNT_PAID: 'المبلغ المدفوع يجب أن يكون أكبر من أو يساوي صفر',
+    INVALID_PAYMENT_METHOD: 'طريقة الدفع غير صحيحة',
+    PAYMENT_NOTES_TOO_LONG: 'ملاحظات الدفع طويلة جداً (الحد الأقصى 500 حرف)',
+    CANNOT_CREATE_MORE_INSTALLMENTS: 'لا يمكن إنشاء المزيد من الأقساط'
+  },
+
+  // Teacher Dashboard messages
+  TEACHER_DASHBOARD: {
+    DATA_RETRIEVED: 'تم جلب بيانات لوحة التحكم بنجاح',
+    STUDENT_COUNT_RETRIEVED: 'تم جلب عدد الطلاب بنجاح',
+    CAN_ADD_STUDENTS: 'يمكنك إضافة طلاب جدد',
+    CANNOT_ADD_STUDENTS: 'لا يمكنك إضافة طلاب جدد - تم الوصول للحد الأقصى',
+    SUBSCRIPTION_EXPIRED: 'اشتراكك منتهي الصلاحية',
+    NO_ACTIVE_SUBSCRIPTION: 'ليس لديك اشتراك نشط',
+    REVENUE_RETRIEVED: 'تم جلب الإيرادات بنجاح',
+    PENDING_PAYMENTS_RETRIEVED: 'تم جلب المدفوعات المعلقة بنجاح'
+  },
+
+  // Student Dashboard messages
+  STUDENT_DASHBOARD: {
+    DATA_RETRIEVED: 'تم جلب بيانات لوحة التحكم بنجاح',
+    ENROLLMENTS_RETRIEVED: 'تم جلب التسجيلات بنجاح',
+    INVOICES_RETRIEVED: 'تم جلب الفواتير بنجاح',
+    PAYMENTS_RETRIEVED: 'تم جلب المدفوعات بنجاح',
+    NO_ACTIVE_ENROLLMENTS: 'لا توجد تسجيلات نشطة',
+    NO_PENDING_PAYMENTS: 'لا توجد مدفوعات معلقة'
+  },
+
+  // Bulk Operations messages
+  BULK_OPERATIONS: {
+    SUCCESS: 'تمت العملية المجمعة بنجاح',
+    PARTIAL_SUCCESS: 'تمت العملية المجمعة جزئياً',
+    FAILED: 'فشلت العملية المجمعة',
+    NO_ITEMS_SELECTED: 'لم يتم تحديد أي عناصر',
+    TOO_MANY_ITEMS: 'عدد العناصر المحددة كبير جداً',
+    VALIDATION_ERRORS: 'أخطاء في التحقق من صحة البيانات',
+    PROCESSING_STARTED: 'بدأت معالجة العملية المجمعة',
+    PROCESSING_COMPLETED: 'اكتملت معالجة العملية المجمعة'
   }
 };
 

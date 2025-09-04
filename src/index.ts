@@ -4,6 +4,7 @@ import studentRoutes from '@/routes/student';
 import academicYearRoutes from '@/routes/super_admin/academic-year.routes';
 import gradeRoutes from '@/routes/super_admin/grade.routes';
 import subscriptionPackageRoutes from '@/routes/super_admin/subscription-package.routes';
+import teacherRoutes from '@/routes/teacher';
 import teacherSearchRoutes from '@/routes/teacher-search.routes';
 import courseRoutes from '@/routes/teacher/course.routes';
 import subjectRoutes from '@/routes/teacher/subject.routes';
@@ -91,20 +92,35 @@ app.use('/uploads', express.static(path.join(__dirname, '../public/uploads')));
 
 // API routes
 app.use('/api/auth', authRoutes);
+app.use('/api/student', studentRoutes);
+app.use('/api/teacher', teacherRoutes);
 app.use('/api/academic-years', academicYearRoutes);
 app.use('/api/subjects', subjectRoutes);
 app.use('/api/grades', gradeRoutes);
 app.use('/api/courses', courseRoutes);
-app.use('/api/student', studentRoutes);
 app.use('/api/teacher-search', teacherSearchRoutes);
 app.use('/api/subscription-packages', subscriptionPackageRoutes);
+
+// =====================================================
+// Course Enrollment System Routes
+// =====================================================
+
+// Student enrollment routes
+app.use('/api/student/enrollment', studentRoutes);
+
+// Teacher enrollment routes
+app.use('/api/teacher/enrollment', teacherRoutes);
+
+// =====================================================
+// Error handling middleware
+// =====================================================
 
 // 404 handler
 app.use('*', (req, res) => {
   res.status(404).json({
     success: false,
     message: getMessage('SERVER.ROUTE_NOT_FOUND'),
-    errors: [`Cannot ${req.method} ${req.originalUrl}`]
+    path: req.originalUrl
   });
 });
 
@@ -112,62 +128,45 @@ app.use('*', (req, res) => {
 app.use((error: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error('Global error handler:', error);
 
-  // Handle specific error types
-  if (error.name === 'ValidationError') {
-    return res.status(400).json({
-      success: false,
-      message: getMessage('VALIDATION.VALIDATION_FAILED'),
-      errors: [error.message]
-    });
-  }
-
-  if (error.name === 'UnauthorizedError') {
-    return res.status(401).json({
-      success: false,
-      message: getMessage('AUTH.UNAUTHORIZED'),
-      errors: [getMessage('AUTH.INVALID_TOKEN')]
-    });
-  }
-
-  // Default error response
-  return res.status(500).json({
+  res.status(error.status || 500).json({
     success: false,
-    message: getMessage('SERVER.INTERNAL_ERROR'),
-    errors: process.env['NODE_ENV'] === 'development' ? [error.message] : [getMessage('SERVER.SOMETHING_WENT_WRONG')]
+    message: error.message || getMessage('SERVER.SOMETHING_WENT_WRONG'),
+    ...(process.env['NODE_ENV'] === 'development' && { stack: error.stack })
   });
 });
 
-// Initialize database and start server
+// =====================================================
+// Database initialization and server startup
+// =====================================================
+
 async function startServer() {
   try {
-    console.log(getMessage('DATABASE.INITIALIZATION_STARTED'));
+    // Initialize database
     await initializeDatabase();
-    console.log(getMessage('SERVER.DATABASE_INITIALIZED'));
+    console.log('✅ Database initialized successfully');
 
+    // Start server
     app.listen(PORT, () => {
       console.log(`🚀 Server is running on port ${PORT}`);
-      console.log(`📊 Environment: ${process.env['NODE_ENV'] || 'development'}`);
-      console.log(`⏰ Timezone: ${process.env['TZ'] || 'UTC'}`);
+      console.log(`📚 Environment: ${process.env['NODE_ENV'] || 'development'}`);
       console.log(`🔗 Health check: http://localhost:${PORT}/health`);
     });
   } catch (error) {
-    console.error(getMessage('SERVER.DATABASE_INIT_FAILED'), error);
+    console.error('❌ Failed to start server:', error);
     process.exit(1);
   }
 }
 
-// Start the server
-startServer();
-
-// Graceful shutdown
+// Handle graceful shutdown
 process.on('SIGTERM', () => {
-  console.log('SIGTERM received, shutting down gracefully');
+  console.log('🛑 SIGTERM received, shutting down gracefully');
   process.exit(0);
 });
 
 process.on('SIGINT', () => {
-  console.log('SIGINT received, shutting down gracefully');
+  console.log('🛑 SIGINT received, shutting down gracefully');
   process.exit(0);
 });
 
-export default app;
+// Start the server
+startServer();
