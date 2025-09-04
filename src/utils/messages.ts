@@ -176,6 +176,7 @@ export const Messages = {
     INVALID_MAX_DISTANCE: 'المسافة القصوى غير صحيحة (يجب أن تكون بين 0.1 و 50 كم)',
     INVALID_PAGE: 'رقم الصفحة غير صحيح',
     INVALID_LIMIT: 'عدد العناصر في الصفحة غير صحيح',
+    INVALID_ID: 'معرف العنصر غير صحيح',
     SEARCH_QUERY_REQUIRED: 'نص البحث مطلوب',
     COURSE_ID_REQUIRED: 'معرف الكورس مطلوب',
     COORDINATES_REQUIRED: 'الإحداثيات مطلوبة',
@@ -218,6 +219,32 @@ export const Messages = {
     INITIALIZATION_FAILED: 'فشل في تهيئة قاعدة البيانات'
   },
 
+  // Subscription Package messages
+  SUBSCRIPTION: {
+    PACKAGE_CREATED: 'تم إنشاء الباقة بنجاح',
+    PACKAGE_UPDATED: 'تم تحديث الباقة بنجاح',
+    PACKAGE_DELETED: 'تم حذف الباقة بنجاح',
+    PACKAGE_ACTIVATED: 'تم تفعيل الباقة بنجاح',
+    PACKAGE_DEACTIVATED: 'تم إيقاف الباقة بنجاح',
+    PACKAGE_FOUND: 'تم العثور على الباقة',
+    PACKAGE_NOT_FOUND: 'الباقة غير موجودة',
+    PACKAGE_NAME_EXISTS: 'اسم الباقة موجود بالفعل',
+    PACKAGE_DUPLICATE_SPECS: 'باقة بنفس المواصفات موجودة بالفعل',
+    PACKAGES_FOUND: 'تم العثور على الباقات',
+    ACTIVE_PACKAGES_FOUND: 'تم العثور على الباقات المفعلة',
+    FREE_PACKAGE_FOUND: 'تم العثور على الباقة المجانية',
+    NO_FREE_PACKAGE: 'لا توجد باقة مجانية متاحة',
+
+    // Validation messages
+    MAX_STUDENTS_REQUIRED: 'الحد الأقصى لعدد الطلاب مطلوب',
+    PRICE_REQUIRED: 'السعر مطلوب',
+    DURATION_DAYS_REQUIRED: 'مدة الاشتراك بالأيام مطلوبة',
+    INVALID_MAX_STUDENTS: 'الحد الأقصى لعدد الطلاب يجب أن يكون أكبر من صفر',
+    INVALID_PRICE: 'السعر يجب أن يكون أكبر من أو يساوي صفر',
+    INVALID_DURATION: 'مدة الاشتراك يجب أن تكون أكبر من صفر',
+    FREE_PACKAGE_PRICE_ZERO: 'الباقة المجانية يجب أن يكون سعرها صفر'
+  },
+
   // General messages
   GENERAL: {
     SUCCESS: 'تمت العملية بنجاح',
@@ -232,7 +259,20 @@ export const Messages = {
     DATA_NOT_FOUND: 'البيانات غير موجودة',
     INVALID_INPUT: 'بيانات الإدخال غير صحيحة',
     REQUIRED_FIELD: 'هذا الحقل مطلوب',
-    INVALID_FORMAT: 'التنسيق غير صحيح'
+    INVALID_FORMAT: 'التنسيق غير صحيح',
+    INVALID_BOOLEAN: 'القيمة يجب أن تكون true أو false',
+    ADDRESS_TOO_LONG: 'العنوان طويل جداً (الحد الأقصى 1000 حرف)',
+    COUNTRY_TOO_LONG: 'اسم الدولة طويل جداً (الحد الأقصى 100 حرف)',
+    CITY_TOO_LONG: 'اسم المدينة طويل جداً (الحد الأقصى 100 حرف)',
+    STATE_TOO_LONG: 'اسم المحافظة طويل جداً (الحد الأقصى 100 حرف)',
+    ZIPCODE_TOO_LONG: 'الرمز البريدي طويل جداً (الحد الأقصى 20 حرف)',
+    STREET_NAME_TOO_LONG: 'اسم الشارع طويل جداً (الحد الأقصى 255 حرف)',
+    SUBURB_TOO_LONG: 'اسم الناحية طويل جداً (الحد الأقصى 100 حرف)',
+    INVALID_LOCATION_CONFIDENCE: 'مستوى دقة الموقع يجب أن يكون بين 0 و 1',
+    DESCRIPTION_TOO_LONG: 'الوصف طويل جداً (الحد الأقصى 1000 حرف)',
+    SEARCH_TOO_LONG: 'نص البحث طويل جداً (الحد الأقصى 100 حرف)',
+    INVALID_SORT_KEY: 'مفتاح الترتيب غير صحيح',
+    INVALID_SORT_ORDER: 'ترتيب الترتيب يجب أن يكون asc أو desc'
   }
 };
 

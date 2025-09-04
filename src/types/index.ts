@@ -182,6 +182,39 @@ export interface UpdateStudentGradeRequest {
   isActive?: boolean;
 }
 
+// Subscription Package types
+export interface SubscriptionPackage {
+  id: string;
+  name: string;
+  description?: string;
+  maxStudents: number;
+  price: number;
+  durationDays: number;
+  isFree: boolean;
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface CreateSubscriptionPackageRequest {
+  name: string;
+  description?: string;
+  maxStudents: number;
+  price: number;
+  durationDays: number;
+  isFree?: boolean;
+}
+
+export interface UpdateSubscriptionPackageRequest {
+  name?: string;
+  description?: string;
+  maxStudents?: number;
+  price?: number;
+  durationDays?: number;
+  isFree?: boolean;
+  isActive?: boolean;
+}
+
 // Teacher Grade types
 export interface TeacherGrade {
   id: string;
