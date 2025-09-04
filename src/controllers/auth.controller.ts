@@ -68,7 +68,15 @@ export class AuthController {
         body('gradeIds.*').isUUID().withMessage(getMessage('STUDENT.GRADE_NOT_FOUND')).run(req),
         body('studyYear').notEmpty().withMessage(getMessage('STUDENT.STUDY_YEAR_REQUIRED')).matches(/^[0-9]{4}-[0-9]{4}$/).withMessage(getMessage('STUDENT.INVALID_STUDY_YEAR_FORMAT')).run(req),
         body('latitude').optional().isFloat({ min: -90, max: 90 }).withMessage(getMessage('VALIDATION.INVALID_LATITUDE')).run(req),
-        body('longitude').optional().isFloat({ min: -180, max: 180 }).withMessage(getMessage('VALIDATION.INVALID_LONGITUDE')).run(req)
+        body('longitude').optional().isFloat({ min: -180, max: 180 }).withMessage(getMessage('VALIDATION.INVALID_LONGITUDE')).run(req),
+        body('formattedAddress').optional().isLength({ max: 1000 }).withMessage(getMessage('VALIDATION.ADDRESS_TOO_LONG')).run(req),
+        body('country').optional().isLength({ max: 100 }).withMessage(getMessage('VALIDATION.COUNTRY_TOO_LONG')).run(req),
+        body('city').optional().isLength({ max: 100 }).withMessage(getMessage('VALIDATION.CITY_TOO_LONG')).run(req),
+        body('state').optional().isLength({ max: 100 }).withMessage(getMessage('VALIDATION.STATE_TOO_LONG')).run(req),
+        body('zipcode').optional().isLength({ max: 20 }).withMessage(getMessage('VALIDATION.ZIPCODE_TOO_LONG')).run(req),
+        body('streetName').optional().isLength({ max: 255 }).withMessage(getMessage('VALIDATION.STREET_NAME_TOO_LONG')).run(req),
+        body('suburb').optional().isLength({ max: 100 }).withMessage(getMessage('VALIDATION.SUBURB_TOO_LONG')).run(req),
+        body('locationConfidence').optional().isFloat({ min: 0, max: 1 }).withMessage(getMessage('VALIDATION.INVALID_LOCATION_CONFIDENCE')).run(req)
       ]);
 
       const errors = validationResult(req);
@@ -94,7 +102,15 @@ export class AuthController {
         gradeIds,
         studyYear,
         latitude,
-        longitude
+        longitude,
+        formattedAddress,
+        country,
+        city,
+        state,
+        zipcode,
+        streetName,
+        suburb,
+        locationConfidence
       } = req.body;
 
       const teacherData: any = {
@@ -113,6 +129,14 @@ export class AuthController {
 
       if (latitude) teacherData.latitude = Number(latitude);
       if (longitude) teacherData.longitude = Number(longitude);
+      if (formattedAddress) teacherData.formattedAddress = formattedAddress;
+      if (country) teacherData.country = country;
+      if (city) teacherData.city = city;
+      if (state) teacherData.state = state;
+      if (zipcode) teacherData.zipcode = zipcode;
+      if (streetName) teacherData.streetName = streetName;
+      if (suburb) teacherData.suburb = suburb;
+      if (locationConfidence !== undefined) teacherData.locationConfidence = Number(locationConfidence);
 
       const result = await AuthService.registerTeacher(teacherData);
 
@@ -152,7 +176,15 @@ export class AuthController {
         body('gradeId').notEmpty().withMessage(getMessage('STUDENT.GRADE_ID_REQUIRED')).isUUID().withMessage(getMessage('STUDENT.GRADE_NOT_FOUND')).run(req),
         body('studyYear').notEmpty().withMessage(getMessage('STUDENT.STUDY_YEAR_REQUIRED')).matches(/^[0-9]{4}-[0-9]{4}$/).withMessage(getMessage('STUDENT.INVALID_STUDY_YEAR_FORMAT')).run(req),
         body('latitude').optional().isFloat({ min: -90, max: 90 }).withMessage(getMessage('VALIDATION.INVALID_LATITUDE')).run(req),
-        body('longitude').optional().isFloat({ min: -180, max: 180 }).withMessage(getMessage('VALIDATION.INVALID_LONGITUDE')).run(req)
+        body('longitude').optional().isFloat({ min: -180, max: 180 }).withMessage(getMessage('VALIDATION.INVALID_LONGITUDE')).run(req),
+        body('formattedAddress').optional().isLength({ max: 1000 }).withMessage(getMessage('VALIDATION.ADDRESS_TOO_LONG')).run(req),
+        body('country').optional().isLength({ max: 100 }).withMessage(getMessage('VALIDATION.COUNTRY_TOO_LONG')).run(req),
+        body('city').optional().isLength({ max: 100 }).withMessage(getMessage('VALIDATION.CITY_TOO_LONG')).run(req),
+        body('state').optional().isLength({ max: 100 }).withMessage(getMessage('VALIDATION.STATE_TOO_LONG')).run(req),
+        body('zipcode').optional().isLength({ max: 20 }).withMessage(getMessage('VALIDATION.ZIPCODE_TOO_LONG')).run(req),
+        body('streetName').optional().isLength({ max: 255 }).withMessage(getMessage('VALIDATION.STREET_NAME_TOO_LONG')).run(req),
+        body('suburb').optional().isLength({ max: 100 }).withMessage(getMessage('VALIDATION.SUBURB_TOO_LONG')).run(req),
+        body('locationConfidence').optional().isFloat({ min: 0, max: 1 }).withMessage(getMessage('VALIDATION.INVALID_LOCATION_CONFIDENCE')).run(req)
       ]);
 
       const errors = validationResult(req);
@@ -177,7 +209,15 @@ export class AuthController {
         gradeId,
         studyYear,
         latitude,
-        longitude
+        longitude,
+        formattedAddress,
+        country,
+        city,
+        state,
+        zipcode,
+        streetName,
+        suburb,
+        locationConfidence
       } = req.body;
 
       // Validate birth date if provided
@@ -225,6 +265,14 @@ export class AuthController {
 
       if (latitude) studentData.latitude = Number(latitude);
       if (longitude) studentData.longitude = Number(longitude);
+      if (formattedAddress) studentData.formattedAddress = formattedAddress;
+      if (country) studentData.country = country;
+      if (city) studentData.city = city;
+      if (state) studentData.state = state;
+      if (zipcode) studentData.zipcode = zipcode;
+      if (streetName) studentData.streetName = streetName;
+      if (suburb) studentData.suburb = suburb;
+      if (locationConfidence !== undefined) studentData.locationConfidence = Number(locationConfidence);
 
       const result = await AuthService.registerStudent(studentData);
 

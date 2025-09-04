@@ -268,7 +268,7 @@ export class UserModel {
 
   // Update user
   static async update(id: string, updateData: Partial<User>): Promise<User | null> {
-    const allowedFields = ['name', 'phone', 'address', 'bio', 'experience_years', 'status', 'student_phone', 'parent_phone', 'school_name', 'gender', 'birth_date', 'latitude', 'longitude'];
+    const allowedFields = ['name', 'phone', 'address', 'bio', 'experience_years', 'status', 'student_phone', 'parent_phone', 'school_name', 'gender', 'birth_date', 'latitude', 'longitude', 'formatted_address', 'country', 'city', 'state', 'zipcode', 'street_name', 'suburb', 'location_confidence'];
     const updates: string[] = [];
     const values: any[] = [];
     let paramCount = 1;
@@ -365,9 +365,9 @@ export class UserModel {
   static async findTeachersByLocationNames(
     limit: number,
     offset: number,
-    governorate?: string,
+    state?: string,
     city?: string,
-    district?: string
+    suburb?: string
   ): Promise<any[]> {
     let query = `
       SELECT u.*
@@ -380,9 +380,9 @@ export class UserModel {
     const values: any[] = [];
     let paramCount = 1;
 
-    if (governorate) {
-      query += ` AND u.governorate = $${paramCount}`;
-      values.push(governorate);
+    if (state) {
+      query += ` AND u.state = $${paramCount}`;
+      values.push(state);
       paramCount++;
     }
 
@@ -392,9 +392,9 @@ export class UserModel {
       paramCount++;
     }
 
-    if (district) {
-      query += ` AND u.district = $${paramCount}`;
-      values.push(district);
+    if (suburb) {
+      query += ` AND u.suburb = $${paramCount}`;
+      values.push(suburb);
       paramCount++;
     }
 
@@ -416,6 +416,14 @@ export class UserModel {
       status: dbUser.status as UserStatus,
       latitude: dbUser.latitude,
       longitude: dbUser.longitude,
+      formattedAddress: dbUser.formatted_address,
+      country: dbUser.country,
+      city: dbUser.city,
+      state: dbUser.state,
+      zipcode: dbUser.zipcode,
+      streetName: dbUser.street_name,
+      suburb: dbUser.suburb,
+      locationConfidence: dbUser.location_confidence,
       createdAt: dbUser.created_at,
       updatedAt: dbUser.updated_at,
     };

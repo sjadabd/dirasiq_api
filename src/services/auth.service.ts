@@ -80,8 +80,18 @@ export class AuthService {
       if (data.latitude !== undefined) teacherData.latitude = data.latitude;
       if (data.longitude !== undefined) teacherData.longitude = data.longitude;
 
-      // Get location details using geocoding service
-      if (data.latitude && data.longitude) {
+      // Add location fields directly from request or use geocoding service
+      if (data.formattedAddress) teacherData.formattedAddress = data.formattedAddress;
+      if (data.country) teacherData.country = data.country;
+      if (data.city) teacherData.city = data.city;
+      if (data.state) teacherData.state = data.state;
+      if (data.zipcode) teacherData.zipcode = data.zipcode;
+      if (data.streetName) teacherData.streetName = data.streetName;
+      if (data.suburb) teacherData.suburb = data.suburb;
+      if (data.locationConfidence !== undefined) teacherData.locationConfidence = data.locationConfidence;
+
+      // Get location details using geocoding service if coordinates provided but no address details
+      if (data.latitude && data.longitude && !data.formattedAddress) {
         try {
           const geocodingService = new GeocodingService();
           const locationDetails = await geocodingService.getLocationDetails(data.latitude, data.longitude);
@@ -170,8 +180,18 @@ export class AuthService {
       if (data.latitude !== undefined) studentData.latitude = data.latitude;
       if (data.longitude !== undefined) studentData.longitude = data.longitude;
 
-      // Get location details using geocoding service
-      if (data.latitude && data.longitude) {
+      // Add location fields directly from request or use geocoding service
+      if (data.formattedAddress) studentData.formattedAddress = data.formattedAddress;
+      if (data.country) studentData.country = data.country;
+      if (data.city) studentData.city = data.city;
+      if (data.state) studentData.state = data.state;
+      if (data.zipcode) studentData.zipcode = data.zipcode;
+      if (data.streetName) studentData.streetName = data.streetName;
+      if (data.suburb) studentData.suburb = data.suburb;
+      if (data.locationConfidence !== undefined) studentData.locationConfidence = data.locationConfidence;
+
+      // Get location details using geocoding service if coordinates provided but no address details
+      if (data.latitude && data.longitude && !data.formattedAddress) {
         try {
           const geocodingService = new GeocodingService();
           const locationDetails = await geocodingService.getLocationDetails(data.latitude, data.longitude);

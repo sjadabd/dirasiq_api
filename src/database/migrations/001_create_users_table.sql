@@ -25,6 +25,14 @@ CREATE TABLE IF NOT EXISTS users (
     -- Location fields (for both teachers and students)
     latitude DECIMAL(10, 8),
     longitude DECIMAL(11, 8),
+    formatted_address TEXT,
+    country VARCHAR(100),
+    city VARCHAR(100),
+    state VARCHAR(100),
+    zipcode VARCHAR(20),
+    street_name VARCHAR(255),
+    suburb VARCHAR(100),
+    location_confidence DECIMAL(3, 2),
 
     -- Verification fields
     email_verified BOOLEAN DEFAULT FALSE,
@@ -66,9 +74,12 @@ CREATE TRIGGER update_users_updated_at
     EXECUTE FUNCTION update_updated_at_column();
 
 -- Note: This migration includes all location fields for Iraq
--- - governorate: المحافظة (e.g., بغداد, البصرة, الموصل)
+-- - latitude/longitude: إحداثيات GPS
+-- - formatted_address: العنوان المنسق الكامل
+-- - country: الدولة (افتراضي: العراق)
 -- - city: المدينة (e.g., بغداد, البصرة, أربيل)
--- - district: الناحية/الحي (e.g., الكرخ, الرصافة, الأعظمية)
--- - street: الشارع (اختياري)
--- - country_code: رمز الدولة (افتراضي: IQ للعراق)
--- - postcode: الرمز البريدي (اختياري)
+-- - state: المحافظة (e.g., بغداد, البصرة, نينوى)
+-- - zipcode: الرمز البريدي
+-- - street_name: اسم الشارع
+-- - suburb: الناحية/الحي (e.g., الكرخ, الرصافة, الأعظمية)
+-- - location_confidence: مستوى دقة الموقع (0.00 - 1.00)

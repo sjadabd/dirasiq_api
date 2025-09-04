@@ -97,6 +97,14 @@ export interface RegisterTeacherRequest {
   studyYear: string;
   latitude?: number;
   longitude?: number;
+  formattedAddress?: string;
+  country?: string;
+  city?: string;
+  state?: string;
+  zipcode?: string;
+  streetName?: string;
+  suburb?: string;
+  locationConfidence?: number;
 }
 
 export interface RegisterStudentRequest {
@@ -112,6 +120,14 @@ export interface RegisterStudentRequest {
   studyYear: string;
   latitude?: number;
   longitude?: number;
+  formattedAddress?: string;
+  country?: string;
+  city?: string;
+  state?: string;
+  zipcode?: string;
+  streetName?: string;
+  suburb?: string;
+  locationConfidence?: number;
 }
 
 // Student-Course relationship types
