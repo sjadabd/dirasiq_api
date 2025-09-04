@@ -56,13 +56,19 @@ BEGIN
     END IF;
 END $$;
 
--- Add unique constraint to prevent duplicate course names for the same teacher in the same year
+-- Add unique constraint to prevent duplicate courses for the same teacher with same name, year, grade, and subject
+-- This allows teachers to create courses with same name for different grades/subjects
 DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'unique_course_name_per_teacher_year'
+        WHERE conname = 'unique_course_per_teacher_year_grade_subject'
     ) THEN
-        ALTER TABLE courses ADD CONSTRAINT unique_course_name_per_teacher_year UNIQUE (teacher_id, study_year, course_name);
+        ALTER TABLE courses ADD CONSTRAINT unique_course_per_teacher_year_grade_subject
+        UNIQUE (teacher_id, study_year, course_name, grade_id, subject_id);
     END IF;
 END $$;
+
+-- Add comment explaining the new constraint
+COMMENT ON CONSTRAINT unique_course_per_teacher_year_grade_subject ON courses IS
+'Ensures unique courses per teacher, year, name, grade, and subject. Allows same course name for different grades/subjects.';

@@ -2,7 +2,7 @@ import { CourseModel } from '@/models/course.model';
 import { GradeModel } from '@/models/grade.model';
 import { SubjectModel } from '@/models/subject.model';
 import { UserModel } from '@/models/user.model';
-import { ApiResponse, CreateCourseRequest, StudentGrade, UpdateCourseRequest } from '@/types';
+import { ApiResponse, CreateCourseRequest, UpdateCourseRequest } from '@/types';
 import { ImageService } from '@/utils/image.service';
 import { getMessage } from '@/utils/messages';
 
@@ -79,8 +79,14 @@ export class CourseService {
         };
       }
 
-      // Check if course name already exists for this teacher in the same year
-      const existingCourse = await CourseModel.nameExistsForTeacher(teacherId, data.study_year, data.course_name);
+      // Check if course already exists for this teacher with same name, year, grade, and subject
+      const existingCourse = await CourseModel.courseExistsForTeacher(
+        teacherId,
+        data.study_year,
+        data.course_name,
+        data.grade_id,
+        data.subject_id
+      );
       if (existingCourse) {
         return {
           success: false,
@@ -270,10 +276,20 @@ export class CourseService {
         };
       }
 
-      // Check if new course name already exists for this teacher in the same year
+      // Check if new course already exists for this teacher with same name, year, grade, and subject
       if (data.course_name && data.course_name !== existingCourse.course_name) {
         const studyYear = data.study_year || existingCourse.study_year;
-        const nameExists = await CourseModel.nameExistsForTeacher(teacherId, studyYear, data.course_name, id);
+        const gradeId = data.grade_id || existingCourse.grade_id;
+        const subjectId = data.subject_id || existingCourse.subject_id;
+
+        const nameExists = await CourseModel.courseExistsForTeacher(
+          teacherId,
+          studyYear,
+          data.course_name,
+          gradeId,
+          subjectId,
+          id
+        );
         if (nameExists) {
           return {
             success: false,
@@ -362,138 +378,6 @@ export class CourseService {
     }
   }
 
-  // Get suggested courses for student based on grade and location
-  static async getSuggestedCoursesForStudent(
-    studentGrades: StudentGrade[],
-    studentLocation: { latitude: number; longitude: number },
-    maxDistance: number = 5,
-    page: number = 1,
-    limit: number = 10
-  ): Promise<ApiResponse> {
-    try {
-      const offset = (page - 1) * limit;
 
-      // Get courses that match student's grades
-      const gradeIds = studentGrades.map(sg => sg.gradeId);
-      const courses = await CourseModel.findByGradesAndLocation(
-        gradeIds,
-        studentLocation,
-        maxDistance,
-        limit,
-        offset
-      );
 
-      if (!courses || courses.length === 0) {
-        return {
-          success: true,
-          message: getMessage('COURSE.NO_COURSES_FOUND'),
-          data: { courses: [], count: 0 },
-          count: 0
-        };
-      }
-
-      return {
-        success: true,
-        message: getMessage('COURSE.COURSES_FOUND'),
-        data: { courses },
-        count: courses.length
-      };
-    } catch (error) {
-      console.error('Error getting suggested courses for student:', error);
-      return {
-        success: false,
-        message: getMessage('GENERAL.OPERATION_FAILED'),
-        errors: [getMessage('SERVER.INTERNAL_ERROR')]
-      };
-    }
-  }
-
-  // Get course details by ID for student
-  static async getCourseByIdForStudent(courseId: string, studentId: string): Promise<ApiResponse> {
-    try {
-      const course = await CourseModel.findById(courseId);
-
-      if (!course) {
-        return {
-          success: false,
-          message: getMessage('COURSE.NOT_FOUND'),
-          errors: [getMessage('COURSE.NOT_FOUND')]
-        };
-      }
-
-      // Get teacher details
-      const teacher = await UserModel.findById(course.teacher_id);
-      if (!teacher) {
-        return {
-          success: false,
-          message: getMessage('COURSE.TEACHER_NOT_FOUND'),
-          errors: [getMessage('COURSE.TEACHER_NOT_FOUND')]
-        };
-      }
-
-      // Calculate distance between student and teacher
-      const student = await UserModel.findById(studentId);
-      let distance = null;
-      if (student && student.latitude && student.longitude && teacher.latitude && teacher.longitude) {
-        distance = this.calculateDistance(
-          student.latitude,
-          student.longitude,
-          teacher.latitude,
-          teacher.longitude
-        );
-      }
-
-      const courseWithDetails = {
-        ...course,
-        teacher: {
-          id: teacher.id,
-          name: teacher.name,
-          phone: (teacher as any).phone,
-          address: (teacher as any).address,
-          bio: (teacher as any).bio,
-          experienceYears: (teacher as any).experienceYears,
-          distance: distance
-        }
-      };
-
-      return {
-        success: true,
-        message: getMessage('COURSE.COURSE_FOUND'),
-        data: { course: courseWithDetails }
-      };
-    } catch (error) {
-      console.error('Error getting course by ID for student:', error);
-      return {
-        success: false,
-        message: getMessage('GENERAL.OPERATION_FAILED'),
-        errors: [getMessage('SERVER.INTERNAL_ERROR')]
-      };
-    }
-  }
-
-  // Calculate distance between two points using Haversine formula
-  private static calculateDistance(
-    lat1: number,
-    lon1: number,
-    lat2: number,
-    lon2: number
-  ): number {
-    const R = 6371; // Earth's radius in kilometers
-    const dLat = this.toRadians(lat2 - lat1);
-    const dLon = this.toRadians(lon2 - lon1);
-
-    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-      Math.cos(this.toRadians(lat1)) * Math.cos(this.toRadians(lat2)) *
-      Math.sin(dLon / 2) * Math.sin(dLon / 2);
-
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    const distance = R * c; // Distance in kilometers
-
-    return Math.round(distance * 100) / 100; // Round to 2 decimal places
-  }
-
-  // Convert degrees to radians
-  private static toRadians(degrees: number): number {
-    return degrees * (Math.PI / 180);
-  }
 }

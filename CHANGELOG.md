@@ -18,6 +18,13 @@
 - Comprehensive API documentation
 - Docker support
 - Testing framework setup
+- **NEW**: Advanced location features for users
+  - Geocoding service integration with OpenCage provider
+  - Extended location fields (formatted address, country, city, state, zipcode, street name, suburb)
+  - Location confidence scoring
+  - Arabic language support for Iraq
+  - Automatic location data retrieval from coordinates
+  - **UPDATED**: Location fields are now part of the main users table creation migration
 
 ### Security
 - JWT token management with database storage

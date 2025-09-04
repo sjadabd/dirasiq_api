@@ -240,6 +240,29 @@ export class CourseModel {
     return result.rows[0].exists;
   }
 
+  // Check if course already exists for the same teacher with same name, year, grade, and subject
+  static async courseExistsForTeacher(
+    teacherId: string,
+    studyYear: string,
+    courseName: string,
+    gradeId: string,
+    subjectId: string,
+    excludeId?: string
+  ): Promise<boolean> {
+    let query: string;
+    const params: any[] = [teacherId, studyYear, courseName, gradeId, subjectId];
+
+    if (excludeId) {
+      query = 'SELECT EXISTS(SELECT 1 FROM courses WHERE teacher_id = $1 AND study_year = $2 AND course_name = $3 AND grade_id = $4 AND subject_id = $5 AND id != $6 AND is_deleted = false)';
+      params.push(excludeId);
+    } else {
+      query = 'SELECT EXISTS(SELECT 1 FROM courses WHERE teacher_id = $1 AND study_year = $2 AND course_name = $3 AND grade_id = $4 AND subject_id = $5 AND is_deleted = false)';
+    }
+
+    const result = await pool.query(query, params);
+    return result.rows[0].exists;
+  }
+
   // Get course with related data (grade and subject names)
   static async findByIdWithRelations(id: string, teacherId: string): Promise<any> {
     const query = `
@@ -265,7 +288,7 @@ export class CourseModel {
     offset: number = 0
   ): Promise<Course[]> {
     const query = `
-      SELECT 
+      SELECT
         c.*,
         u.name as teacher_name,
         u.phone as teacher_phone,
@@ -278,8 +301,8 @@ export class CourseModel {
         s.name as subject_name,
         (
           6371 * acos(
-            cos(radians($1)) * cos(radians(u.latitude)) * 
-            cos(radians(u.longitude) - radians($2)) + 
+            cos(radians($1)) * cos(radians(u.latitude)) *
+            cos(radians(u.longitude) - radians($2)) +
             sin(radians($1)) * sin(radians(u.latitude))
           )
         ) as distance
@@ -295,8 +318,8 @@ export class CourseModel {
         AND u.longitude IS NOT NULL
         AND (
           6371 * acos(
-            cos(radians($1)) * cos(radians(u.latitude)) * 
-            cos(radians(u.longitude) - radians($2)) + 
+            cos(radians($1)) * cos(radians(u.latitude)) *
+            cos(radians(u.longitude) - radians($2)) +
             sin(radians($1)) * sin(radians(u.latitude))
           )
         ) <= $4

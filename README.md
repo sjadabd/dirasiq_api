@@ -12,6 +12,7 @@ API احترافي لمنصة دراسيق التعليمية مبني باست�
 - **هيكلية احترافية**: فصل المسؤوليات والكود النظيف
 - **TypeScript**: نوعية قوية للكود
 - **PostgreSQL**: قاعدة بيانات قوية وموثوقة
+- **🌍 ميزات الموقع المتقدمة**: خدمة جغرافية متكاملة مع OpenCage
 
 ## 📋 المتطلبات
 
@@ -64,6 +65,9 @@ EMAIL_PASS=your_app_password
 BCRYPT_ROUNDS=12
 RATE_LIMIT_WINDOW_MS=900000
 RATE_LIMIT_MAX_REQUESTS=100
+
+# Geocoding Configuration (OpenCage)
+OPENCAGE_API_KEY=your_opencage_api_key_here
 
 # Timezone
 TZ=Asia/Baghdad

@@ -3,6 +3,7 @@ import { StudentGradeModel } from '@/models/student-grade.model';
 import { TeacherGradeModel } from '@/models/teacher-grade.model';
 import { TokenModel } from '@/models/token.model';
 import { UserModel } from '@/models/user.model';
+import { GeocodingService } from '@/services/geocoding.service';
 import {
   ApiResponse,
   LoginRequest,
@@ -79,6 +80,28 @@ export class AuthService {
       if (data.latitude !== undefined) teacherData.latitude = data.latitude;
       if (data.longitude !== undefined) teacherData.longitude = data.longitude;
 
+      // Get location details using geocoding service
+      if (data.latitude && data.longitude) {
+        try {
+          const geocodingService = new GeocodingService();
+          const locationDetails = await geocodingService.getLocationDetails(data.latitude, data.longitude);
+
+          if (locationDetails) {
+            teacherData.formattedAddress = locationDetails.formattedAddress;
+            teacherData.country = locationDetails.country;
+            teacherData.city = locationDetails.city;
+            teacherData.state = locationDetails.state;
+            teacherData.zipcode = locationDetails.zipcode;
+            teacherData.streetName = locationDetails.streetName;
+            teacherData.suburb = locationDetails.suburb;
+            teacherData.locationConfidence = locationDetails.confidence;
+          }
+        } catch (error) {
+          console.error('Error getting location details:', error);
+          // Continue with registration even if geocoding fails
+        }
+      }
+
       const teacher = await UserModel.create(teacherData);
 
       // Create teacher grade relationships
@@ -146,6 +169,28 @@ export class AuthService {
       if (data.birthDate) studentData.birthDate = new Date(data.birthDate);
       if (data.latitude !== undefined) studentData.latitude = data.latitude;
       if (data.longitude !== undefined) studentData.longitude = data.longitude;
+
+      // Get location details using geocoding service
+      if (data.latitude && data.longitude) {
+        try {
+          const geocodingService = new GeocodingService();
+          const locationDetails = await geocodingService.getLocationDetails(data.latitude, data.longitude);
+
+          if (locationDetails) {
+            studentData.formattedAddress = locationDetails.formattedAddress;
+            studentData.country = locationDetails.country;
+            studentData.city = locationDetails.city;
+            studentData.state = locationDetails.state;
+            studentData.zipcode = locationDetails.zipcode;
+            studentData.streetName = locationDetails.streetName;
+            studentData.suburb = locationDetails.suburb;
+            studentData.locationConfidence = locationDetails.confidence;
+          }
+        } catch (error) {
+          console.error('Error getting location details:', error);
+          // Continue with registration even if geocoding fails
+        }
+      }
 
       const student = await UserModel.create(studentData);
 

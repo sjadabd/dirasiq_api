@@ -39,7 +39,10 @@ export const Messages = {
     TEACHER_ACCESS_REQUIRED: 'يتطلب وصول المعلم',
     STUDENT_ACCESS_REQUIRED: 'يتطلب وصول الطالب',
     AUTHENTICATION_REQUIRED: 'المصادقة مطلوبة',
-    USER_NOT_AUTHENTICATED: 'المستخدم غير مصادق عليه'
+    USER_NOT_AUTHENTICATED: 'المستخدم غير مصادق عليه',
+    LOCATION_DETAILS_RETRIEVED: 'تم جلب تفاصيل الموقع بنجاح',
+    LOCATION_DETAILS_FAILED: 'فشل في جلب تفاصيل الموقع',
+    INVALID_COORDINATES: 'إحداثيات الموقع غير صحيحة'
   },
 
   // Academic Year messages

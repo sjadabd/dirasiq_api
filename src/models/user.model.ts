@@ -18,10 +18,19 @@ export class UserModel {
           name, email, password, user_type, status,
           phone, address, bio, experience_years, visitor_id, device_info,
           student_phone, parent_phone, school_name, gender, birth_date,
-          latitude, longitude,
-          email_verified, verification_code, verification_code_expires
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
-        RETURNING *
+          latitude, longitude, formatted_address, country, city, state, zipcode, street_name, suburb, location_confidence,
+          email_verified, verification_code, verification_code_expires,
+          password_reset_code, password_reset_expires,
+          created_at, updated_at, deleted_at
+        ) VALUES (
+          $1, $2, $3, $4, $5,
+          $6, $7, $8, $9, $10, $11,
+          $12, $13, $14, $15, $16,
+          $17, $18, $19, $20, $21, $22, $23, $24, $25, $26,
+          $27, $28, $29,
+          $30, $31,
+          $32, $33, $34
+        ) RETURNING *;
       `;
 
       const values = [
@@ -30,28 +39,57 @@ export class UserModel {
         hashedPassword,
         userData.userType,
         userData.status || UserStatus.PENDING,
+
+        // Teacher fields
         userData.userType === UserType.TEACHER ? (userData as Teacher).phone : null,
         userData.userType === UserType.TEACHER ? (userData as Teacher).address : null,
         userData.userType === UserType.TEACHER ? (userData as Teacher).bio : null,
         userData.userType === UserType.TEACHER ? (userData as Teacher).experienceYears : null,
         userData.userType === UserType.TEACHER ? (userData as Teacher).visitorId : null,
         userData.userType === UserType.TEACHER ? (userData as Teacher).deviceInfo : null,
+
+        // Student fields
         userData.userType === UserType.STUDENT ? (userData as Student).studentPhone : null,
         userData.userType === UserType.STUDENT ? (userData as Student).parentPhone : null,
         userData.userType === UserType.STUDENT ? (userData as Student).schoolName : null,
         userData.userType === UserType.STUDENT ? (userData as Student).gender : null,
         userData.userType === UserType.STUDENT ? (userData as Student).birthDate : null,
+
+        // Location fields
         userData.latitude || null,
         userData.longitude || null,
-        userData.userType === UserType.SUPER_ADMIN ? true : false, // Super admin is auto verified
-        userData.userType === UserType.TEACHER || userData.userType === UserType.STUDENT ? this.generateVerificationCode() : null,
-        userData.userType === UserType.TEACHER || userData.userType === UserType.STUDENT ? new Date(Date.now() + 10 * 60 * 1000) : null, // 10 minutes
+        userData.formattedAddress || null,
+        userData.country || null,
+        userData.city || null,
+        userData.state || null,
+        userData.zipcode || null,
+        userData.streetName || null,
+        userData.suburb || null,
+        userData.locationConfidence || null,
+
+        // Verification
+        userData.userType === UserType.SUPER_ADMIN ? true : false,
+        userData.userType === UserType.TEACHER || userData.userType === UserType.STUDENT
+          ? this.generateVerificationCode()
+          : null,
+        userData.userType === UserType.TEACHER || userData.userType === UserType.STUDENT
+          ? new Date(Date.now() + 10 * 60 * 1000)
+          : null,
+
+        // Password reset
+        null, // password_reset_code
+        null, // password_reset_expires
+
+        // Timestamps
+        new Date(), // created_at
+        new Date(), // updated_at
+        null, // deleted_at
       ];
 
       const result = await client.query(query, values);
       await client.query('COMMIT');
-
       return this.mapDatabaseUserToUser(result.rows[0]);
+
     } catch (error) {
       await client.query('ROLLBACK');
       throw error;
@@ -59,6 +97,7 @@ export class UserModel {
       client.release();
     }
   }
+
 
   // Get verification code for a teacher or student
   static async getVerificationCode(email: string): Promise<string | null> {
@@ -229,7 +268,7 @@ export class UserModel {
 
   // Update user
   static async update(id: string, updateData: Partial<User>): Promise<User | null> {
-    const allowedFields = ['name', 'phone', 'address', 'bio', 'experience_years', 'status', 'student_phone', 'parent_phone', 'school_name', 'gender', 'birth_date', 'latitude', 'longitude'];
+    const allowedFields = ['name', 'phone', 'address', 'bio', 'experience_years', 'status', 'student_phone', 'parent_phone', 'school_name', 'gender', 'birth_date', 'latitude', 'longitude', 'formatted_address', 'country', 'city', 'state', 'zipcode', 'street_name', 'suburb', 'location_confidence'];
     const updates: string[] = [];
     const values: any[] = [];
     let paramCount = 1;
@@ -294,6 +333,14 @@ export class UserModel {
       status: dbUser.status as UserStatus,
       latitude: dbUser.latitude,
       longitude: dbUser.longitude,
+      formattedAddress: dbUser.formatted_address,
+      country: dbUser.country,
+      city: dbUser.city,
+      state: dbUser.state,
+      zipcode: dbUser.zipcode,
+      streetName: dbUser.street_name,
+      suburb: dbUser.suburb,
+      locationConfidence: dbUser.location_confidence,
       createdAt: dbUser.created_at,
       updatedAt: dbUser.updated_at,
     };

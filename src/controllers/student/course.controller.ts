@@ -1,5 +1,4 @@
 import { StudentService } from '@/services/student/student.service';
-import { CourseService } from '@/services/teacher/course.service';
 import { getMessage } from '@/utils/messages';
 import { Request, Response } from 'express';
 import { body, validationResult } from 'express-validator';
@@ -46,7 +45,7 @@ export class StudentCourseController {
       const studentLocation = locationResult.data.location;
 
       // Get courses based on student's grade and location
-      const result = await CourseService.getSuggestedCoursesForStudent(
+      const result = await StudentService.getSuggestedCoursesForStudent(
         studentGrades,
         studentLocation,
         Number(maxDistance),
@@ -85,7 +84,7 @@ export class StudentCourseController {
         return;
       }
 
-      const result = await CourseService.getCourseByIdForStudent(id, studentId);
+      const result = await StudentService.getCourseByIdForStudent(id, studentId);
 
       if (result.success) {
         res.status(200).json(result);
