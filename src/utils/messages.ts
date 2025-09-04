@@ -234,6 +234,15 @@ export const Messages = {
     ACTIVE_PACKAGES_FOUND: 'تم العثور على الباقات المفعلة',
     FREE_PACKAGE_FOUND: 'تم العثور على الباقة المجانية',
     NO_FREE_PACKAGE: 'لا توجد باقة مجانية متاحة',
+    CREATED_SUCCESSFULLY: 'تم إنشاء الاشتراك بنجاح.',
+    FOUND: 'تم العثور على الاشتراك.',
+    ACTIVE_FOUND: 'تم العثور على الاشتراك الفعّال.',
+    NO_ACTIVE: 'لا يوجد اشتراك فعّال حاليًا.',
+    NOT_FOUND: 'الاشتراك غير موجود.',
+    UPDATED_SUCCESSFULLY: 'تم تحديث الاشتراك بنجاح.',
+    NOT_FOUND_OR_NOT_UPDATED: 'الاشتراك غير موجود أو لم يتم تحديثه.',
+    DELETED_SUCCESSFULLY: 'تم حذف الاشتراك بنجاح.',
+    NOT_FOUND_OR_NOT_DELETED: 'الاشتراك غير موجود أو لم يتم حذفه.',
 
     // Validation messages
     MAX_STUDENTS_REQUIRED: 'الحد الأقصى لعدد الطلاب مطلوب',

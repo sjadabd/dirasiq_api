@@ -377,3 +377,31 @@ export interface UpdateCourseRequest {
   price?: number;
   seats_count?: number;
 }
+
+export interface TeacherSubscription {
+  id: string;
+  teacherId: string;
+  subscriptionPackageId: string;
+  startDate: Date;
+  endDate: Date;
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+  deletedAt?: Date;
+}
+
+export interface CreateTeacherSubscriptionRequest {
+  teacherId: string;
+  subscriptionPackageId: string;
+  startDate: Date;
+  endDate: Date;
+}
+
+export interface UpdateTeacherSubscriptionRequest {
+  subscriptionPackageId?: string;
+  startDate?: Date;
+  endDate?: Date;
+  isActive?: boolean;
+  deletedAt?: Date;
+}
+

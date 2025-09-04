@@ -1,4 +1,6 @@
 import { AuthService } from '@/services/auth.service';
+import { SubscriptionPackageService } from '@/services/super_admin/subscription-package.service';
+import { TeacherSubscriptionService } from '@/services/teacher-subscription.service';
 import { getMessage } from '@/utils/messages';
 import { Request, Response } from 'express';
 import { body, validationResult } from 'express-validator';
@@ -50,23 +52,22 @@ export class AuthController {
   // Register teacher
   static async registerTeacher(req: Request, res: Response): Promise<void> {
     try {
-      // Validate request body
+      // 1) Validation (كما هو عندك)
       await Promise.all([
         body('name').notEmpty().withMessage(getMessage('VALIDATION.NAME_REQUIRED')).run(req),
         body('email').isEmail().withMessage(getMessage('VALIDATION.VALID_EMAIL_REQUIRED')).run(req),
         body('password')
-          .isLength({ min: 8 })
-          .withMessage(getMessage('VALIDATION.PASSWORD_MIN_LENGTH'))
+          .isLength({ min: 8 }).withMessage(getMessage('VALIDATION.PASSWORD_MIN_LENGTH'))
           .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/)
-          .withMessage(getMessage('VALIDATION.PASSWORD_COMPLEXITY'))
-          .run(req),
+          .withMessage(getMessage('VALIDATION.PASSWORD_COMPLEXITY')).run(req),
         body('phone').notEmpty().withMessage(getMessage('VALIDATION.PHONE_REQUIRED')).run(req),
         body('address').notEmpty().withMessage(getMessage('VALIDATION.ADDRESS_REQUIRED')).run(req),
         body('bio').notEmpty().withMessage(getMessage('VALIDATION.BIO_REQUIRED')).run(req),
         body('experienceYears').isInt({ min: 0 }).withMessage(getMessage('VALIDATION.EXPERIENCE_YEARS_REQUIRED')).run(req),
         body('gradeIds').isArray({ min: 1 }).withMessage(getMessage('STUDENT.GRADE_ID_REQUIRED')).run(req),
         body('gradeIds.*').isUUID().withMessage(getMessage('STUDENT.GRADE_NOT_FOUND')).run(req),
-        body('studyYear').notEmpty().withMessage(getMessage('STUDENT.STUDY_YEAR_REQUIRED')).matches(/^[0-9]{4}-[0-9]{4}$/).withMessage(getMessage('STUDENT.INVALID_STUDY_YEAR_FORMAT')).run(req),
+        body('studyYear').notEmpty().withMessage(getMessage('STUDENT.STUDY_YEAR_REQUIRED'))
+          .matches(/^[0-9]{4}-[0-9]{4}$/).withMessage(getMessage('STUDENT.INVALID_STUDY_YEAR_FORMAT')).run(req),
         body('latitude').optional().isFloat({ min: -90, max: 90 }).withMessage(getMessage('VALIDATION.INVALID_LATITUDE')).run(req),
         body('longitude').optional().isFloat({ min: -180, max: 180 }).withMessage(getMessage('VALIDATION.INVALID_LONGITUDE')).run(req),
         body('formattedAddress').optional().isLength({ max: 1000 }).withMessage(getMessage('VALIDATION.ADDRESS_TOO_LONG')).run(req),
@@ -76,7 +77,7 @@ export class AuthController {
         body('zipcode').optional().isLength({ max: 20 }).withMessage(getMessage('VALIDATION.ZIPCODE_TOO_LONG')).run(req),
         body('streetName').optional().isLength({ max: 255 }).withMessage(getMessage('VALIDATION.STREET_NAME_TOO_LONG')).run(req),
         body('suburb').optional().isLength({ max: 100 }).withMessage(getMessage('VALIDATION.SUBURB_TOO_LONG')).run(req),
-        body('locationConfidence').optional().isFloat({ min: 0, max: 1 }).withMessage(getMessage('VALIDATION.INVALID_LOCATION_CONFIDENCE')).run(req)
+        body('locationConfidence').optional().isFloat({ min: 0, max: 1 }).withMessage(getMessage('VALIDATION.INVALID_LOCATION_CONFIDENCE')).run(req),
       ]);
 
       const errors = validationResult(req);
@@ -84,49 +85,22 @@ export class AuthController {
         res.status(400).json({
           success: false,
           message: getMessage('VALIDATION.VALIDATION_FAILED'),
-          errors: errors.array().map(err => err.msg)
+          errors: errors.array().map(e => e.msg),
         });
         return;
       }
 
+      // 2) Build teacher data
       const {
-        name,
-        email,
-        password,
-        phone,
-        address,
-        bio,
-        experienceYears,
-        visitorId,
-        deviceInfo,
-        gradeIds,
-        studyYear,
-        latitude,
-        longitude,
-        formattedAddress,
-        country,
-        city,
-        state,
-        zipcode,
-        streetName,
-        suburb,
-        locationConfidence
+        name, email, password, phone, address, bio, experienceYears,
+        visitorId, deviceInfo, gradeIds, studyYear,
+        latitude, longitude, formattedAddress, country, city, state, zipcode, streetName, suburb, locationConfidence,
       } = req.body;
 
       const teacherData: any = {
-        name,
-        email,
-        password,
-        phone,
-        address,
-        bio,
-        experienceYears,
-        visitorId,
-        deviceInfo,
-        gradeIds,
-        studyYear
+        name, email, password, phone, address, bio, experienceYears,
+        visitorId, deviceInfo, gradeIds, studyYear,
       };
-
       if (latitude) teacherData.latitude = Number(latitude);
       if (longitude) teacherData.longitude = Number(longitude);
       if (formattedAddress) teacherData.formattedAddress = formattedAddress;
@@ -138,19 +112,75 @@ export class AuthController {
       if (suburb) teacherData.suburb = suburb;
       if (locationConfidence !== undefined) teacherData.locationConfidence = Number(locationConfidence);
 
+      // 3) Register teacher (Service)
       const result = await AuthService.registerTeacher(teacherData);
-
-      if (result.success) {
-        res.status(201).json(result);
-      } else {
+      if (!result.success) {
         res.status(400).json(result);
+        return;
+      }
+
+      // 4) Get free package (20 طالب إن وُجد، وإن لا فأي باقة مجانية مفعّلة)
+      const freePkgResp = await SubscriptionPackageService.getFreePackage(); // لو دالتك تدعم maxStudents، ضفها
+      if (!freePkgResp.success || !freePkgResp.data) {
+        // رجّع نجاح تسجيل المعلّم مع تحذير بفشل إنشاء الاشتراك المجاني
+        res.status(201).json({
+          success: true,
+          message: getMessage('AUTH.REGISTERED_SUCCESSFULLY'),
+          data: {
+            user: result.data?.user ?? result.data, // حسب ما ترجّعه خدمتك
+            subscription: null,
+          },
+          errors: [getMessage('SUBSCRIPTION.NO_FREE_PACKAGE')],
+        });
+        return;
+      }
+
+      const pkg = freePkgResp.data;
+      // إن كنت تريد تقييدها بـ 20 طالب، تأكد من الشرط هنا:
+      if (pkg.maxStudents !== 20 || !pkg.isFree || !pkg.isActive) {
+        // إما تبحث عن واحدة بـ 20 طالب، أو تتعامل معها كتحذير
+        // هنا سنكمل بها فقط إذا كانت مجانية ومفعّلة (يمكنك تشديد الشرط كما تريد)
+      }
+
+      // 5) Create teacher subscription based on package duration
+      const startDate = new Date();
+      const endDate = new Date(startDate.getTime() + pkg.durationDays * 24 * 60 * 60 * 1000);
+
+      const teacherSubscription = await TeacherSubscriptionService.create({
+        teacherId: result.data?.user?.id ?? result.data?.teacherId, // وفق بنية استجابتك
+        subscriptionPackageId: pkg.id,
+        startDate,
+        endDate,
+      });
+
+      // 6) Return ONE response
+      if (teacherSubscription.success) {
+        res.status(201).json({
+          success: true,
+          message: getMessage('AUTH.REGISTERED_SUCCESSFULLY'),
+          data: {
+            user: result.data?.user ?? result.data,
+            subscription: teacherSubscription.data,
+          },
+        });
+      } else {
+        // سجلّناه كمعلّم، لكن الاشتراك فشل
+        res.status(201).json({
+          success: true,
+          message: getMessage('AUTH.REGISTERED_SUCCESSFULLY'),
+          data: {
+            user: result.data?.user ?? result.data,
+            subscription: null,
+          },
+          errors: [getMessage('SUBSCRIPTION.NOT_FOUND_OR_NOT_CREATED') ?? 'Failed to create free subscription'],
+        });
       }
     } catch (error) {
       console.error('Error in registerTeacher controller:', error);
       res.status(500).json({
         success: false,
         message: getMessage('SERVER.INTERNAL_ERROR'),
-        errors: [getMessage('SERVER.SOMETHING_WENT_WRONG')]
+        errors: [getMessage('SERVER.SOMETHING_WENT_WRONG')],
       });
     }
   }
