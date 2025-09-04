@@ -268,7 +268,7 @@ export class UserModel {
 
   // Update user
   static async update(id: string, updateData: Partial<User>): Promise<User | null> {
-    const allowedFields = ['name', 'phone', 'address', 'bio', 'experience_years', 'status', 'student_phone', 'parent_phone', 'school_name', 'gender', 'birth_date', 'latitude', 'longitude', 'formatted_address', 'country', 'city', 'state', 'zipcode', 'street_name', 'suburb', 'location_confidence'];
+    const allowedFields = ['name', 'phone', 'address', 'bio', 'experience_years', 'status', 'student_phone', 'parent_phone', 'school_name', 'gender', 'birth_date', 'latitude', 'longitude'];
     const updates: string[] = [];
     const values: any[] = [];
     let paramCount = 1;
@@ -322,6 +322,89 @@ export class UserModel {
     return Math.floor(100000 + Math.random() * 900000).toString();
   }
 
+  // Find teachers by location with distance calculation
+  static async findTeachersByLocation(
+    latitude: number,
+    longitude: number,
+    maxDistance: number,
+    limit: number,
+    offset: number
+  ): Promise<any[]> {
+    const query = `
+      SELECT
+        u.*,
+        (
+          6371 * acos(
+            cos(radians($1)) * cos(radians(u.latitude)) *
+            cos(radians(u.longitude) - radians($2)) +
+            sin(radians($1)) * sin(radians(u.latitude))
+          )
+        ) as distance
+      FROM users u
+      WHERE u.user_type = 'teacher'
+        AND u.status = 'active'
+        AND u.deleted_at IS NULL
+        AND u.latitude IS NOT NULL
+        AND u.longitude IS NOT NULL
+        AND (
+          6371 * acos(
+            cos(radians($1)) * cos(radians(u.latitude)) *
+            cos(radians(u.longitude) - radians($2)) +
+            sin(radians($1)) * sin(radians(u.latitude))
+          )
+        ) <= $3
+      ORDER BY distance ASC
+      LIMIT $4 OFFSET $5
+    `;
+
+    const result = await pool.query(query, [latitude, longitude, maxDistance, limit, offset]);
+    return result.rows;
+  }
+
+  // Find teachers by location names
+  static async findTeachersByLocationNames(
+    limit: number,
+    offset: number,
+    governorate?: string,
+    city?: string,
+    district?: string
+  ): Promise<any[]> {
+    let query = `
+      SELECT u.*
+      FROM users u
+      WHERE u.user_type = 'teacher'
+        AND u.status = 'active'
+        AND u.deleted_at IS NULL
+    `;
+
+    const values: any[] = [];
+    let paramCount = 1;
+
+    if (governorate) {
+      query += ` AND u.governorate = $${paramCount}`;
+      values.push(governorate);
+      paramCount++;
+    }
+
+    if (city) {
+      query += ` AND u.city = $${paramCount}`;
+      values.push(city);
+      paramCount++;
+    }
+
+    if (district) {
+      query += ` AND u.district = $${paramCount}`;
+      values.push(district);
+      paramCount++;
+    }
+
+    query += ` ORDER BY u.created_at DESC LIMIT $${paramCount} OFFSET $${paramCount + 1}`;
+    values.push(limit, offset);
+
+    const result = await pool.query(query, values);
+    return result.rows;
+  }
+
   // Map database user to User interface
   private static mapDatabaseUserToUser(dbUser: any): User {
     const baseUser = {
@@ -333,14 +416,6 @@ export class UserModel {
       status: dbUser.status as UserStatus,
       latitude: dbUser.latitude,
       longitude: dbUser.longitude,
-      formattedAddress: dbUser.formatted_address,
-      country: dbUser.country,
-      city: dbUser.city,
-      state: dbUser.state,
-      zipcode: dbUser.zipcode,
-      streetName: dbUser.street_name,
-      suburb: dbUser.suburb,
-      locationConfidence: dbUser.location_confidence,
       createdAt: dbUser.created_at,
       updatedAt: dbUser.updated_at,
     };

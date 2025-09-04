@@ -113,7 +113,9 @@ export const Messages = {
     IMAGE_PROCESSING_ERROR: 'خطأ في معالجة الصور',
     COURSES_FOUND: 'تم العثور على الكورسات',
     COURSE_FOUND: 'تم العثور على الكورس',
-    NO_COURSES_FOUND: 'لا توجد كورسات متاحة'
+    NO_COURSES_FOUND: 'لا توجد كورسات متاحة',
+    TEACHERS_FOUND: 'تم العثور على المدرسين',
+    NO_TEACHERS_FOUND: 'لا يوجد مدرسون في هذا الموقع'
   },
 
   // Student messages
@@ -148,7 +150,9 @@ export const Messages = {
     LOCATION_NOT_SET: 'موقع الطالب غير محدد',
     GRADES_FOUND: 'تم العثور على المراحل الدراسية',
     STUDENT_FOUND: 'تم العثور على الطالب',
-    LOCATION_VALID: 'موقع الطالب صحيح'
+    LOCATION_VALID: 'موقع الطالب صحيح',
+    GOVERNORATES_FOUND: 'تم العثور على المحافظات',
+    CITIES_FOUND: 'تم العثور على المدن'
   },
 
   // Validation messages
@@ -174,6 +178,12 @@ export const Messages = {
     INVALID_LIMIT: 'عدد العناصر في الصفحة غير صحيح',
     SEARCH_QUERY_REQUIRED: 'نص البحث مطلوب',
     COURSE_ID_REQUIRED: 'معرف الكورس مطلوب',
+    COORDINATES_REQUIRED: 'الإحداثيات مطلوبة',
+    LOCATION_REQUIRED: 'يجب تحديد موقع واحد على الأقل',
+    INVALID_GOVERNORATE: 'المحافظة غير صحيحة',
+    INVALID_CITY: 'المدينة غير صحيحة',
+    INVALID_DISTRICT: 'الناحية غير صحيحة',
+    GOVERNORATE_REQUIRED: 'المحافظة مطلوبة',
     VERIFICATION_CODE_REQUIRED: 'رمز التحقق مطلوب',
     VERIFICATION_CODE_6_DIGITS: 'رمز التحقق يجب أن يكون 6 أرقام',
     RESET_CODE_REQUIRED: 'رمز إعادة التعيين مطلوب',

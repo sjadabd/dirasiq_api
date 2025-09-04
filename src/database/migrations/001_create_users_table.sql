@@ -1,4 +1,4 @@
--- Create users table
+-- Create users table with all required fields
 CREATE TABLE IF NOT EXISTS users (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name VARCHAR(255) NOT NULL,
@@ -23,16 +23,8 @@ CREATE TABLE IF NOT EXISTS users (
     birth_date DATE,
 
     -- Location fields (for both teachers and students)
-    latitude NUMERIC(10, 8),
-    longitude NUMERIC(11, 8),
-    formatted_address TEXT,
-    country VARCHAR(100),
-    city VARCHAR(100),
-    state VARCHAR(100),
-    zipcode VARCHAR(20),
-    street_name VARCHAR(255),
-    suburb VARCHAR(100),
-    location_confidence DECIMAL(3,2),
+    latitude DECIMAL(10, 8),
+    longitude DECIMAL(11, 8),
 
     -- Verification fields
     email_verified BOOLEAN DEFAULT FALSE,
@@ -57,8 +49,6 @@ CREATE INDEX IF NOT EXISTS idx_users_student_phone ON users(student_phone);
 CREATE INDEX IF NOT EXISTS idx_users_parent_phone ON users(parent_phone);
 CREATE INDEX IF NOT EXISTS idx_users_birth_date ON users(birth_date);
 CREATE INDEX IF NOT EXISTS idx_users_location ON users(latitude, longitude);
-CREATE INDEX IF NOT EXISTS idx_users_location_fields ON users(country, city, state);
-CREATE INDEX IF NOT EXISTS idx_users_coordinates ON users(latitude, longitude);
 
 -- Create trigger to update updated_at timestamp
 CREATE OR REPLACE FUNCTION update_updated_at_column()
@@ -74,3 +64,11 @@ CREATE TRIGGER update_users_updated_at
     BEFORE UPDATE ON users
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
+
+-- Note: This migration includes all location fields for Iraq
+-- - governorate: المحافظة (e.g., بغداد, البصرة, الموصل)
+-- - city: المدينة (e.g., بغداد, البصرة, أربيل)
+-- - district: الناحية/الحي (e.g., الكرخ, الرصافة, الأعظمية)
+-- - street: الشارع (اختياري)
+-- - country_code: رمز الدولة (افتراضي: IQ للعراق)
+-- - postcode: الرمز البريدي (اختياري)
