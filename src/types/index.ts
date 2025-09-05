@@ -150,6 +150,14 @@ export interface StudentCourse {
   updatedAt: Date;
 }
 
+// Extended Request type for authentication
+export interface AuthenticatedRequest {
+  user?: {
+    id: string;
+    userType: UserType;
+  };
+}
+
 export interface CreateStudentCourseRequest {
   studentId: string;
   courseId: string;
@@ -412,6 +420,10 @@ export interface UpdateTeacherSubscriptionRequest {
   deletedAt?: Date;
 }
 
+// =====================================================
+// Course Booking System Types
+// =====================================================
+
 // Course Booking types
 export interface CourseBooking {
   id: string;
@@ -447,8 +459,111 @@ export interface UpdateCourseBookingRequest {
   teacherResponse?: string;
 }
 
-export interface CourseBookingWithDetails extends CourseBooking {
+// =====================================================
+// Course Enrollment System Types
+// =====================================================
+
+// Enrollment Request Status
+export enum EnrollmentRequestStatus {
+  PENDING = 'pending',
+  APPROVED = 'approved',
+  REJECTED = 'rejected',
+  EXPIRED = 'expired'
+}
+
+// Enrollment Status
+export enum EnrollmentStatus {
+  ACTIVE = 'active',
+  COMPLETED = 'completed',
+  CANCELLED = 'cancelled',
+  EXPIRED = 'expired',
+  SUSPENDED = 'suspended'
+}
+
+// Invoice Status
+export enum InvoiceStatus {
+  PENDING = 'pending',
+  PARTIAL = 'partial',
+  PAID = 'paid',
+  OVERDUE = 'overdue',
+  CANCELLED = 'cancelled'
+}
+
+// Invoice Type
+export enum InvoiceType {
+  RESERVATION = 'reservation',
+  COURSE = 'course',
+  INSTALLMENT = 'installment',
+  PENALTY = 'penalty'
+}
+
+// Installment Status
+export enum InstallmentStatus {
+  PENDING = 'pending',
+  PARTIAL = 'partial',
+  PAID = 'paid',
+  OVERDUE = 'overdue'
+}
+
+// Payment Method
+export enum PaymentMethod {
+  CASH = 'cash',
+  BANK_TRANSFER = 'bank_transfer',
+  CREDIT_CARD = 'credit_card',
+  MOBILE_PAYMENT = 'mobile_payment'
+}
+
+// Course Enrollment Request
+export interface CourseEnrollmentRequest {
+  id: string;
+  studentId: string;
+  teacherId: string;
+  courseId: string;
+  studyYear: string;
+  requestStatus: EnrollmentRequestStatus;
+  studentMessage?: string;
+  teacherResponse?: string;
+  requestedAt: Date;
+  respondedAt?: Date;
+  expiresAt: Date;
+  createdAt: Date;
+  updatedAt: Date;
+  deletedAt?: Date;
+}
+
+export interface CreateEnrollmentRequestRequest {
+  courseId: string;
+  studyYear: string;
+  studentMessage?: string;
+}
+
+export interface UpdateEnrollmentRequestRequest {
+  requestStatus?: EnrollmentRequestStatus;
+  teacherResponse?: string;
+}
+
+export interface EnrollmentRequestResponse {
+  id: string;
+  studentId: string;
+  teacherId: string;
+  courseId: string;
+  studyYear: string;
+  requestStatus: EnrollmentRequestStatus;
+  studentMessage?: string;
+  teacherResponse?: string;
+  requestedAt: Date;
+  respondedAt?: Date;
+  expiresAt: Date;
+  createdAt: Date;
+  updatedAt: Date;
+
+  // Related data
   student: {
+    id: string;
+    name: string;
+    email: string;
+  };
+  teacher: {
     id: string;
     name: string;
     email: string;
@@ -463,10 +578,251 @@ export interface CourseBookingWithDetails extends CourseBooking {
     price: number;
     seatsCount: number;
   };
+}
+
+// Student Course Enrollment
+export interface StudentCourseEnrollment {
+  id: string;
+  enrollmentRequestId: string;
+  studentId: string;
+  teacherId: string;
+  courseId: string;
+  teacherSubscriptionId: string;
+  studyYear: string;
+  enrollmentStatus: EnrollmentStatus;
+  enrollmentDate: Date;
+  courseStartDate: string;
+  courseEndDate: string;
+  totalCourseAmount: number;
+  reservationAmount: number;
+  remainingAmount: number;
+  createdAt: Date;
+  updatedAt: Date;
+  deletedAt?: Date;
+}
+
+export interface CreateEnrollmentRequest {
+  enrollmentRequestId: string;
+  courseStartDate: string;
+  courseEndDate: string;
+  totalCourseAmount: number;
+  reservationAmount?: number;
+}
+
+export interface UpdateEnrollmentRequest {
+  enrollmentStatus?: EnrollmentStatus;
+  courseStartDate?: string;
+  courseEndDate?: string;
+  totalCourseAmount?: number;
+  reservationAmount?: number;
+}
+
+export interface EnrollmentResponse {
+  id: string;
+  enrollmentRequestId: string;
+  studentId: string;
+  teacherId: string;
+  courseId: string;
+  teacherSubscriptionId: string;
+  studyYear: string;
+  enrollmentStatus: EnrollmentStatus;
+  enrollmentDate: Date;
+  courseStartDate: string;
+  courseEndDate: string;
+  totalCourseAmount: number;
+  reservationAmount: number;
+  remainingAmount: number;
+  createdAt: Date;
+  updatedAt: Date;
+
+  // Related data
+  student: {
+    id: string;
+    name: string;
+    email: string;
+  };
   teacher: {
     id: string;
     name: string;
     email: string;
   };
+  course: {
+    id: string;
+    courseName: string;
+    price: number;
+    startDate: string;
+    endDate: string;
+  };
+  subscription: {
+    id: string;
+    packageName: string;
+    maxStudents: number;
+  };
+}
+
+// Course Invoice
+export interface CourseInvoice {
+  id: string;
+  enrollmentId: string;
+  studentId: string;
+  teacherId: string;
+  courseId: string;
+  invoiceNumber: string;
+  invoiceType: InvoiceType;
+  amountDue: number;
+  amountPaid: number;
+  amountRemaining: number;
+  invoiceStatus: InvoiceStatus;
+  invoiceDate: Date;
+  dueDate: Date;
+  paidDate?: Date;
+  notes?: string;
+  createdAt: Date;
+  updatedAt: Date;
+  deletedAt?: Date;
+}
+
+export interface CreateInvoiceRequest {
+  enrollmentId: string;
+  invoiceType: InvoiceType;
+  amountDue: number;
+  dueDate: string;
+  notes?: string;
+}
+
+export interface UpdateInvoiceRequest {
+  amountPaid?: number;
+  dueDate?: string;
+  notes?: string;
+}
+
+export interface InvoiceResponse {
+  id: string;
+  enrollmentId: string;
+  studentId: string;
+  teacherId: string;
+  courseId: string;
+  invoiceNumber: string;
+  invoiceType: InvoiceType;
+  amountDue: number;
+  amountPaid: number;
+  amountRemaining: number;
+  invoiceStatus: InvoiceStatus;
+  invoiceDate: Date;
+  dueDate: Date;
+  paidDate?: Date;
+  notes?: string;
+  createdAt: Date;
+  updatedAt: Date;
+
+  // Related data
+  student: {
+    id: string;
+    name: string;
+    email: string;
+  };
+  teacher: {
+    id: string;
+    name: string;
+    email: string;
+  };
+  course: {
+    id: string;
+    courseName: string;
+    price: number;
+  };
+  installments?: PaymentInstallment[];
+}
+
+// Payment Installment
+export interface PaymentInstallment {
+  id: string;
+  invoiceId: string;
+  installmentNumber: number;
+  installmentAmount: number;
+  amountPaid: number;
+  dueDate: string;
+  paidDate?: string;
+  installmentStatus: InstallmentStatus;
+  paymentMethod?: PaymentMethod;
+  paymentNotes?: string;
+  createdAt: Date;
+  updatedAt: Date;
+  deletedAt?: Date;
+}
+
+export interface CreateInstallmentRequest {
+  invoiceId: string;
+  installmentNumber: number;
+  installmentAmount: number;
+  dueDate: string;
+}
+
+export interface UpdateInstallmentRequest {
+  amountPaid?: number;
+  dueDate?: string;
+  paymentMethod?: PaymentMethod;
+  paymentNotes?: string;
+}
+
+export interface InstallmentResponse {
+  id: string;
+  invoiceId: string;
+  installmentNumber: number;
+  installmentAmount: number;
+  amountPaid: number;
+  dueDate: string;
+  paidDate?: string;
+  installmentStatus: InstallmentStatus;
+  paymentMethod?: PaymentMethod;
+  paymentNotes?: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+// Teacher Dashboard Data
+export interface TeacherDashboardData {
+  totalStudents: number;
+  maxStudentsAllowed: number;
+  canAddMoreStudents: boolean;
+  activeEnrollments: number;
+  pendingRequests: number;
+  totalRevenue: number;
+  pendingPayments: number;
+  recentEnrollments: EnrollmentResponse[];
+  recentInvoices: InvoiceResponse[];
+}
+
+// Student Dashboard Data
+export interface StudentDashboardData {
+  totalEnrollments: number;
+  activeEnrollments: number;
+  completedEnrollments: number;
+  pendingRequests: number;
+  totalSpent: number;
+  pendingPayments: number;
+  recentEnrollments: EnrollmentResponse[];
+  recentInvoices: InvoiceResponse[];
+}
+
+// Bulk Operations
+export interface BulkInvoiceCreationRequest {
+  enrollmentIds: string[];
+  invoiceType: InvoiceType;
+  amountDue: number;
+  dueDate: string;
+  notes?: string;
+  installments?: {
+    installmentNumber: number;
+    installmentAmount: number;
+    dueDate: string;
+  }[];
+}
+
+export interface BulkInvoiceCreationResponse {
+  success: boolean;
+  createdInvoices: InvoiceResponse[];
+  errors: string[];
+}
 }
 
