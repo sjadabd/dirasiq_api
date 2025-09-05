@@ -97,7 +97,87 @@ export const Messages = {
     GRADE_REQUIRED: 'المرحلة الدراسية مطلوبة',
     SUBJECT_REQUIRED: 'المادة الدراسية مطلوبة',
     START_DATE_REQUIRED: 'تاريخ البداية مطلوب',
-    END_DATE_REQUIRED: 'تاريخ النهاية مطلوب',
+    END_DATE_REQUIRED: 'تاريخ النهاية مطلوبة'
+  },
+
+  COURSE_BOOKING: {
+    CREATED: 'تم إنشاء حجز الكورس بنجاح',
+    UPDATED: 'تم تحديث حجز الكورس بنجاح',
+    DELETED: 'تم حذف حجز الكورس بنجاح',
+    NOT_FOUND: 'حجز الكورس غير موجود',
+    ALREADY_EXISTS: 'لديك حجز موجود لهذا الكورس بالفعل',
+    ALREADY_EXISTS_DETAILED: 'لديك حجز موجود لهذا الكورس بالفعل. لا يمكنك إنشاء حجز جديد لنفس الكورس',
+    CANNOT_REACTIVATE: 'لا يمكن إعادة تفعيل هذا الحجز',
+    REACTIVATED: 'تم إعادة تفعيل الحجز بنجاح',
+    CANCELLED: 'تم إلغاء الحجز بنجاح',
+    APPROVED: 'تمت الموافقة على الحجز بنجاح',
+    REJECTED: 'تم رفض الحجز بنجاح',
+    STATUS_UPDATED: 'تم تحديث حالة الحجز بنجاح',
+
+    // Error messages
+    COURSE_NOT_FOUND: 'الكورس غير موجود',
+    COURSE_ENDED: 'الكورس انتهى بالفعل',
+    COURSE_NOT_AVAILABLE: 'الكورس غير متاح',
+    ACCESS_DENIED: 'غير مصرح لك بالوصول لهذا الحجز',
+    INVALID_STATUS_FOR_REACTIVATION: 'حالة الحجز لا تسمح بإعادة التفعيل',
+    CANNOT_REACTIVATE_TEACHER_CANCELLED: 'لا يمكن إعادة تفعيل الحجوزات الملغية من المعلم',
+    CANNOT_REACTIVATE_REJECTED: 'لا يمكن إعادة تفعيل الحجوزات المرفوضة',
+    ALREADY_ACTIVE: 'الحجز نشط بالفعل',
+    ALREADY_APPROVED: 'الحجز مقبول بالفعل',
+
+    // Success messages with details
+    REACTIVATED_WITH_WARNING: 'تم إعادة تفعيل الحجز بنجاح مع ملاحظة مهمة',
+    REACTIVATED_COURSE_ENDED: 'تم إعادة تفعيل الحجز لكورس منتهي',
+
+    // Suggestions
+    SUGGESTION_CREATE_NEW: 'يرجى إنشاء حجز جديد بدلاً من ذلك',
+    SUGGESTION_CONTACT_TEACHER: 'يرجى التواصل مع المعلم لترتيب مواعيد جديدة أو كورسات بديلة',
+    SUGGESTION_CHECK_STATUS: 'لا حاجة لإعادة التفعيل، الحجز قيد المراجعة من المعلم',
+    SUGGESTION_SEARCH_NEW_COURSES: 'يمكنك البحث عن كورسات جديدة متاحة أو إنشاء حجز جديد',
+    SUGGESTION_EXISTING_BOOKING: 'لديك حجز موجود لهذا الكورس. يمكنك عرض حجزك الحالي أو التواصل مع المعلم لإعادة تفعيله',
+    SUGGESTION_VIEW_EXISTING: 'يرجى عرض حجزك الحالي أولاً، ثم التواصل مع المعلم إذا كنت تريد إعادة تفعيله',
+
+    // Actions
+    ACTION_CREATE_NEW_BOOKING: 'create_new_booking',
+    ACTION_CONTACT_TEACHER: 'contact_teacher',
+    ACTION_CHECK_STATUS: 'check_current_status',
+    ACTION_CHECK_BOOKING_STATUS: 'check_booking_status',
+    ACTION_VIEW_EXISTING_BOOKING: 'view_existing_booking',
+    ACTION_REACTIVATE_BOOKING: 'reactivate_booking',
+
+    // Validation messages
+    COURSE_ID_REQUIRED: 'معرف الكورس مطلوب',
+    STUDY_YEAR_REQUIRED: 'السنة الدراسية مطلوبة',
+    STUDENT_MESSAGE_OPTIONAL: 'رسالة الطالب اختيارية',
+    REASON_REQUIRED: 'سبب الإلغاء مطلوب',
+    REJECTION_REASON_REQUIRED: 'سبب الرفض مطلوب',
+    TEACHER_RESPONSE_OPTIONAL: 'رد المعلم مطلوب',
+
+    // Pagination and listing
+    RETRIEVED_SUCCESSFULLY: 'تم جلب الحجوزات بنجاح',
+    STATS_RETRIEVED: 'تم جلب إحصائيات الحجوزات بنجاح',
+
+    // Reactivation info
+    CAN_REACTIVATE: 'يمكنك إعادة تفعيل هذا الحجز',
+    CANNOT_REACTIVATE_TEACHER: 'لا يمكن إعادة تفعيل هذا الحجز لأنه تم إلغاؤه من قبل المعلم',
+    REACTIVATION_NOTE: 'سيتم إعادة التفعيل حتى لو انتهى الكورس، مع إضافة ملاحظة للمعلم',
+    REACTIVATION_SAFE: true,
+    IS_REACTIVATED: 'تم إعادة تفعيل هذا الحجز من حالة الإلغاء',
+
+    // Course ended warnings
+    COURSE_ENDED_NOTE: 'تم إعادة تفعيل الحجز مع ملاحظة: الكورس انتهى، يرجى التواصل مع المعلم',
+    COURSE_ENDED_WARNING: true,
+    COURSE_ENDED_DETAILS: 'الكورس الذي تريد إعادة تفعيل الحجز له قد انتهى في تاريخ سابق',
+
+    // Enhanced error messages for existing bookings
+    EXISTING_BOOKING_INFO: 'لديك حجز موجود لهذا الكورس بالفعل',
+    EXISTING_BOOKING_ACTION: 'يرجى عرض حجزك الحالي أولاً، ثم التواصل مع المعلم إذا كنت تريد إعادة تفعيله',
+    EXISTING_BOOKING_SUGGESTION: 'لا يمكنك إنشاء حجز جديد لنفس الكورس. يمكنك عرض حجزك الحالي أو التواصل مع المعلم لإعادة تفعيله',
+    EXISTING_BOOKING_DETAILS: 'الحجز موجود في قاعدة البيانات. يرجى التحقق من حالته أولاً'
+  },
+
+  // Course-related messages
+  COURSE_EXTRA: {
     PRICE_REQUIRED: 'السعر مطلوب',
     SEATS_COUNT_REQUIRED: 'عدد المقاعد مطلوب',
     INVALID_DATE_RANGE: 'تاريخ النهاية يجب أن يكون بعد تاريخ البداية',
@@ -177,8 +257,10 @@ export const Messages = {
     INVALID_PAGE: 'رقم الصفحة غير صحيح',
     INVALID_LIMIT: 'عدد العناصر في الصفحة غير صحيح',
     INVALID_ID: 'معرف العنصر غير صحيح',
+    BOOKING_ID_REQUIRED: 'معرف الحجز مطلوب',
     SEARCH_QUERY_REQUIRED: 'نص البحث مطلوب',
     COURSE_ID_REQUIRED: 'معرف الكورس مطلوب',
+    STUDY_YEAR_REQUIRED: 'السنة الدراسية مطلوبة',
     COORDINATES_REQUIRED: 'الإحداثيات مطلوبة',
     LOCATION_REQUIRED: 'يجب تحديد موقع واحد على الأقل',
     INVALID_GOVERNORATE: 'المحافظة غير صحيحة',

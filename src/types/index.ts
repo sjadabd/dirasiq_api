@@ -18,6 +18,13 @@ export enum ReservationStatus {
   REFUNDED = 'refunded'
 }
 
+export enum BookingStatus {
+  PENDING = 'pending',
+  APPROVED = 'approved',
+  REJECTED = 'rejected',
+  CANCELLED = 'cancelled'
+}
+
 export enum Gender {
   MALE = 'male',
   FEMALE = 'female'
@@ -403,5 +410,63 @@ export interface UpdateTeacherSubscriptionRequest {
   endDate?: Date;
   isActive?: boolean;
   deletedAt?: Date;
+}
+
+// Course Booking types
+export interface CourseBooking {
+  id: string;
+  studentId: string;
+  courseId: string;
+  teacherId: string;
+  studyYear: string;
+  status: BookingStatus;
+  bookingDate: Date;
+  approvedAt?: Date;
+  rejectedAt?: Date;
+  cancelledAt?: Date;
+  rejectionReason?: string;
+  cancellationReason?: string;
+  studentMessage?: string;
+  teacherResponse?: string;
+  isDeleted: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+  cancelledBy?: 'student' | 'teacher';
+  reactivatedAt?: Date;
+}
+
+export interface CreateCourseBookingRequest {
+  courseId: string;
+  studentMessage?: string;
+}
+
+export interface UpdateCourseBookingRequest {
+  status?: BookingStatus;
+  rejectionReason?: string;
+  cancellationReason?: string;
+  teacherResponse?: string;
+}
+
+export interface CourseBookingWithDetails extends CourseBooking {
+  student: {
+    id: string;
+    name: string;
+    email: string;
+  };
+  course: {
+    id: string;
+    courseName: string;
+    courseImages: string[];
+    description?: string;
+    startDate: string;
+    endDate: string;
+    price: number;
+    seatsCount: number;
+  };
+  teacher: {
+    id: string;
+    name: string;
+    email: string;
+  };
 }
 
