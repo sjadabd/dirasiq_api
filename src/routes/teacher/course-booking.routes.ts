@@ -25,6 +25,9 @@ router.patch('/:id/response', TeacherCourseBookingController.updateTeacherRespon
 // Delete a booking (soft delete)
 router.delete('/:id', TeacherCourseBookingController.deleteBooking);
 
+// Reactivate a rejected booking
+router.patch('/:id/reactivate', TeacherCourseBookingController.reactivateBooking);
+
 // Get booking statistics
 router.get('/stats/summary', TeacherCourseBookingController.getBookingStats);
 

@@ -152,6 +152,104 @@ export class TeacherSubscriptionModel {
     }
   }
 
+  // زيادة عدد الطلاب الحاليين
+  static async incrementCurrentStudents(teacherId: string): Promise<boolean> {
+    const query = `
+      UPDATE teacher_subscriptions
+      SET current_students = current_students + 1, updated_at = CURRENT_TIMESTAMP
+      WHERE teacher_id = $1 AND is_active = true AND deleted_at IS NULL
+    `
+    const result = await pool.query(query, [teacherId])
+    return (result.rowCount || 0) > 0
+  }
+
+  // تقليل عدد الطلاب الحاليين
+  static async decrementCurrentStudents(teacherId: string): Promise<boolean> {
+    const query = `
+      UPDATE teacher_subscriptions
+      SET current_students = GREATEST(current_students - 1, 0), updated_at = CURRENT_TIMESTAMP
+      WHERE teacher_id = $1 AND is_active = true AND deleted_at IS NULL
+    `
+    const result = await pool.query(query, [teacherId])
+    return (result.rowCount || 0) > 0
+  }
+
+  // التحقق من إمكانية إضافة طالب جديد (التحقق من السعة)
+  static async canAddStudent(teacherId: string): Promise<{ canAdd: boolean; currentStudents: number; maxStudents: number; message?: string }> {
+    const query = `
+      SELECT
+        ts.current_students,
+        sp.max_students,
+        ts.end_date
+      FROM teacher_subscriptions ts
+      JOIN subscription_packages sp ON ts.subscription_package_id = sp.id
+      WHERE ts.teacher_id = $1 AND ts.is_active = true AND ts.deleted_at IS NULL
+    `
+
+    const result = await pool.query(query, [teacherId])
+
+    if (result.rows.length === 0) {
+      return {
+        canAdd: false,
+        currentStudents: 0,
+        maxStudents: 0,
+        message: 'لا يوجد اشتراك فعال للمعلم'
+      }
+    }
+
+    const subscription = result.rows[0]
+    const currentStudents = subscription.current_students || 0
+    const maxStudents = subscription.max_students
+    const endDate = new Date(subscription.end_date)
+
+    // التحقق من انتهاء صلاحية الاشتراك
+    if (endDate < new Date()) {
+      return {
+        canAdd: false,
+        currentStudents,
+        maxStudents,
+        message: 'انتهت صلاحية الاشتراك'
+      }
+    }
+
+    // التحقق من السعة
+    if (currentStudents >= maxStudents) {
+      return {
+        canAdd: false,
+        currentStudents,
+        maxStudents,
+        message: 'الباقة ممتلئة. لا يمكنك قبول طلاب إضافيين'
+      }
+    }
+
+    return {
+      canAdd: true,
+      currentStudents,
+      maxStudents
+    }
+  }
+
+  // إعادة حساب عدد الطلاب الحاليين من الحجوزات المعتمدة
+  static async recalculateCurrentStudents(teacherId: string): Promise<number> {
+    const query = `
+      UPDATE teacher_subscriptions
+      SET current_students = (
+        SELECT COUNT(*)
+        FROM course_bookings cb
+        WHERE cb.teacher_id = teacher_subscriptions.teacher_id
+        AND cb.status = 'approved'
+        AND cb.is_deleted = false
+        AND cb.created_at >= teacher_subscriptions.start_date
+        AND cb.created_at <= teacher_subscriptions.end_date
+      ), updated_at = CURRENT_TIMESTAMP
+      WHERE teacher_id = $1 AND is_active = true AND deleted_at IS NULL
+      RETURNING current_students
+    `
+
+    const result = await pool.query(query, [teacherId])
+    return result.rows.length > 0 ? result.rows[0].current_students : 0
+  }
+
   // محول من DB إلى واجهة TypeScript
   private static mapDbToModel(row: any): TeacherSubscription {
     return {
@@ -161,6 +259,7 @@ export class TeacherSubscriptionModel {
       startDate: row.start_date,
       endDate: row.end_date,
       isActive: row.is_active,
+      currentStudents: row.current_students || 0,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
       deletedAt: row.deleted_at ?? undefined,

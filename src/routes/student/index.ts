@@ -4,10 +4,8 @@ import courseRoutes from './course.routes';
 
 const router = Router();
 
-// تطبيق المسارات
-router.use('/', courseRoutes);
-
 // Student course booking routes
 router.use('/bookings', courseBookingRoutes);
+router.use('/courses', courseRoutes);
 
 export default router;

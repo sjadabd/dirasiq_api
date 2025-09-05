@@ -400,6 +400,7 @@ export interface TeacherSubscription {
   startDate: Date;
   endDate: Date;
   isActive: boolean;
+  currentStudents: number;
   createdAt: Date;
   updatedAt: Date;
   deletedAt?: Date;

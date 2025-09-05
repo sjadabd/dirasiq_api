@@ -6,7 +6,6 @@ import gradeRoutes from '@/routes/super_admin/grade.routes';
 import subscriptionPackageRoutes from '@/routes/super_admin/subscription-package.routes';
 import teacherRoutes from '@/routes/teacher';
 import teacherSearchRoutes from '@/routes/teacher-search.routes';
-import teacherCourseBookingRoutes from '@/routes/teacher/course-booking.routes';
 import courseRoutes from '@/routes/teacher/course.routes';
 import subjectRoutes from '@/routes/teacher/subject.routes';
 import { getMessage } from '@/utils/messages';
@@ -101,7 +100,6 @@ app.use('/api/grades', gradeRoutes);
 app.use('/api/courses', courseRoutes);
 app.use('/api/teacher-search', teacherSearchRoutes);
 app.use('/api/subscription-packages', subscriptionPackageRoutes);
-app.use('/api/teacher/bookings', teacherCourseBookingRoutes);
 
 // =====================================================
 // Course Enrollment System Routes

@@ -1,5 +1,7 @@
 import pool from '@/config/database';
 import { BookingStatus, CourseBooking, CourseBookingWithDetails, CreateCourseBookingRequest, UpdateCourseBookingRequest } from '@/types';
+import { BookingUsageLogModel } from './booking-usage-log.model';
+import { TeacherSubscriptionModel } from './teacher-subscription.model';
 
 export class CourseBookingModel {
   // Create new course booking
@@ -182,12 +184,43 @@ export class CourseBookingModel {
     try {
       await client.query('BEGIN');
 
-      // Verify the booking belongs to the teacher
-      const verifyQuery = 'SELECT id FROM course_bookings WHERE id = $1 AND teacher_id = $2 AND is_deleted = false';
+      // Verify the booking belongs to the teacher and get current status
+      const verifyQuery = `
+        SELECT id, status, teacher_id, student_id
+        FROM course_bookings
+        WHERE id = $1 AND teacher_id = $2 AND is_deleted = false
+      `;
       const verifyResult = await client.query(verifyQuery, [id, teacherId]);
 
       if (verifyResult.rows.length === 0) {
         throw new Error('Booking not found or access denied');
+      }
+
+      const currentBooking = verifyResult.rows[0];
+      const currentStatus = currentBooking.status;
+
+      // التحقق من وجود student_id
+      if (!currentBooking.student_id) {
+        throw new Error('Student ID not found in booking');
+      }
+
+      // منع التلاعب: منع تغيير status إلى approved إذا كان بالفعل approved
+      if (data.status === BookingStatus.APPROVED) {
+        if (currentStatus === BookingStatus.APPROVED) {
+          throw new Error('الحجز معتمد بالفعل');
+        }
+        // ملاحظة: تم إزالة منع قبول الحجوزات المرفوضة لصالح مسار إعادة التفعيل
+
+        // التحقق من السعة قبل القبول
+        const capacityCheck = await TeacherSubscriptionModel.canAddStudent(teacherId);
+        if (!capacityCheck.canAdd) {
+          throw new Error(capacityCheck.message || 'لا يمكن قبول الحجز');
+        }
+      }
+
+      // منع تغيير status إلى rejected إذا كان بالفعل rejected
+      if (data.status === BookingStatus.REJECTED && currentStatus === BookingStatus.REJECTED) {
+        throw new Error('الحجز مرفوض بالفعل');
       }
 
       let updateFields: string[] = [];
@@ -252,6 +285,81 @@ export class CourseBookingModel {
       `;
 
       const result = await client.query(query, values);
+
+      // تحديث عدد الطلاب الحاليين في الاشتراك وتسجيل الاستخدام
+      if (data.status === BookingStatus.APPROVED && currentStatus !== BookingStatus.APPROVED) {
+        // قبول حجز جديد - زيادة العدد
+        const capacityCheck = await TeacherSubscriptionModel.canAddStudent(teacherId);
+        await TeacherSubscriptionModel.incrementCurrentStudents(teacherId);
+
+        // تسجيل الاستخدام
+        await this.logBookingUsage(
+          id,
+          teacherId,
+          currentBooking.student_id,
+          capacityCheck.currentStudents,
+          capacityCheck.currentStudents + 1,
+          'approved',
+          currentStatus,
+          data.status,
+          'teacher',
+          data.teacherResponse
+        );
+      } else if (data.status === BookingStatus.REJECTED && currentStatus === BookingStatus.APPROVED) {
+        // رفض حجز كان معتمدًا - تقليل العدد
+        const capacityCheck = await TeacherSubscriptionModel.canAddStudent(teacherId);
+        await TeacherSubscriptionModel.decrementCurrentStudents(teacherId);
+
+        // تسجيل الاستخدام
+        await this.logBookingUsage(
+          id,
+          teacherId,
+          currentBooking.student_id,
+          capacityCheck.currentStudents,
+          capacityCheck.currentStudents - 1,
+          'rejected',
+          currentStatus,
+          data.status,
+          'teacher',
+          data.rejectionReason
+        );
+      } else if (data.status === BookingStatus.CANCELLED && currentStatus === BookingStatus.APPROVED) {
+        // إلغاء حجز كان معتمدًا - تقليل العدد
+        const capacityCheck = await TeacherSubscriptionModel.canAddStudent(teacherId);
+        await TeacherSubscriptionModel.decrementCurrentStudents(teacherId);
+
+        // تسجيل الاستخدام
+        await this.logBookingUsage(
+          id,
+          teacherId,
+          currentBooking.student_id,
+          capacityCheck.currentStudents,
+          capacityCheck.currentStudents - 1,
+          'cancelled',
+          currentStatus,
+          data.status,
+          'teacher',
+          data.cancellationReason
+        );
+      } else if (data.status === BookingStatus.REJECTED && currentStatus !== BookingStatus.REJECTED) {
+        // رفض حجز جديد (لم يكن معتمدًا)
+        const capacityCheck = await TeacherSubscriptionModel.canAddStudent(teacherId);
+
+        // تسجيل الاستخدام
+        await this.logBookingUsage(
+          id,
+          teacherId,
+          currentBooking.student_id,
+          capacityCheck.currentStudents,
+          capacityCheck.currentStudents,
+          'rejected',
+          currentStatus,
+          data.status,
+          'teacher',
+          data.rejectionReason
+        );
+      }
+
       await client.query('COMMIT');
 
       return this.mapDatabaseBookingToBooking(result.rows[0]);
@@ -269,20 +377,62 @@ export class CourseBookingModel {
     studentId: string,
     reason?: string
   ): Promise<CourseBooking> {
-    const query = `
-      UPDATE course_bookings
-      SET status = $1, cancelled_at = $2, cancellation_reason = $3, updated_at = $2, cancelled_by = 'student'
-      WHERE id = $4 AND student_id = $5 AND is_deleted = false
-      RETURNING *
-    `;
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
 
-    const result = await pool.query(query, [BookingStatus.CANCELLED, new Date(), reason, id, studentId]);
+      // Get current booking status and teacher_id
+      const getBookingQuery = `
+        SELECT status, teacher_id
+        FROM course_bookings
+        WHERE id = $1 AND student_id = $2 AND is_deleted = false
+      `;
+      const bookingResult = await client.query(getBookingQuery, [id, studentId]);
 
-    if (result.rows.length === 0) {
-      throw new Error('Booking not found or access denied');
+      if (bookingResult.rows.length === 0) {
+        throw new Error('Booking not found or access denied');
+      }
+
+      const currentStatus = bookingResult.rows[0].status;
+      const teacherId = bookingResult.rows[0].teacher_id;
+
+      const query = `
+        UPDATE course_bookings
+        SET status = $1, cancelled_at = $2, cancellation_reason = $3, updated_at = $2, cancelled_by = 'student'
+        WHERE id = $4 AND student_id = $5 AND is_deleted = false
+        RETURNING *
+      `;
+
+      const result = await client.query(query, [BookingStatus.CANCELLED, new Date(), reason, id, studentId]);
+
+      // تحديث عدد الطلاب الحاليين إذا كان الحجز معتمدًا وتسجيل الاستخدام
+      if (currentStatus === BookingStatus.APPROVED) {
+        const capacityCheck = await TeacherSubscriptionModel.canAddStudent(teacherId);
+        await TeacherSubscriptionModel.decrementCurrentStudents(teacherId);
+
+        // تسجيل الاستخدام
+        await this.logBookingUsage(
+          id,
+          teacherId,
+          studentId,
+          capacityCheck.currentStudents,
+          capacityCheck.currentStudents - 1,
+          'cancelled',
+          currentStatus,
+          BookingStatus.CANCELLED,
+          'student',
+          reason
+        );
+      }
+
+      await client.query('COMMIT');
+      return this.mapDatabaseBookingToBooking(result.rows[0]);
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
     }
-
-    return this.mapDatabaseBookingToBooking(result.rows[0]);
   }
 
   // Cancel booking (for teacher)
@@ -291,20 +441,61 @@ export class CourseBookingModel {
     teacherId: string,
     reason?: string
   ): Promise<CourseBooking> {
-    const query = `
-      UPDATE course_bookings
-      SET status = $1, cancelled_at = $2, cancellation_reason = $3, updated_at = $2, cancelled_by = 'teacher'
-      WHERE id = $4 AND teacher_id = $5 AND is_deleted = false
-      RETURNING *
-    `;
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
 
-    const result = await pool.query(query, [BookingStatus.CANCELLED, new Date(), reason, id, teacherId]);
+      // Get current booking status
+      const getBookingQuery = `
+        SELECT status
+        FROM course_bookings
+        WHERE id = $1 AND teacher_id = $2 AND is_deleted = false
+      `;
+      const bookingResult = await client.query(getBookingQuery, [id, teacherId]);
 
-    if (result.rows.length === 0) {
-      throw new Error('Booking not found or access denied');
+      if (bookingResult.rows.length === 0) {
+        throw new Error('Booking not found or access denied');
+      }
+
+      const currentStatus = bookingResult.rows[0].status;
+
+      const query = `
+        UPDATE course_bookings
+        SET status = $1, cancelled_at = $2, cancellation_reason = $3, updated_at = $2, cancelled_by = 'teacher'
+        WHERE id = $4 AND teacher_id = $5 AND is_deleted = false
+        RETURNING *
+      `;
+
+      const result = await client.query(query, [BookingStatus.CANCELLED, new Date(), reason, id, teacherId]);
+
+      // تحديث عدد الطلاب الحاليين إذا كان الحجز معتمدًا وتسجيل الاستخدام
+      if (currentStatus === BookingStatus.APPROVED) {
+        const capacityCheck = await TeacherSubscriptionModel.canAddStudent(teacherId);
+        await TeacherSubscriptionModel.decrementCurrentStudents(teacherId);
+
+        // تسجيل الاستخدام
+        await this.logBookingUsage(
+          id,
+          teacherId,
+          result.rows[0].student_id,
+          capacityCheck.currentStudents,
+          capacityCheck.currentStudents - 1,
+          'cancelled',
+          currentStatus,
+          BookingStatus.CANCELLED,
+          'teacher',
+          reason
+        );
+      }
+
+      await client.query('COMMIT');
+      return this.mapDatabaseBookingToBooking(result.rows[0]);
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
     }
-
-    return this.mapDatabaseBookingToBooking(result.rows[0]);
   }
 
   // Reactivate cancelled booking (for student)
@@ -375,6 +566,12 @@ export class CourseBookingModel {
       if (courseEndDate < new Date()) {
         // Instead of throwing error, we'll reactivate with a note
         console.log('Course has ended, but allowing reactivation for student convenience');
+      }
+
+      // التحقق من السعة قبل إعادة التفعيل
+      const capacityCheck = await TeacherSubscriptionModel.canAddStudent(booking.teacher_id);
+      if (!capacityCheck.canAdd) {
+        throw new Error(capacityCheck.message || 'لا يمكن إعادة تفعيل الحجز - الباقة ممتلئة');
       }
 
       // Reactivate the booking
@@ -502,5 +699,50 @@ export class CourseBookingModel {
         email: row.teacher_email
       }
     };
+  }
+
+  // دالة مساعدة لتسجيل استخدام الحجز
+  private static async logBookingUsage(
+    bookingId: string,
+    teacherId: string,
+    studentId: string,
+    studentsBefore: number,
+    studentsAfter: number,
+    actionType: 'approved' | 'rejected' | 'cancelled' | 'reactivated',
+    previousStatus: string,
+    newStatus: string,
+    performedBy: 'teacher' | 'student' | 'system',
+    reason?: string
+  ): Promise<void> {
+    try {
+      // جلب teacher_subscription_id
+      const subscriptionQuery = `
+        SELECT id FROM teacher_subscriptions
+        WHERE teacher_id = $1 AND is_active = true AND deleted_at IS NULL
+        LIMIT 1
+      `;
+      const subscriptionResult = await pool.query(subscriptionQuery, [teacherId]);
+
+      if (subscriptionResult.rows.length > 0) {
+        const teacherSubscriptionId = subscriptionResult.rows[0].id;
+
+        await BookingUsageLogModel.create({
+          bookingId,
+          teacherId,
+          studentId,
+          teacherSubscriptionId,
+          actionType,
+          previousStatus,
+          newStatus,
+          studentsBefore,
+          studentsAfter,
+          reason: reason || undefined,
+          performedBy
+        });
+      }
+    } catch (error) {
+      // لا نريد أن يفشل تسجيل الاستخدام العملية الرئيسية
+      console.error('Error logging booking usage:', error);
+    }
   }
 }
