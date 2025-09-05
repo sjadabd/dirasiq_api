@@ -90,6 +90,26 @@ export interface LoginRequest {
   password: string;
 }
 
+export interface GoogleAuthRequest {
+  googleData: {
+    iss: string;
+    azp: string;
+    aud: string;
+    sub: string;
+    email: string;
+    email_verified: boolean;
+    nbf: number;
+    name: string;
+    picture: string;
+    given_name: string;
+    family_name: string;
+    iat: number;
+    exp: number;
+    jti: string;
+  };
+  userType: 'teacher' | 'student';
+}
+
 export interface RegisterTeacherRequest {
   name: string;
   email: string;

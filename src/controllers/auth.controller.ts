@@ -1,4 +1,5 @@
 import { AuthService } from '@/services/auth.service';
+import { GoogleAuthService } from '@/services/google-auth.service';
 import { SubscriptionPackageService } from '@/services/super_admin/subscription-package.service';
 import { TeacherSubscriptionService } from '@/services/teacher-subscription.service';
 import { getMessage } from '@/utils/messages';
@@ -501,6 +502,155 @@ export class AuthController {
       }
     } catch (error) {
       console.error('Error in requestPasswordReset controller:', error);
+      res.status(500).json({
+        success: false,
+        message: getMessage('SERVER.INTERNAL_ERROR'),
+        errors: [getMessage('SERVER.SOMETHING_WENT_WRONG')]
+      });
+    }
+  }
+
+  // Google OAuth authentication
+  static async googleAuth(req: Request, res: Response): Promise<void> {
+    try {
+      // Validate request body
+      await Promise.all([
+        body('googleToken').optional().isString().withMessage('Google token must be a string').run(req),
+        body('googleData').optional().isObject().withMessage('Google data is required').run(req),
+        body('userType').isIn(['teacher', 'student']).withMessage('User type must be teacher or student').run(req)
+      ]);
+
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        res.status(400).json({
+          success: false,
+          message: getMessage('VALIDATION.VALIDATION_FAILED'),
+          errors: errors.array().map(err => err.msg)
+        });
+        return;
+      }
+
+      const { googleToken, googleData, userType } = req.body;
+
+      let verifiedGoogleData;
+
+      // Method 1: Verify Google JWT token (recommended)
+      if (googleToken) {
+        const verification = await GoogleAuthService.verifyGoogleToken(googleToken);
+
+        if (!verification.success) {
+          res.status(400).json({
+            success: false,
+            message: 'فشل في التحقق من بيانات Google',
+            errors: [verification.error || 'Invalid Google token']
+          });
+          return;
+        }
+
+        verifiedGoogleData = verification.data;
+      }
+      // Method 2: Validate provided Google data (fallback)
+      else if (googleData) {
+        const validation = await GoogleAuthService.verifyGoogleDataWithSecurity(googleData);
+
+        if (!validation.success) {
+          res.status(400).json({
+            success: false,
+            message: 'بيانات Google غير صحيحة',
+            errors: validation.errors
+          });
+          return;
+        }
+
+        verifiedGoogleData = validation.data;
+      }
+      else {
+        res.status(400).json({
+          success: false,
+          message: 'مطلوب إما Google token أو Google data',
+          errors: ['Either googleToken or googleData is required']
+        });
+        return;
+      }
+
+      // Validate required fields
+      if (!verifiedGoogleData.email || !verifiedGoogleData.name || !verifiedGoogleData.sub) {
+        res.status(400).json({
+          success: false,
+          message: 'بيانات Google ناقصة',
+          errors: ['Missing required Google data fields']
+        });
+        return;
+      }
+
+      const result = await AuthService.googleAuth(verifiedGoogleData, userType);
+
+      if (result.success) {
+        res.status(200).json(result);
+      } else {
+        res.status(400).json(result);
+      }
+    } catch (error) {
+      console.error('Error in googleAuth controller:', error);
+      res.status(500).json({
+        success: false,
+        message: getMessage('SERVER.INTERNAL_ERROR'),
+        errors: [getMessage('SERVER.SOMETHING_WENT_WRONG')]
+      });
+    }
+  }
+
+  // Complete profile for Google OAuth users
+  static async completeProfile(req: Request, res: Response): Promise<void> {
+    try {
+      const userId = req.user?.id;
+      if (!userId) {
+        res.status(401).json({ error: 'Unauthorized' });
+        return;
+      }
+
+      const userType = req.user?.userType;
+      if (!userType) {
+        res.status(401).json({ error: 'User type not found' });
+        return;
+      }
+
+      // Validate based on user type
+      if (userType === 'teacher') {
+        await Promise.all([
+          body('phone').notEmpty().withMessage(getMessage('VALIDATION.PHONE_REQUIRED')).run(req),
+          body('address').notEmpty().withMessage(getMessage('VALIDATION.ADDRESS_REQUIRED')).run(req),
+          body('bio').notEmpty().withMessage(getMessage('VALIDATION.BIO_REQUIRED')).run(req),
+          body('experienceYears').isInt({ min: 0 }).withMessage(getMessage('VALIDATION.EXPERIENCE_YEARS_REQUIRED')).run(req),
+          body('gradeIds').isArray({ min: 1 }).withMessage(getMessage('STUDENT.GRADE_ID_REQUIRED')).run(req),
+          body('studyYear').notEmpty().withMessage(getMessage('STUDENT.STUDY_YEAR_REQUIRED')).run(req)
+        ]);
+      } else if (userType === 'student') {
+        await Promise.all([
+          body('gradeId').notEmpty().withMessage(getMessage('STUDENT.GRADE_ID_REQUIRED')).run(req),
+          body('studyYear').notEmpty().withMessage(getMessage('STUDENT.STUDY_YEAR_REQUIRED')).run(req)
+        ]);
+      }
+
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        res.status(400).json({
+          success: false,
+          message: getMessage('VALIDATION.VALIDATION_FAILED'),
+          errors: errors.array().map(err => err.msg)
+        });
+        return;
+      }
+
+      const result = await AuthService.completeProfile(userId, userType, req.body);
+
+      if (result.success) {
+        res.status(200).json(result);
+      } else {
+        res.status(400).json(result);
+      }
+    } catch (error) {
+      console.error('Error in completeProfile controller:', error);
       res.status(500).json({
         success: false,
         message: getMessage('SERVER.INTERNAL_ERROR'),

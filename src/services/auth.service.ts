@@ -293,6 +293,9 @@ export class AuthService {
         };
       }
 
+      // Check if profile is complete
+      const isProfileComplete = this.isProfileComplete(user);
+
       // Generate token
       const token = await this.generateToken(user);
 
@@ -301,7 +304,9 @@ export class AuthService {
         message: getMessage('AUTH.LOGIN_SUCCESS'),
         data: {
           user: this.sanitizeUser(user),
-          token
+          token,
+          isProfileComplete: isProfileComplete,
+          requiresProfileCompletion: !isProfileComplete
         }
       };
     } catch (error) {
@@ -496,6 +501,251 @@ export class AuthService {
     await TokenModel.create(user.id, token, tomorrow);
 
     return token;
+  }
+
+  // Check if user profile is complete
+  private static isProfileComplete(user: User): boolean {
+    if (user.userType === UserType.TEACHER) {
+      // Check required teacher fields
+      return !!(
+        user.phone &&
+        user.phone.trim() !== '' &&
+        user.address &&
+        user.address.trim() !== '' &&
+        user.bio &&
+        user.bio.trim() !== '' &&
+        user.experienceYears !== null &&
+        user.experienceYears !== undefined
+      );
+    } else if (user.userType === UserType.STUDENT) {
+      // Check required student fields
+      return !!(
+        user.studentPhone &&
+        user.studentPhone.trim() !== '' &&
+        user.parentPhone &&
+        user.parentPhone.trim() !== '' &&
+        user.schoolName &&
+        user.schoolName.trim() !== ''
+      );
+    }
+    return false;
+  }
+
+  // Google OAuth authentication
+  static async googleAuth(googleData: any, userType: 'teacher' | 'student'): Promise<ApiResponse> {
+    try {
+      const { email, name, sub } = googleData;
+
+      // Check if user already exists
+      const existingUser = await UserModel.findByEmail(email);
+
+      if (existingUser) {
+        // User exists, check if user type matches
+        if (existingUser.userType !== (userType === 'teacher' ? UserType.TEACHER : UserType.STUDENT)) {
+          return {
+            success: false,
+            message: 'نوع المستخدم لا يتطابق مع الحساب الموجود',
+            errors: ['User type mismatch with existing account']
+          };
+        }
+
+        // Check if profile is complete
+        const isProfileComplete = this.isProfileComplete(existingUser);
+
+        // Generate JWT token for existing user
+        const token = jwt.sign(
+          {
+            userId: existingUser.id,
+            userType: existingUser.userType,
+            email: existingUser.email
+          },
+          process.env['JWT_SECRET'] || 'fallback-secret',
+          { expiresIn: '7d' }
+        );
+
+        // Store token in database
+        await TokenModel.create(
+          existingUser.id,
+          token,
+          new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 days
+        );
+
+        return {
+          success: true,
+          message: 'تم تسجيل الدخول بنجاح',
+          data: {
+            user: this.sanitizeUser(existingUser),
+            token,
+            isNewUser: false,
+            isProfileComplete: isProfileComplete,
+            requiresProfileCompletion: !isProfileComplete
+          }
+        };
+      }
+
+      // User doesn't exist, create new user
+      const tempPassword = `google_${sub}_${Date.now()}`; // Temporary password
+      const hashedPassword = await bcrypt.hash(tempPassword, 12);
+
+      let newUser: User;
+
+      if (userType === 'teacher') {
+        // Create teacher with minimal data
+        newUser = await UserModel.create({
+          name,
+          email,
+          password: hashedPassword,
+          userType: UserType.TEACHER,
+          status: UserStatus.ACTIVE,
+          phone: '', // Will be filled later
+          address: '', // Will be filled later
+          bio: '', // Will be filled later
+          experienceYears: 0, // Will be filled later
+          deviceInfo: 'Google OAuth'
+        });
+      } else {
+        // Create student with minimal data
+        newUser = await UserModel.create({
+          name,
+          email,
+          password: hashedPassword,
+          userType: UserType.STUDENT,
+          status: UserStatus.ACTIVE,
+          studentPhone: '', // Will be filled later
+          parentPhone: '', // Will be filled later
+          schoolName: '' // Will be filled later
+        });
+      }
+
+      // Generate JWT token for new user
+      const token = jwt.sign(
+        {
+          userId: newUser.id,
+          userType: newUser.userType,
+          email: newUser.email
+        },
+        process.env['JWT_SECRET'] || 'fallback-secret',
+        { expiresIn: '7d' }
+      );
+
+      // Store token in database
+      await TokenModel.create(
+        newUser.id,
+        token,
+        new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 days
+      );
+
+      return {
+        success: true,
+        message: 'تم إنشاء الحساب وتسجيل الدخول بنجاح',
+        data: {
+          user: this.sanitizeUser(newUser),
+          token,
+          isNewUser: true,
+          isProfileComplete: false, // New user always has incomplete profile
+          requiresProfileCompletion: true
+        }
+      };
+    } catch (error) {
+      console.error('Error in googleAuth service:', error);
+      return {
+        success: false,
+        message: getMessage('SERVER.INTERNAL_ERROR'),
+        errors: [getMessage('SERVER.SOMETHING_WENT_WRONG')]
+      };
+    }
+  }
+
+  // Complete profile for Google OAuth users
+  static async completeProfile(userId: string, userType: string, profileData: any): Promise<ApiResponse> {
+    try {
+      const user = await UserModel.findById(userId);
+      if (!user) {
+        return {
+          success: false,
+          message: 'المستخدم غير موجود',
+          errors: ['User not found']
+        };
+      }
+
+      if (userType === 'teacher') {
+        const { phone, address, bio, experienceYears, gradeIds, studyYear } = profileData;
+
+        // Update teacher profile
+        const updatedUser = await UserModel.update(userId, {
+          phone,
+          address,
+          bio,
+          experienceYears: parseInt(experienceYears)
+        });
+
+        // Create teacher grades
+        for (const gradeId of gradeIds) {
+          await TeacherGradeModel.create({
+            teacherId: userId,
+            gradeId,
+            studyYear
+          });
+        }
+
+        // Check if profile is now complete
+        const isProfileComplete = updatedUser ? this.isProfileComplete(updatedUser) : false;
+
+        return {
+          success: true,
+          message: 'تم تحديث الملف الشخصي بنجاح',
+          data: {
+            user: updatedUser ? this.sanitizeUser(updatedUser) : null,
+            isProfileComplete: isProfileComplete,
+            requiresProfileCompletion: !isProfileComplete
+          }
+        };
+      } else if (userType === 'student') {
+        const { gradeId, studyYear, studentPhone, parentPhone, schoolName, gender, birthDate } = profileData;
+
+        // Update student profile
+        const updatedUser = await UserModel.update(userId, {
+          studentPhone,
+          parentPhone,
+          schoolName,
+          gender,
+          birthDate
+        });
+
+        // Create student grade
+        await StudentGradeModel.create({
+          studentId: userId,
+          gradeId,
+          studyYear
+        });
+
+        // Check if profile is now complete
+        const isProfileComplete = updatedUser ? this.isProfileComplete(updatedUser) : false;
+
+        return {
+          success: true,
+          message: 'تم تحديث الملف الشخصي بنجاح',
+          data: {
+            user: updatedUser ? this.sanitizeUser(updatedUser) : null,
+            isProfileComplete: isProfileComplete,
+            requiresProfileCompletion: !isProfileComplete
+          }
+        };
+      }
+
+      return {
+        success: false,
+        message: 'نوع المستخدم غير صحيح',
+        errors: ['Invalid user type']
+      };
+    } catch (error) {
+      console.error('Error in completeProfile service:', error);
+      return {
+        success: false,
+        message: getMessage('SERVER.INTERNAL_ERROR'),
+        errors: [getMessage('SERVER.SOMETHING_WENT_WRONG')]
+      };
+    }
   }
 
   // Sanitize user data (remove sensitive information)
