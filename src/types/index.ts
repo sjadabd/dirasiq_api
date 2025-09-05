@@ -459,6 +459,29 @@ export interface UpdateCourseBookingRequest {
   teacherResponse?: string;
 }
 
+export interface CourseBookingWithDetails extends CourseBooking {
+  student: {
+    id: string;
+    name: string;
+    email: string;
+  };
+  course: {
+    id: string;
+    courseName: string;
+    courseImages: string[];
+    description: string;
+    startDate: Date;
+    endDate: Date;
+    price: number;
+    seatsCount: number;
+  };
+  teacher: {
+    id: string;
+    name: string;
+    email: string;
+  };
+}
+
 // =====================================================
 // Course Enrollment System Types
 // =====================================================
