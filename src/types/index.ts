@@ -824,5 +824,4 @@ export interface BulkInvoiceCreationResponse {
   createdInvoices: InvoiceResponse[];
   errors: string[];
 }
-}
 
