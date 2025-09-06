@@ -1,5 +1,4 @@
 import { SubscriptionPackageService } from '@/services/super_admin/subscription-package.service';
-import { getMessage } from '@/utils/messages';
 import { Request, Response } from 'express';
 import { body, param, validationResult } from 'express-validator';
 
@@ -9,19 +8,19 @@ export class SubscriptionPackageController {
     try {
       // Validate request body
       await Promise.all([
-        body('name').notEmpty().withMessage(getMessage('VALIDATION.NAME_REQUIRED')).run(req),
-        body('description').optional().isLength({ max: 1000 }).withMessage(getMessage('VALIDATION.DESCRIPTION_TOO_LONG')).run(req),
-        body('maxStudents').isInt({ min: 1 }).withMessage(getMessage('SUBSCRIPTION.MAX_STUDENTS_REQUIRED')).run(req),
-        body('price').isFloat({ min: 0 }).withMessage(getMessage('SUBSCRIPTION.PRICE_REQUIRED')).run(req),
-        body('durationDays').isInt({ min: 1 }).withMessage(getMessage('SUBSCRIPTION.DURATION_DAYS_REQUIRED')).run(req),
-        body('isFree').optional().isBoolean().withMessage(getMessage('VALIDATION.INVALID_BOOLEAN')).run(req)
+        body('name').notEmpty().withMessage('الاسم مطلوب').run(req),
+        body('description').optional().isLength({ max: 1000 }).withMessage('الوصف طويل جداً').run(req),
+        body('maxStudents').isInt({ min: 1 }).withMessage('عدد الطلاب مطلوب').run(req),
+        body('price').isFloat({ min: 0 }).withMessage('السعر مطلوب').run(req),
+        body('durationDays').isInt({ min: 1 }).withMessage('مدة الباقة مطلوبة').run(req),
+        body('isFree').optional().isBoolean().withMessage('قيمة غير صحيحة').run(req)
       ]);
 
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
         res.status(400).json({
           success: false,
-          message: getMessage('VALIDATION.VALIDATION_FAILED'),
+          message: 'فشل في التحقق من البيانات',
           errors: errors.array().map(err => err.msg)
         });
         return;
@@ -47,8 +46,8 @@ export class SubscriptionPackageController {
       console.error('Error in createPackage controller:', error);
       res.status(500).json({
         success: false,
-        message: getMessage('SERVER.INTERNAL_ERROR'),
-        errors: [getMessage('SERVER.SOMETHING_WENT_WRONG')]
+        message: 'حدث خطأ في الخادم',
+        errors: ['حدث خطأ في الخادم']
       });
     }
   }
@@ -57,13 +56,13 @@ export class SubscriptionPackageController {
   static async getPackageById(req: Request, res: Response): Promise<void> {
     try {
       // Validate request params
-      await param('id').isUUID().withMessage(getMessage('VALIDATION.INVALID_ID')).run(req);
+      await param('id').isUUID().withMessage('معرف غير صحيح').run(req);
 
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
         res.status(400).json({
           success: false,
-          message: getMessage('VALIDATION.VALIDATION_FAILED'),
+          message: 'فشل في التحقق من البيانات',
           errors: errors.array().map(err => err.msg)
         });
         return;
@@ -81,56 +80,104 @@ export class SubscriptionPackageController {
       console.error('Error in getPackageById controller:', error);
       res.status(500).json({
         success: false,
-        message: getMessage('SERVER.INTERNAL_ERROR'),
-        errors: [getMessage('SERVER.SOMETHING_WENT_WRONG')]
+        message: 'حدث خطأ في الخادم',
+        errors: ['حدث خطأ في الخادم']
       });
     }
   }
 
-  // Get all subscription packages with filters
+  // Get all subscription packages with filters (Unified endpoint)
   static async getAllPackages(req: Request, res: Response): Promise<void> {
     try {
-      // Validate query parameters
-      await Promise.all([
-        body('page').optional().isInt({ min: 1 }).withMessage(getMessage('VALIDATION.INVALID_PAGE')).run(req),
-        body('limit').optional().isInt({ min: 1, max: 100 }).withMessage(getMessage('VALIDATION.INVALID_LIMIT')).run(req),
-        body('search').optional().isLength({ max: 100 }).withMessage(getMessage('VALIDATION.SEARCH_TOO_LONG')).run(req),
-        body('isActive').optional().isBoolean().withMessage(getMessage('VALIDATION.INVALID_BOOLEAN')).run(req),
-        body('isFree').optional().isBoolean().withMessage(getMessage('VALIDATION.INVALID_BOOLEAN')).run(req),
-        body('sortBy.key').optional().isIn(['name', 'price', 'max_students', 'duration_days', 'created_at']).withMessage(getMessage('VALIDATION.INVALID_SORT_KEY')).run(req),
-        body('sortBy.order').optional().isIn(['asc', 'desc']).withMessage(getMessage('VALIDATION.INVALID_SORT_ORDER')).run(req)
-      ]);
+      const {
+        page = 1,
+        limit = 10,
+        search = null,
+        isActive = null,
+        isFree = null,
+        sortBy = null,
+        deleted = false
+      } = req.query;
 
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
+      // Validate numeric parameters
+      const pageNum = Number(page);
+      const limitNum = Number(limit);
+
+      if (isNaN(pageNum) || pageNum < 1) {
         res.status(400).json({
           success: false,
-          message: getMessage('VALIDATION.VALIDATION_FAILED'),
-          errors: errors.array().map(err => err.msg)
+          message: 'رقم الصفحة غير صحيح',
+          errors: ['رقم الصفحة غير صحيح']
         });
         return;
       }
 
-      const {
-        page = 1,
-        limit = 10,
-        search,
-        isActive,
-        isFree,
-        sortBy,
-        deleted = false
-      } = req.query;
+      if (isNaN(limitNum) || limitNum < 1 || limitNum > 100) {
+        res.status(400).json({
+          success: false,
+          message: 'الحد غير صحيح',
+          errors: ['الحد غير صحيح']
+        });
+        return;
+      }
+
+      // Validate search parameter
+      if (search && typeof search === 'string' && search.length > 100) {
+        res.status(400).json({
+          success: false,
+          message: 'البحث طويل جداً',
+          errors: ['البحث طويل جداً']
+        });
+        return;
+      }
+
+      // Validate boolean parameters
+      let isActiveBool: boolean | null = null;
+      let isFreeBool: boolean | null = null;
+
+      if (isActive !== null && isActive !== 'null') {
+        if (isActive === 'true') isActiveBool = true;
+        else if (isActive === 'false') isActiveBool = false;
+        else {
+          res.status(400).json({
+            success: false,
+            message: 'قيمة غير صحيحة',
+            errors: ['قيمة غير صحيحة']
+          });
+          return;
+        }
+      }
+
+      if (isFree !== null && isFree !== 'null') {
+        if (isFree === 'true') isFreeBool = true;
+        else if (isFree === 'false') isFreeBool = false;
+        else {
+          res.status(400).json({
+            success: false,
+            message: 'قيمة غير صحيحة',
+            errors: ['قيمة غير صحيحة']
+          });
+          return;
+        }
+      }
 
       const params: any = {
-        page: Number(page),
-        limit: Number(limit),
+        page: pageNum,
+        limit: limitNum,
         deleted: deleted === 'true'
       };
 
-      if (search) params.search = search as string;
-      if (isActive === 'true' || isActive === 'false') params.isActive = isActive === 'true';
-      if (isFree === 'true' || isFree === 'false') params.isFree = isFree === 'true';
-      if (sortBy) params.sortBy = sortBy as { key: string; order: 'asc' | 'desc' };
+      // Add optional filters
+      if (search && search !== 'null') params.search = search as string;
+      if (isActiveBool !== null) params.isActive = isActiveBool;
+      if (isFreeBool !== null) params.isFree = isFreeBool;
+      if (sortBy && sortBy !== 'null') {
+        try {
+          params.sortBy = JSON.parse(sortBy as string);
+        } catch {
+          // If JSON parsing fails, ignore sortBy
+        }
+      }
 
       const result = await SubscriptionPackageService.getAllPackages(params);
 
@@ -143,8 +190,8 @@ export class SubscriptionPackageController {
       console.error('Error in getAllPackages controller:', error);
       res.status(500).json({
         success: false,
-        message: getMessage('SERVER.INTERNAL_ERROR'),
-        errors: [getMessage('SERVER.SOMETHING_WENT_WRONG')]
+        message: 'حدث خطأ في الخادم',
+        errors: ['حدث خطأ في الخادم']
       });
     }
   }
@@ -154,21 +201,21 @@ export class SubscriptionPackageController {
     try {
       // Validate request params and body
       await Promise.all([
-        param('id').isUUID().withMessage(getMessage('VALIDATION.INVALID_ID')).run(req),
-        body('name').optional().notEmpty().withMessage(getMessage('VALIDATION.NAME_REQUIRED')).run(req),
-        body('description').optional().isLength({ max: 1000 }).withMessage(getMessage('VALIDATION.DESCRIPTION_TOO_LONG')).run(req),
-        body('maxStudents').optional().isInt({ min: 1 }).withMessage(getMessage('SUBSCRIPTION.MAX_STUDENTS_REQUIRED')).run(req),
-        body('price').optional().isFloat({ min: 0 }).withMessage(getMessage('SUBSCRIPTION.PRICE_REQUIRED')).run(req),
-        body('durationDays').optional().isInt({ min: 1 }).withMessage(getMessage('SUBSCRIPTION.DURATION_DAYS_REQUIRED')).run(req),
-        body('isFree').optional().isBoolean().withMessage(getMessage('VALIDATION.INVALID_BOOLEAN')).run(req),
-        body('isActive').optional().isBoolean().withMessage(getMessage('VALIDATION.INVALID_BOOLEAN')).run(req)
+        param('id').isUUID().withMessage('معرف غير صحيح').run(req),
+        body('name').optional().notEmpty().withMessage('الاسم مطلوب').run(req),
+        body('description').optional().isLength({ max: 1000 }).withMessage('الوصف طويل جداً').run(req),
+        body('maxStudents').optional().isInt({ min: 1 }).withMessage('عدد الطلاب مطلوب').run(req),
+        body('price').optional().isFloat({ min: 0 }).withMessage('السعر مطلوب').run(req),
+        body('durationDays').optional().isInt({ min: 1 }).withMessage('مدة الباقة مطلوبة').run(req),
+        body('isFree').optional().isBoolean().withMessage('قيمة غير صحيحة').run(req),
+        body('isActive').optional().isBoolean().withMessage('قيمة غير صحيحة').run(req)
       ]);
 
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
         res.status(400).json({
           success: false,
-          message: getMessage('VALIDATION.VALIDATION_FAILED'),
+          message: 'فشل في التحقق من البيانات',
           errors: errors.array().map(err => err.msg)
         });
         return;
@@ -193,8 +240,8 @@ export class SubscriptionPackageController {
       console.error('Error in updatePackage controller:', error);
       res.status(500).json({
         success: false,
-        message: getMessage('SERVER.INTERNAL_ERROR'),
-        errors: [getMessage('SERVER.SOMETHING_WENT_WRONG')]
+        message: 'حدث خطأ في الخادم',
+        errors: ['حدث خطأ في الخادم']
       });
     }
   }
@@ -203,13 +250,13 @@ export class SubscriptionPackageController {
   static async activatePackage(req: Request, res: Response): Promise<void> {
     try {
       // Validate request params
-      await param('id').isUUID().withMessage(getMessage('VALIDATION.INVALID_ID')).run(req);
+      await param('id').isUUID().withMessage('معرف غير صحيح').run(req);
 
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
         res.status(400).json({
           success: false,
-          message: getMessage('VALIDATION.VALIDATION_FAILED'),
+          message: 'فشل في التحقق من البيانات',
           errors: errors.array().map(err => err.msg)
         });
         return;
@@ -227,8 +274,8 @@ export class SubscriptionPackageController {
       console.error('Error in activatePackage controller:', error);
       res.status(500).json({
         success: false,
-        message: getMessage('SERVER.INTERNAL_ERROR'),
-        errors: [getMessage('SERVER.SOMETHING_WENT_WRONG')]
+        message: 'حدث خطأ في الخادم',
+        errors: ['حدث خطأ في الخادم']
       });
     }
   }
@@ -237,13 +284,13 @@ export class SubscriptionPackageController {
   static async deactivatePackage(req: Request, res: Response): Promise<void> {
     try {
       // Validate request params
-      await param('id').isUUID().withMessage(getMessage('VALIDATION.INVALID_ID')).run(req);
+      await param('id').isUUID().withMessage('معرف غير صحيح').run(req);
 
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
         res.status(400).json({
           success: false,
-          message: getMessage('VALIDATION.VALIDATION_FAILED'),
+          message: 'فشل في التحقق من البيانات',
           errors: errors.array().map(err => err.msg)
         });
         return;
@@ -261,8 +308,8 @@ export class SubscriptionPackageController {
       console.error('Error in deactivatePackage controller:', error);
       res.status(500).json({
         success: false,
-        message: getMessage('SERVER.INTERNAL_ERROR'),
-        errors: [getMessage('SERVER.SOMETHING_WENT_WRONG')]
+        message: 'حدث خطأ في الخادم',
+        errors: ['حدث خطأ في الخادم']
       });
     }
   }
@@ -271,13 +318,13 @@ export class SubscriptionPackageController {
   static async deletePackage(req: Request, res: Response): Promise<void> {
     try {
       // Validate request params
-      await param('id').isUUID().withMessage(getMessage('VALIDATION.INVALID_ID')).run(req);
+      await param('id').isUUID().withMessage('معرف غير صحيح').run(req);
 
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
         res.status(400).json({
           success: false,
-          message: getMessage('VALIDATION.VALIDATION_FAILED'),
+          message: 'فشل في التحقق من البيانات',
           errors: errors.array().map(err => err.msg)
         });
         return;
@@ -295,8 +342,8 @@ export class SubscriptionPackageController {
       console.error('Error in deletePackage controller:', error);
       res.status(500).json({
         success: false,
-        message: getMessage('SERVER.INTERNAL_ERROR'),
-        errors: [getMessage('SERVER.SOMETHING_WENT_WRONG')]
+        message: 'حدث خطأ في الخادم',
+        errors: ['حدث خطأ في الخادم']
       });
     }
   }
@@ -315,8 +362,8 @@ export class SubscriptionPackageController {
       console.error('Error in getActivePackages controller:', error);
       res.status(500).json({
         success: false,
-        message: getMessage('SERVER.INTERNAL_ERROR'),
-        errors: [getMessage('SERVER.SOMETHING_WENT_WRONG')]
+        message: 'حدث خطأ في الخادم',
+        errors: ['حدث خطأ في الخادم']
       });
     }
   }
@@ -335,8 +382,8 @@ export class SubscriptionPackageController {
       console.error('Error in getFreePackage controller:', error);
       res.status(500).json({
         success: false,
-        message: getMessage('SERVER.INTERNAL_ERROR'),
-        errors: [getMessage('SERVER.SOMETHING_WENT_WRONG')]
+        message: 'حدث خطأ في الخادم',
+        errors: ['حدث خطأ في الخادم']
       });
     }
   }

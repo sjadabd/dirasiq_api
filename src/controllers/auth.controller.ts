@@ -2,7 +2,6 @@ import { AuthService } from '@/services/auth.service';
 import { GoogleAuthService } from '@/services/google-auth.service';
 import { SubscriptionPackageService } from '@/services/super_admin/subscription-package.service';
 import { TeacherSubscriptionService } from '@/services/teacher-subscription.service';
-import { getMessage } from '@/utils/messages';
 import { Request, Response } from 'express';
 import { body, validationResult } from 'express-validator';
 
@@ -12,13 +11,13 @@ export class AuthController {
     try {
       // Validate request body
       await Promise.all([
-        body('name').notEmpty().withMessage(getMessage('VALIDATION.NAME_REQUIRED')).run(req),
-        body('email').isEmail().withMessage(getMessage('VALIDATION.VALID_EMAIL_REQUIRED')).run(req),
+        body('name').notEmpty().withMessage('الاسم مطلوب').run(req),
+        body('email').isEmail().withMessage('البريد الإلكتروني مطلوب').run(req),
         body('password')
           .isLength({ min: 8 })
-          .withMessage(getMessage('VALIDATION.PASSWORD_MIN_LENGTH'))
+          .withMessage('كلمة المرور يجب أن تكون 8 أحرف على الأقل')
           .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/)
-          .withMessage(getMessage('VALIDATION.PASSWORD_COMPLEXITY'))
+          .withMessage('كلمة المرور يجب أن تحتوي على حرف كبير وحرف صغير ورقم')
           .run(req)
       ]);
 
@@ -26,7 +25,7 @@ export class AuthController {
       if (!errors.isEmpty()) {
         res.status(400).json({
           success: false,
-          message: getMessage('VALIDATION.VALIDATION_FAILED'),
+          message: 'فشل في التحقق من البيانات',
           errors: errors.array().map(err => err.msg)
         });
         return;
@@ -44,8 +43,8 @@ export class AuthController {
       console.error('Error in registerSuperAdmin controller:', error);
       res.status(500).json({
         success: false,
-        message: getMessage('SERVER.INTERNAL_ERROR'),
-        errors: [getMessage('SERVER.SOMETHING_WENT_WRONG')]
+        message: 'حدث خطأ في الخادم',
+        errors: ['حدث خطأ في الخادم']
       });
     }
   }
@@ -55,37 +54,37 @@ export class AuthController {
     try {
       // 1) Validation (كما هو عندك)
       await Promise.all([
-        body('name').notEmpty().withMessage(getMessage('VALIDATION.NAME_REQUIRED')).run(req),
-        body('email').isEmail().withMessage(getMessage('VALIDATION.VALID_EMAIL_REQUIRED')).run(req),
+        body('name').notEmpty().withMessage('الاسم مطلوب').run(req),
+        body('email').isEmail().withMessage('البريد الإلكتروني مطلوب').run(req),
         body('password')
-          .isLength({ min: 8 }).withMessage(getMessage('VALIDATION.PASSWORD_MIN_LENGTH'))
+          .isLength({ min: 8 }).withMessage('كلمة المرور يجب أن تكون 8 أحرف على الأقل')
           .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/)
-          .withMessage(getMessage('VALIDATION.PASSWORD_COMPLEXITY')).run(req),
-        body('phone').notEmpty().withMessage(getMessage('VALIDATION.PHONE_REQUIRED')).run(req),
-        body('address').notEmpty().withMessage(getMessage('VALIDATION.ADDRESS_REQUIRED')).run(req),
-        body('bio').notEmpty().withMessage(getMessage('VALIDATION.BIO_REQUIRED')).run(req),
-        body('experienceYears').isInt({ min: 0 }).withMessage(getMessage('VALIDATION.EXPERIENCE_YEARS_REQUIRED')).run(req),
-        body('gradeIds').isArray({ min: 1 }).withMessage(getMessage('STUDENT.GRADE_ID_REQUIRED')).run(req),
-        body('gradeIds.*').isUUID().withMessage(getMessage('STUDENT.GRADE_NOT_FOUND')).run(req),
-        body('studyYear').notEmpty().withMessage(getMessage('STUDENT.STUDY_YEAR_REQUIRED'))
-          .matches(/^[0-9]{4}-[0-9]{4}$/).withMessage(getMessage('STUDENT.INVALID_STUDY_YEAR_FORMAT')).run(req),
-        body('latitude').optional().isFloat({ min: -90, max: 90 }).withMessage(getMessage('VALIDATION.INVALID_LATITUDE')).run(req),
-        body('longitude').optional().isFloat({ min: -180, max: 180 }).withMessage(getMessage('VALIDATION.INVALID_LONGITUDE')).run(req),
-        body('formattedAddress').optional().isLength({ max: 1000 }).withMessage(getMessage('VALIDATION.ADDRESS_TOO_LONG')).run(req),
-        body('country').optional().isLength({ max: 100 }).withMessage(getMessage('VALIDATION.COUNTRY_TOO_LONG')).run(req),
-        body('city').optional().isLength({ max: 100 }).withMessage(getMessage('VALIDATION.CITY_TOO_LONG')).run(req),
-        body('state').optional().isLength({ max: 100 }).withMessage(getMessage('VALIDATION.STATE_TOO_LONG')).run(req),
-        body('zipcode').optional().isLength({ max: 20 }).withMessage(getMessage('VALIDATION.ZIPCODE_TOO_LONG')).run(req),
-        body('streetName').optional().isLength({ max: 255 }).withMessage(getMessage('VALIDATION.STREET_NAME_TOO_LONG')).run(req),
-        body('suburb').optional().isLength({ max: 100 }).withMessage(getMessage('VALIDATION.SUBURB_TOO_LONG')).run(req),
-        body('locationConfidence').optional().isFloat({ min: 0, max: 1 }).withMessage(getMessage('VALIDATION.INVALID_LOCATION_CONFIDENCE')).run(req),
+          .withMessage('كلمة المرور يجب أن تحتوي على حرف كبير وحرف صغير ورقم').run(req),
+        body('phone').notEmpty().withMessage('رقم الهاتف مطلوب').run(req),
+        body('address').notEmpty().withMessage('العنوان مطلوب').run(req),
+        body('bio').notEmpty().withMessage('النبذة الشخصية مطلوبة').run(req),
+        body('experienceYears').isInt({ min: 0 }).withMessage('سنوات الخبرة مطلوبة').run(req),
+        body('gradeIds').isArray({ min: 1 }).withMessage('معرف الصف مطلوب').run(req),
+        body('gradeIds.*').isUUID().withMessage('الصف غير موجود').run(req),
+        body('studyYear').notEmpty().withMessage('السنة الدراسية مطلوبة')
+          .matches(/^[0-9]{4}-[0-9]{4}$/).withMessage('تنسيق السنة الدراسية غير صحيح').run(req),
+        body('latitude').optional().isFloat({ min: -90, max: 90 }).withMessage('خط العرض غير صحيح').run(req),
+        body('longitude').optional().isFloat({ min: -180, max: 180 }).withMessage('خط الطول غير صحيح').run(req),
+        body('formattedAddress').optional().isLength({ max: 1000 }).withMessage('العنوان طويل جداً').run(req),
+        body('country').optional().isLength({ max: 100 }).withMessage('اسم البلد طويل جداً').run(req),
+        body('city').optional().isLength({ max: 100 }).withMessage('اسم المدينة طويل جداً').run(req),
+        body('state').optional().isLength({ max: 100 }).withMessage('اسم المحافظة طويل جداً').run(req),
+        body('zipcode').optional().isLength({ max: 20 }).withMessage('الرمز البريدي طويل جداً').run(req),
+        body('streetName').optional().isLength({ max: 255 }).withMessage('اسم الشارع طويل جداً').run(req),
+        body('suburb').optional().isLength({ max: 100 }).withMessage('اسم الحي طويل جداً').run(req),
+        body('locationConfidence').optional().isFloat({ min: 0, max: 1 }).withMessage('ثقة الموقع غير صحيحة').run(req),
       ]);
 
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
         res.status(400).json({
           success: false,
-          message: getMessage('VALIDATION.VALIDATION_FAILED'),
+          message: 'فشل في التحقق من البيانات',
           errors: errors.array().map(e => e.msg),
         });
         return;
@@ -126,12 +125,12 @@ export class AuthController {
         // رجّع نجاح تسجيل المعلّم مع تحذير بفشل إنشاء الاشتراك المجاني
         res.status(201).json({
           success: true,
-          message: getMessage('AUTH.REGISTERED_SUCCESSFULLY'),
+          message: 'تم التسجيل بنجاح',
           data: {
             user: result.data?.user ?? result.data, // حسب ما ترجّعه خدمتك
             subscription: null,
           },
-          errors: [getMessage('SUBSCRIPTION.NO_FREE_PACKAGE')],
+          errors: ['لا توجد باقة مجانية متاحة'],
         });
         return;
       }
@@ -158,7 +157,7 @@ export class AuthController {
       if (teacherSubscription.success) {
         res.status(201).json({
           success: true,
-          message: getMessage('AUTH.REGISTERED_SUCCESSFULLY'),
+          message: 'تم التسجيل بنجاح',
           data: {
             user: result.data?.user ?? result.data,
             subscription: teacherSubscription.data,
@@ -168,20 +167,20 @@ export class AuthController {
         // سجلّناه كمعلّم، لكن الاشتراك فشل
         res.status(201).json({
           success: true,
-          message: getMessage('AUTH.REGISTERED_SUCCESSFULLY'),
+          message: 'تم التسجيل بنجاح',
           data: {
             user: result.data?.user ?? result.data,
             subscription: null,
           },
-          errors: [getMessage('SUBSCRIPTION.NOT_FOUND_OR_NOT_CREATED') ?? 'Failed to create free subscription'],
+          errors: ['فشل في إنشاء الاشتراك المجاني'],
         });
       }
     } catch (error) {
       console.error('Error in registerTeacher controller:', error);
       res.status(500).json({
         success: false,
-        message: getMessage('SERVER.INTERNAL_ERROR'),
-        errors: [getMessage('SERVER.SOMETHING_WENT_WRONG')],
+        message: 'حدث خطأ في الخادم',
+        errors: ['حدث خطأ في الخادم'],
       });
     }
   }
@@ -191,38 +190,38 @@ export class AuthController {
     try {
       // Validate request body
       await Promise.all([
-        body('name').notEmpty().withMessage(getMessage('VALIDATION.NAME_REQUIRED')).run(req),
-        body('email').isEmail().withMessage(getMessage('VALIDATION.VALID_EMAIL_REQUIRED')).run(req),
+        body('name').notEmpty().withMessage('الاسم مطلوب').run(req),
+        body('email').isEmail().withMessage('البريد الإلكتروني مطلوب').run(req),
         body('password')
           .isLength({ min: 8 })
-          .withMessage(getMessage('VALIDATION.PASSWORD_MIN_LENGTH'))
+          .withMessage('كلمة المرور يجب أن تكون 8 أحرف على الأقل')
           .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/)
-          .withMessage(getMessage('VALIDATION.PASSWORD_COMPLEXITY'))
+          .withMessage('كلمة المرور يجب أن تحتوي على حرف كبير وحرف صغير ورقم')
           .run(req),
-        body('studentPhone').optional().matches(/^\+?[1-9]\d{1,14}$/).withMessage(getMessage('VALIDATION.INVALID_PHONE_FORMAT')).run(req),
-        body('parentPhone').optional().matches(/^\+?[1-9]\d{1,14}$/).withMessage(getMessage('VALIDATION.INVALID_PARENT_PHONE_FORMAT')).run(req),
-        body('schoolName').optional().isLength({ max: 255 }).withMessage(getMessage('STUDENT.SCHOOL_NAME_TOO_LONG')).run(req),
-        body('gender').optional().isIn(['male', 'female']).withMessage(getMessage('VALIDATION.INVALID_GENDER')).run(req),
-        body('birthDate').optional().isISO8601().withMessage(getMessage('STUDENT.INVALID_BIRTH_DATE_FORMAT')).run(req),
-        body('gradeId').notEmpty().withMessage(getMessage('STUDENT.GRADE_ID_REQUIRED')).isUUID().withMessage(getMessage('STUDENT.GRADE_NOT_FOUND')).run(req),
-        body('studyYear').notEmpty().withMessage(getMessage('STUDENT.STUDY_YEAR_REQUIRED')).matches(/^[0-9]{4}-[0-9]{4}$/).withMessage(getMessage('STUDENT.INVALID_STUDY_YEAR_FORMAT')).run(req),
-        body('latitude').optional().isFloat({ min: -90, max: 90 }).withMessage(getMessage('VALIDATION.INVALID_LATITUDE')).run(req),
-        body('longitude').optional().isFloat({ min: -180, max: 180 }).withMessage(getMessage('VALIDATION.INVALID_LONGITUDE')).run(req),
-        body('formattedAddress').optional().isLength({ max: 1000 }).withMessage(getMessage('VALIDATION.ADDRESS_TOO_LONG')).run(req),
-        body('country').optional().isLength({ max: 100 }).withMessage(getMessage('VALIDATION.COUNTRY_TOO_LONG')).run(req),
-        body('city').optional().isLength({ max: 100 }).withMessage(getMessage('VALIDATION.CITY_TOO_LONG')).run(req),
-        body('state').optional().isLength({ max: 100 }).withMessage(getMessage('VALIDATION.STATE_TOO_LONG')).run(req),
-        body('zipcode').optional().isLength({ max: 20 }).withMessage(getMessage('VALIDATION.ZIPCODE_TOO_LONG')).run(req),
-        body('streetName').optional().isLength({ max: 255 }).withMessage(getMessage('VALIDATION.STREET_NAME_TOO_LONG')).run(req),
-        body('suburb').optional().isLength({ max: 100 }).withMessage(getMessage('VALIDATION.SUBURB_TOO_LONG')).run(req),
-        body('locationConfidence').optional().isFloat({ min: 0, max: 1 }).withMessage(getMessage('VALIDATION.INVALID_LOCATION_CONFIDENCE')).run(req)
+        body('studentPhone').optional().matches(/^\+?[1-9]\d{1,14}$/).withMessage('تنسيق رقم هاتف الطالب غير صحيح').run(req),
+        body('parentPhone').optional().matches(/^\+?[1-9]\d{1,14}$/).withMessage('تنسيق رقم هاتف الوالد غير صحيح').run(req),
+        body('schoolName').optional().isLength({ max: 255 }).withMessage('اسم المدرسة طويل جداً').run(req),
+        body('gender').optional().isIn(['male', 'female']).withMessage('الجنس غير صحيح').run(req),
+        body('birthDate').optional().isISO8601().withMessage('تنسيق تاريخ الميلاد غير صحيح').run(req),
+        body('gradeId').notEmpty().withMessage('معرف الصف مطلوب').isUUID().withMessage('الصف غير موجود').run(req),
+        body('studyYear').notEmpty().withMessage('السنة الدراسية مطلوبة').matches(/^[0-9]{4}-[0-9]{4}$/).withMessage('تنسيق السنة الدراسية غير صحيح').run(req),
+        body('latitude').optional().isFloat({ min: -90, max: 90 }).withMessage('خط العرض غير صحيح').run(req),
+        body('longitude').optional().isFloat({ min: -180, max: 180 }).withMessage('خط الطول غير صحيح').run(req),
+        body('formattedAddress').optional().isLength({ max: 1000 }).withMessage('العنوان طويل جداً').run(req),
+        body('country').optional().isLength({ max: 100 }).withMessage('اسم البلد طويل جداً').run(req),
+        body('city').optional().isLength({ max: 100 }).withMessage('اسم المدينة طويل جداً').run(req),
+        body('state').optional().isLength({ max: 100 }).withMessage('اسم المحافظة طويل جداً').run(req),
+        body('zipcode').optional().isLength({ max: 20 }).withMessage('الرمز البريدي طويل جداً').run(req),
+        body('streetName').optional().isLength({ max: 255 }).withMessage('اسم الشارع طويل جداً').run(req),
+        body('suburb').optional().isLength({ max: 100 }).withMessage('اسم الحي طويل جداً').run(req),
+        body('locationConfidence').optional().isFloat({ min: 0, max: 1 }).withMessage('ثقة الموقع غير صحيحة').run(req)
       ]);
 
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
         res.status(400).json({
           success: false,
-          message: getMessage('VALIDATION.VALIDATION_FAILED'),
+          message: 'فشل في التحقق من البيانات',
           errors: errors.array().map(err => err.msg)
         });
         return;
@@ -265,8 +264,8 @@ export class AuthController {
         if (age < 5) {
           res.status(400).json({
             success: false,
-            message: getMessage('VALIDATION.VALIDATION_FAILED'),
-            errors: [getMessage('STUDENT.STUDENT_TOO_YOUNG')]
+            message: 'فشل في التحقق من البيانات',
+            errors: ['الطالب صغير جداً (أقل من 5 سنوات)']
           });
           return;
         }
@@ -274,8 +273,8 @@ export class AuthController {
         if (age > 25) {
           res.status(400).json({
             success: false,
-            message: getMessage('VALIDATION.VALIDATION_FAILED'),
-            errors: [getMessage('STUDENT.STUDENT_TOO_OLD')]
+            message: 'فشل في التحقق من البيانات',
+            errors: ['الطالب كبير جداً (أكثر من 25 سنة)']
           });
           return;
         }
@@ -316,8 +315,8 @@ export class AuthController {
       console.error('Error in registerStudent controller:', error);
       res.status(500).json({
         success: false,
-        message: getMessage('SERVER.INTERNAL_ERROR'),
-        errors: [getMessage('SERVER.SOMETHING_WENT_WRONG')]
+        message: 'حدث خطأ في الخادم',
+        errors: ['حدث خطأ في الخادم']
       });
     }
   }
@@ -327,15 +326,15 @@ export class AuthController {
     try {
       // Validate request body
       await Promise.all([
-        body('email').isEmail().withMessage(getMessage('VALIDATION.VALID_EMAIL_REQUIRED')).run(req),
-        body('password').notEmpty().withMessage(getMessage('VALIDATION.PASSWORD_REQUIRED')).run(req)
+        body('email').isEmail().withMessage('البريد الإلكتروني مطلوب').run(req),
+        body('password').notEmpty().withMessage('كلمة المرور مطلوبة').run(req)
       ]);
 
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
         res.status(400).json({
           success: false,
-          message: getMessage('VALIDATION.VALIDATION_FAILED'),
+          message: 'فشل في التحقق من البيانات',
           errors: errors.array().map(err => err.msg)
         });
         return;
@@ -353,8 +352,8 @@ export class AuthController {
       console.error('Error in login controller:', error);
       res.status(500).json({
         success: false,
-        message: getMessage('SERVER.INTERNAL_ERROR'),
-        errors: [getMessage('SERVER.SOMETHING_WENT_WRONG')]
+        message: 'حدث خطأ في الخادم',
+        errors: ['حدث خطأ في الخادم']
       });
     }
   }
@@ -368,8 +367,8 @@ export class AuthController {
       if (!token) {
         res.status(400).json({
           success: false,
-          message: getMessage('AUTH.TOKEN_REQUIRED'),
-          errors: [getMessage('AUTH.NO_TOKEN_PROVIDED')]
+          message: 'رمز المصادقة مطلوب',
+          errors: ['لم يتم توفير رمز المصادقة']
         });
         return;
       }
@@ -385,8 +384,8 @@ export class AuthController {
       console.error('Error in logout controller:', error);
       res.status(500).json({
         success: false,
-        message: getMessage('SERVER.INTERNAL_ERROR'),
-        errors: [getMessage('SERVER.SOMETHING_WENT_WRONG')]
+        message: 'حدث خطأ في الخادم',
+        errors: ['حدث خطأ في الخادم']
       });
     }
   }
@@ -396,16 +395,16 @@ export class AuthController {
     try {
       // Validate request body
       await Promise.all([
-        body('email').isEmail().withMessage(getMessage('VALIDATION.VALID_EMAIL_REQUIRED')).run(req),
-        body('code').optional().isLength({ min: 6, max: 6 }).withMessage(getMessage('VALIDATION.VERIFICATION_CODE_6_DIGITS')).run(req),
-        body('verificationToken').optional().isLength({ min: 6, max: 6 }).withMessage(getMessage('VALIDATION.VERIFICATION_CODE_6_DIGITS')).run(req)
+        body('email').isEmail().withMessage('البريد الإلكتروني مطلوب').run(req),
+        body('code').optional().isLength({ min: 6, max: 6 }).withMessage('رمز التحقق يجب أن يكون 6 أرقام').run(req),
+        body('verificationToken').optional().isLength({ min: 6, max: 6 }).withMessage('رمز التحقق يجب أن يكون 6 أرقام').run(req)
       ]);
 
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
         res.status(400).json({
           success: false,
-          message: getMessage('VALIDATION.VALIDATION_FAILED'),
+          message: 'فشل في التحقق من البيانات',
           errors: errors.array().map(err => err.msg)
         });
         return;
@@ -419,8 +418,8 @@ export class AuthController {
       if (!verificationCode) {
         res.status(400).json({
           success: false,
-          message: getMessage('VALIDATION.VALIDATION_FAILED'),
-          errors: [getMessage('VALIDATION.VERIFICATION_CODE_REQUIRED')]
+          message: 'فشل في التحقق من البيانات',
+          errors: ['رمز التحقق مطلوب']
         });
         return;
       }
@@ -436,8 +435,8 @@ export class AuthController {
       console.error('Error in verifyEmail controller:', error);
       res.status(500).json({
         success: false,
-        message: getMessage('SERVER.INTERNAL_ERROR'),
-        errors: [getMessage('SERVER.SOMETHING_WENT_WRONG')]
+        message: 'حدث خطأ في الخادم',
+        errors: ['حدث خطأ في الخادم']
       });
     }
   }
@@ -446,13 +445,13 @@ export class AuthController {
   static async resendVerificationCode(req: Request, res: Response): Promise<void> {
     try {
       // Validate request body
-      await body('email').isEmail().withMessage(getMessage('VALIDATION.VALID_EMAIL_REQUIRED')).run(req);
+      await body('email').isEmail().withMessage('البريد الإلكتروني مطلوب').run(req);
 
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
         res.status(400).json({
           success: false,
-          message: getMessage('VALIDATION.VALIDATION_FAILED'),
+          message: 'فشل في التحقق من البيانات',
           errors: errors.array().map(err => err.msg)
         });
         return;
@@ -470,8 +469,8 @@ export class AuthController {
       console.error('Error in resendVerificationCode controller:', error);
       res.status(500).json({
         success: false,
-        message: getMessage('SERVER.INTERNAL_ERROR'),
-        errors: [getMessage('SERVER.SOMETHING_WENT_WRONG')]
+        message: 'حدث خطأ في الخادم',
+        errors: ['حدث خطأ في الخادم']
       });
     }
   }
@@ -480,13 +479,13 @@ export class AuthController {
   static async requestPasswordReset(req: Request, res: Response): Promise<void> {
     try {
       // Validate request body
-      await body('email').isEmail().withMessage(getMessage('VALIDATION.VALID_EMAIL_REQUIRED')).run(req);
+      await body('email').isEmail().withMessage('البريد الإلكتروني مطلوب').run(req);
 
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
         res.status(400).json({
           success: false,
-          message: getMessage('VALIDATION.VALIDATION_FAILED'),
+          message: 'فشل في التحقق من البيانات',
           errors: errors.array().map(err => err.msg)
         });
         return;
@@ -504,8 +503,8 @@ export class AuthController {
       console.error('Error in requestPasswordReset controller:', error);
       res.status(500).json({
         success: false,
-        message: getMessage('SERVER.INTERNAL_ERROR'),
-        errors: [getMessage('SERVER.SOMETHING_WENT_WRONG')]
+        message: 'حدث خطأ في الخادم',
+        errors: ['حدث خطأ في الخادم']
       });
     }
   }
@@ -524,7 +523,7 @@ export class AuthController {
       if (!errors.isEmpty()) {
         res.status(400).json({
           success: false,
-          message: getMessage('VALIDATION.VALIDATION_FAILED'),
+          message: 'فشل في التحقق من البيانات',
           errors: errors.array().map(err => err.msg)
         });
         return;
@@ -594,8 +593,8 @@ export class AuthController {
       console.error('Error in googleAuth controller:', error);
       res.status(500).json({
         success: false,
-        message: getMessage('SERVER.INTERNAL_ERROR'),
-        errors: [getMessage('SERVER.SOMETHING_WENT_WRONG')]
+        message: 'حدث خطأ في الخادم',
+        errors: ['حدث خطأ في الخادم']
       });
     }
   }
@@ -618,17 +617,17 @@ export class AuthController {
       // Validate based on user type
       if (userType === 'teacher') {
         await Promise.all([
-          body('phone').notEmpty().withMessage(getMessage('VALIDATION.PHONE_REQUIRED')).run(req),
-          body('address').notEmpty().withMessage(getMessage('VALIDATION.ADDRESS_REQUIRED')).run(req),
-          body('bio').notEmpty().withMessage(getMessage('VALIDATION.BIO_REQUIRED')).run(req),
-          body('experienceYears').isInt({ min: 0 }).withMessage(getMessage('VALIDATION.EXPERIENCE_YEARS_REQUIRED')).run(req),
-          body('gradeIds').isArray({ min: 1 }).withMessage(getMessage('STUDENT.GRADE_ID_REQUIRED')).run(req),
-          body('studyYear').notEmpty().withMessage(getMessage('STUDENT.STUDY_YEAR_REQUIRED')).run(req)
+          body('phone').notEmpty().withMessage('رقم الهاتف مطلوب').run(req),
+          body('address').notEmpty().withMessage('العنوان مطلوب').run(req),
+          body('bio').notEmpty().withMessage('النبذة الشخصية مطلوبة').run(req),
+          body('experienceYears').isInt({ min: 0 }).withMessage('سنوات الخبرة مطلوبة').run(req),
+          body('gradeIds').isArray({ min: 1 }).withMessage('معرف الصف مطلوب').run(req),
+          body('studyYear').notEmpty().withMessage('السنة الدراسية مطلوبة').run(req)
         ]);
       } else if (userType === 'student') {
         await Promise.all([
-          body('gradeId').notEmpty().withMessage(getMessage('STUDENT.GRADE_ID_REQUIRED')).run(req),
-          body('studyYear').notEmpty().withMessage(getMessage('STUDENT.STUDY_YEAR_REQUIRED')).run(req)
+          body('gradeId').notEmpty().withMessage('معرف الصف مطلوب').run(req),
+          body('studyYear').notEmpty().withMessage('السنة الدراسية مطلوبة').run(req)
         ]);
       }
 
@@ -636,7 +635,7 @@ export class AuthController {
       if (!errors.isEmpty()) {
         res.status(400).json({
           success: false,
-          message: getMessage('VALIDATION.VALIDATION_FAILED'),
+          message: 'فشل في التحقق من البيانات',
           errors: errors.array().map(err => err.msg)
         });
         return;
@@ -653,8 +652,8 @@ export class AuthController {
       console.error('Error in completeProfile controller:', error);
       res.status(500).json({
         success: false,
-        message: getMessage('SERVER.INTERNAL_ERROR'),
-        errors: [getMessage('SERVER.SOMETHING_WENT_WRONG')]
+        message: 'حدث خطأ في الخادم',
+        errors: ['حدث خطأ في الخادم']
       });
     }
   }
@@ -664,14 +663,14 @@ export class AuthController {
     try {
       // Validate request body
       await Promise.all([
-        body('email').isEmail().withMessage(getMessage('VALIDATION.VALID_EMAIL_REQUIRED')).run(req),
-        body('code').optional().isLength({ min: 6, max: 6 }).withMessage(getMessage('VALIDATION.RESET_CODE_6_DIGITS')).run(req),
-        body('resetToken').optional().isLength({ min: 6, max: 6 }).withMessage(getMessage('VALIDATION.RESET_CODE_6_DIGITS')).run(req),
+        body('email').isEmail().withMessage('البريد الإلكتروني مطلوب').run(req),
+        body('code').optional().isLength({ min: 6, max: 6 }).withMessage('رمز إعادة التعيين يجب أن يكون 6 أرقام').run(req),
+        body('resetToken').optional().isLength({ min: 6, max: 6 }).withMessage('رمز إعادة التعيين يجب أن يكون 6 أرقام').run(req),
         body('newPassword')
           .isLength({ min: 8 })
-          .withMessage(getMessage('VALIDATION.PASSWORD_MIN_LENGTH'))
+          .withMessage('كلمة المرور يجب أن تكون 8 أحرف على الأقل')
           .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/)
-          .withMessage(getMessage('VALIDATION.PASSWORD_COMPLEXITY'))
+          .withMessage('كلمة المرور يجب أن تحتوي على حرف كبير وحرف صغير ورقم')
           .run(req)
       ]);
 
@@ -679,7 +678,7 @@ export class AuthController {
       if (!errors.isEmpty()) {
         res.status(400).json({
           success: false,
-          message: getMessage('VALIDATION.VALIDATION_FAILED'),
+          message: 'فشل في التحقق من البيانات',
           errors: errors.array().map(err => err.msg)
         });
         return;
@@ -693,8 +692,8 @@ export class AuthController {
       if (!resetCode) {
         res.status(400).json({
           success: false,
-          message: getMessage('VALIDATION.VALIDATION_FAILED'),
-          errors: [getMessage('VALIDATION.RESET_CODE_REQUIRED')]
+          message: 'فشل في التحقق من البيانات',
+          errors: ['رمز إعادة التعيين مطلوب']
         });
         return;
       }
@@ -710,8 +709,8 @@ export class AuthController {
       console.error('Error in resetPassword controller:', error);
       res.status(500).json({
         success: false,
-        message: getMessage('SERVER.INTERNAL_ERROR'),
-        errors: [getMessage('SERVER.SOMETHING_WENT_WRONG')]
+        message: 'حدث خطأ في الخادم',
+        errors: ['حدث خطأ في الخادم']
       });
     }
   }

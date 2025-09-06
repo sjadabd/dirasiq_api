@@ -1,5 +1,4 @@
 import { AcademicYearService } from '@/services/super_admin/academic-year.service';
-import { getMessage } from '@/utils/messages';
 import { Request, Response } from 'express';
 import { body, param, query, validationResult } from 'express-validator';
 
@@ -10,18 +9,18 @@ export class AcademicYearController {
       // Validate request body
       await body('year')
         .notEmpty()
-        .withMessage(getMessage('ACADEMIC_YEAR.YEAR_REQUIRED'))
+        .withMessage('السنة الأكاديمية مطلوبة')
         .isLength({ min: 9, max: 9 })
-        .withMessage(getMessage('ACADEMIC_YEAR.YEAR_MIN_LENGTH'))
+        .withMessage('يجب أن تكون السنة 9 أحرف')
         .matches(/^\d{4}-\d{4}$/)
-        .withMessage(getMessage('ACADEMIC_YEAR.YEAR_PATTERN'))
+        .withMessage('يجب أن تكون السنة بصيغة YYYY-YYYY')
         .run(req);
 
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
         res.status(400).json({
           success: false,
-          message: getMessage('VALIDATION.VALIDATION_FAILED'),
+          message: 'فشل في التحقق من البيانات',
           errors: errors.array().map(err => err.msg)
         });
         return;
@@ -39,8 +38,8 @@ export class AcademicYearController {
       console.error('Error in create academic year controller:', error);
       res.status(500).json({
         success: false,
-        message: getMessage('SERVER.INTERNAL_ERROR'),
-        errors: [getMessage('SERVER.SOMETHING_WENT_WRONG')]
+        message: 'خطأ داخلي في الخادم',
+        errors: ['حدث خطأ في الخادم']
       });
     }
   }
@@ -60,7 +59,7 @@ export class AcademicYearController {
       if (!errors.isEmpty()) {
         res.status(400).json({
           success: false,
-          message: getMessage('VALIDATION.VALIDATION_FAILED'),
+          message: 'فشل في التحقق من البيانات',
           errors: errors.array().map(err => err.msg)
         });
         return;
@@ -96,8 +95,8 @@ export class AcademicYearController {
       console.error('Error in get all academic years controller:', error);
       res.status(500).json({
         success: false,
-        message: getMessage('SERVER.INTERNAL_ERROR'),
-        errors: [getMessage('SERVER.SOMETHING_WENT_WRONG')]
+        message: 'خطأ داخلي في الخادم',
+        errors: ['حدث خطأ في الخادم']
       });
     }
   }
@@ -115,7 +114,7 @@ export class AcademicYearController {
       if (!errors.isEmpty()) {
         res.status(400).json({
           success: false,
-          message: getMessage('VALIDATION.VALIDATION_FAILED'),
+          message: 'فشل في التحقق من البيانات',
           errors: errors.array().map(err => err.msg)
         });
         return;
@@ -133,8 +132,8 @@ export class AcademicYearController {
       console.error('Error in get academic year by ID controller:', error);
       res.status(500).json({
         success: false,
-        message: getMessage('SERVER.INTERNAL_ERROR'),
-        errors: [getMessage('SERVER.SOMETHING_WENT_WRONG')]
+        message: 'خطأ داخلي في الخادم',
+        errors: ['حدث خطأ في الخادم']
       });
     }
   }
@@ -153,8 +152,8 @@ export class AcademicYearController {
       console.error('Error in get active academic year controller:', error);
       res.status(500).json({
         success: false,
-        message: getMessage('SERVER.INTERNAL_ERROR'),
-        errors: [getMessage('SERVER.SOMETHING_WENT_WRONG')]
+        message: 'خطأ داخلي في الخادم',
+        errors: ['حدث خطأ في الخادم']
       });
     }
   }
@@ -165,8 +164,8 @@ export class AcademicYearController {
       // Validate path parameter and request body
       await Promise.all([
         param('id').isUUID().withMessage('ID must be a valid UUID').run(req),
-        body('year').optional().isLength({ min: 9, max: 9 }).withMessage(getMessage('ACADEMIC_YEAR.YEAR_MIN_LENGTH')).run(req),
-        body('year').optional().matches(/^\d{4}-\d{4}$/).withMessage(getMessage('ACADEMIC_YEAR.YEAR_PATTERN')).run(req),
+        body('year').optional().isLength({ min: 9, max: 9 }).withMessage('يجب أن تكون السنة 9 أحرف').run(req),
+        body('year').optional().matches(/^\d{4}-\d{4}$/).withMessage('يجب أن تكون السنة بصيغة YYYY-YYYY').run(req),
         body('is_active').optional().isBoolean().withMessage('is_active must be a boolean').run(req)
       ]);
 
@@ -174,7 +173,7 @@ export class AcademicYearController {
       if (!errors.isEmpty()) {
         res.status(400).json({
           success: false,
-          message: getMessage('VALIDATION.VALIDATION_FAILED'),
+          message: 'فشل في التحقق من البيانات',
           errors: errors.array().map(err => err.msg)
         });
         return;
@@ -193,8 +192,8 @@ export class AcademicYearController {
       console.error('Error in update academic year controller:', error);
       res.status(500).json({
         success: false,
-        message: getMessage('SERVER.INTERNAL_ERROR'),
-        errors: [getMessage('SERVER.SOMETHING_WENT_WRONG')]
+        message: 'خطأ داخلي في الخادم',
+        errors: ['حدث خطأ في الخادم']
       });
     }
   }
@@ -212,7 +211,7 @@ export class AcademicYearController {
       if (!errors.isEmpty()) {
         res.status(400).json({
           success: false,
-          message: getMessage('VALIDATION.VALIDATION_FAILED'),
+          message: 'فشل في التحقق من البيانات',
           errors: errors.array().map(err => err.msg)
         });
         return;
@@ -230,8 +229,8 @@ export class AcademicYearController {
       console.error('Error in delete academic year controller:', error);
       res.status(500).json({
         success: false,
-        message: getMessage('SERVER.INTERNAL_ERROR'),
-        errors: [getMessage('SERVER.SOMETHING_WENT_WRONG')]
+        message: 'خطأ داخلي في الخادم',
+        errors: ['حدث خطأ في الخادم']
       });
     }
   }
@@ -249,7 +248,7 @@ export class AcademicYearController {
       if (!errors.isEmpty()) {
         res.status(400).json({
           success: false,
-          message: getMessage('VALIDATION.VALIDATION_FAILED'),
+          message: 'فشل في التحقق من البيانات',
           errors: errors.array().map(err => err.msg)
         });
         return;
@@ -267,8 +266,8 @@ export class AcademicYearController {
       console.error('Error in activate academic year controller:', error);
       res.status(500).json({
         success: false,
-        message: getMessage('SERVER.INTERNAL_ERROR'),
-        errors: [getMessage('SERVER.SOMETHING_WENT_WRONG')]
+        message: 'خطأ داخلي في الخادم',
+        errors: ['حدث خطأ في الخادم']
       });
     }
   }

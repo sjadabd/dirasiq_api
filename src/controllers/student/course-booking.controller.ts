@@ -1,6 +1,5 @@
 import { CourseBookingService } from '@/services/course-booking.service';
 import { CreateCourseBookingRequest } from '@/types';
-import { getMessage } from '@/utils/messages';
 import { Request, Response } from 'express';
 
 export class StudentCourseBookingController {
@@ -19,8 +18,8 @@ export class StudentCourseBookingController {
       if (!data.courseId) {
         res.status(400).json({
           success: false,
-          message: getMessage('COURSE_BOOKING.COURSE_ID_REQUIRED'),
-          errors: [getMessage('COURSE_BOOKING.COURSE_ID_REQUIRED')]
+          message: 'معرف الدورة مطلوب',
+          errors: ['معرف الدورة مطلوب']
         });
         return;
       }
@@ -29,40 +28,40 @@ export class StudentCourseBookingController {
 
       res.status(201).json({
         success: true,
-        message: getMessage('COURSE_BOOKING.CREATED'),
+        message: 'تم إنشاء الحجز',
         data: booking
       });
     } catch (error: any) {
       if (error.message === 'Course not found') {
         res.status(404).json({
           success: false,
-          message: getMessage('COURSE_BOOKING.COURSE_NOT_FOUND'),
-          errors: [getMessage('COURSE_BOOKING.COURSE_NOT_FOUND')]
+          message: 'الدورة غير موجودة',
+          errors: ['الدورة غير موجودة']
         });
       } else if (error.message === 'Booking already exists for this course') {
         res.status(409).json({
           success: false,
-          message: getMessage('COURSE_BOOKING.EXISTING_BOOKING_INFO'),
-          errors: [getMessage('COURSE_BOOKING.EXISTING_BOOKING_INFO')],
-          suggestion: getMessage('COURSE_BOOKING.EXISTING_BOOKING_SUGGESTION'),
-          action: getMessage('COURSE_BOOKING.ACTION_VIEW_EXISTING_BOOKING'),
-          details: getMessage('COURSE_BOOKING.EXISTING_BOOKING_DETAILS')
+          message: 'يوجد حجز موجود بالفعل',
+          errors: ['يوجد حجز موجود بالفعل'],
+          suggestion: 'يمكنك عرض الحجز الموجود أو إنشاء حجز جديد',
+          action: 'عرض الحجز الموجود',
+          details: 'تفاصيل الحجز الموجود'
         });
       } else if (error.code === '23505' && error.constraint === 'unique_student_course_booking') {
         res.status(409).json({
           success: false,
-          message: getMessage('COURSE_BOOKING.EXISTING_BOOKING_INFO'),
-          errors: [getMessage('COURSE_BOOKING.EXISTING_BOOKING_INFO')],
-          suggestion: getMessage('COURSE_BOOKING.EXISTING_BOOKING_SUGGESTION'),
-          action: getMessage('COURSE_BOOKING.ACTION_VIEW_EXISTING_BOOKING'),
-          details: getMessage('COURSE_BOOKING.EXISTING_BOOKING_DETAILS')
+          message: 'يوجد حجز موجود بالفعل',
+          errors: ['يوجد حجز موجود بالفعل'],
+          suggestion: 'يمكنك عرض الحجز الموجود أو إنشاء حجز جديد',
+          action: 'عرض الحجز الموجود',
+          details: 'تفاصيل الحجز الموجود'
         });
       } else {
         console.error('Error creating course booking:', error);
         res.status(500).json({
           success: false,
-          message: getMessage('SERVER.INTERNAL_ERROR'),
-          errors: [getMessage('SERVER.SOMETHING_WENT_WRONG')]
+          message: 'خطأ داخلي في الخادم',
+          errors: ['حدث خطأ في الخادم']
         });
       }
     }
@@ -81,8 +80,8 @@ export class StudentCourseBookingController {
       if (!studyYear) {
         res.status(400).json({
           success: false,
-          message: getMessage('VALIDATION.STUDY_YEAR_REQUIRED'),
-          errors: [getMessage('VALIDATION.STUDY_YEAR_REQUIRED')]
+          message: 'السنة الدراسية مطلوبة',
+          errors: ['السنة الدراسية مطلوبة']
         });
         return;
       }
@@ -106,12 +105,12 @@ export class StudentCourseBookingController {
 
           if (enhancedBooking.canReactivate) {
             // Check if course is still available for reactivation
-            enhancedBooking.reactivationMessage = getMessage('COURSE_BOOKING.CAN_REACTIVATE');
+            enhancedBooking.reactivationMessage = 'يمكن إعادة تفعيل الحجز';
             enhancedBooking.reactivationEndpoint = `/api/student/bookings/${booking.id}/reactivate`;
-            enhancedBooking.reactivationNote = getMessage('COURSE_BOOKING.REACTIVATION_NOTE');
-            enhancedBooking.reactivationSafe = getMessage('COURSE_BOOKING.REACTIVATION_SAFE');
+            enhancedBooking.reactivationNote = 'ملاحظة إعادة التفعيل';
+            enhancedBooking.reactivationSafe = 'إعادة التفعيل آمنة';
           } else {
-            enhancedBooking.reactivationMessage = getMessage('COURSE_BOOKING.CANNOT_REACTIVATE_TEACHER');
+            enhancedBooking.reactivationMessage = 'لا يمكن إعادة تفعيل الحجز - المعلم ألغى الدورة';
           }
         }
 
@@ -119,7 +118,7 @@ export class StudentCourseBookingController {
         if (booking.status === 'pending' && booking.reactivatedAt) {
           enhancedBooking.isReactivated = true;
           enhancedBooking.reactivatedAt = booking.reactivatedAt;
-          enhancedBooking.reactivationNote = getMessage('COURSE_BOOKING.IS_REACTIVATED');
+          enhancedBooking.reactivationNote = 'تم إعادة تفعيل الحجز';
         }
 
         return enhancedBooking;
@@ -127,7 +126,7 @@ export class StudentCourseBookingController {
 
       res.status(200).json({
         success: true,
-        message: getMessage('COURSE_BOOKING.RETRIEVED_SUCCESSFULLY'),
+        message: 'تم استرجاع الحجز بنجاح',
         data: enhancedBookings,
         pagination: {
           page,
@@ -140,8 +139,8 @@ export class StudentCourseBookingController {
       console.error('Error getting student bookings:', error);
       res.status(500).json({
         success: false,
-        message: getMessage('SERVER.INTERNAL_ERROR'),
-        errors: [getMessage('SERVER.SOMETHING_WENT_WRONG')]
+        message: 'خطأ داخلي في الخادم',
+        errors: ['حدث خطأ في الخادم']
       });
     }
   }
@@ -153,8 +152,8 @@ export class StudentCourseBookingController {
       if (!studentId) {
         res.status(401).json({
           success: false,
-          message: getMessage('AUTH.AUTHENTICATION_REQUIRED'),
-          errors: [getMessage('AUTH.USER_NOT_AUTHENTICATED')]
+          message: 'التحقق مطلوب',
+          errors: ['التحقق مطلوب']
         });
         return;
       }
@@ -163,8 +162,8 @@ export class StudentCourseBookingController {
       if (!id) {
         res.status(400).json({
           success: false,
-          message: getMessage('VALIDATION.BOOKING_ID_REQUIRED'),
-          errors: [getMessage('VALIDATION.BOOKING_ID_REQUIRED')]
+          message: 'معرف الحجز مطلوب',
+          errors: ['معرف الحجز مطلوب']
         });
         return;
       }
@@ -174,8 +173,8 @@ export class StudentCourseBookingController {
       if (!booking) {
         res.status(404).json({
           success: false,
-          message: getMessage('COURSE_BOOKING.NOT_FOUND'),
-          errors: [getMessage('COURSE_BOOKING.NOT_FOUND')]
+          message: 'الحجز غير موجود',
+          errors: ['الحجز غير موجود']
         });
         return;
       }
@@ -184,23 +183,23 @@ export class StudentCourseBookingController {
       if (booking.studentId !== studentId) {
         res.status(403).json({
           success: false,
-          message: getMessage('COURSE_BOOKING.ACCESS_DENIED'),
-          errors: [getMessage('COURSE_BOOKING.ACCESS_DENIED')]
+          message: 'لا يوجد حجز موجود',
+          errors: ['لا يوجد حجز موجود']
         });
         return;
       }
 
       res.status(200).json({
         success: true,
-        message: getMessage('COURSE_BOOKING.RETRIEVED_SUCCESSFULLY'),
+        message: 'تم استرجاع الحجز بنجاح',
         data: booking
       });
     } catch (error: any) {
       console.error('Error getting booking:', error);
       res.status(500).json({
         success: false,
-        message: getMessage('SERVER.INTERNAL_ERROR'),
-        errors: [getMessage('SERVER.SOMETHING_WENT_WRONG')]
+        message: 'خطأ داخلي في الخادم',
+        errors: ['حدث خطأ في الخادم']
       });
     }
   }
@@ -212,8 +211,8 @@ export class StudentCourseBookingController {
       if (!studentId) {
         res.status(401).json({
           success: false,
-          message: getMessage('AUTH.AUTHENTICATION_REQUIRED'),
-          errors: [getMessage('AUTH.USER_NOT_AUTHENTICATED')]
+          message: 'التحقق مطلوب',
+          errors: ['التحقق مطلوب']
         });
         return;
       }
@@ -222,8 +221,8 @@ export class StudentCourseBookingController {
       if (!id) {
         res.status(400).json({
           success: false,
-          message: getMessage('VALIDATION.BOOKING_ID_REQUIRED'),
-          errors: [getMessage('VALIDATION.BOOKING_ID_REQUIRED')]
+          message: 'معرف الحجز مطلوب',
+          errors: ['معرف الحجز مطلوب']
         });
         return;
       }
@@ -233,22 +232,22 @@ export class StudentCourseBookingController {
 
       res.status(200).json({
         success: true,
-        message: getMessage('COURSE_BOOKING.CANCELLED'),
+        message: 'تم إلغاء الحجز',
         data: booking
       });
     } catch (error: any) {
       if (error.message === 'Booking not found or access denied') {
         res.status(404).json({
           success: false,
-          message: getMessage('COURSE_BOOKING.NOT_FOUND'),
-          errors: [getMessage('COURSE_BOOKING.ACCESS_DENIED')]
+          message: 'الحجز غير موجود',
+          errors: ['الحجز غير موجود']
         });
       } else {
         console.error('Error cancelling booking:', error);
         res.status(500).json({
           success: false,
-          message: getMessage('SERVER.INTERNAL_ERROR'),
-          errors: [getMessage('SERVER.SOMETHING_WENT_WRONG')]
+          message: 'خطأ داخلي في الخادم',
+          errors: ['حدث خطأ في الخادم']
         });
       }
     }
@@ -275,18 +274,18 @@ export class StudentCourseBookingController {
       if ((booking as any).courseEndedWarning) {
         res.status(200).json({
           success: true,
-          message: getMessage('COURSE_BOOKING.REACTIVATED_WITH_WARNING'),
+          message: 'تم إعادة تفعيل الحجز',
           data: booking,
           warning: {
-            message: getMessage('COURSE_BOOKING.REACTIVATED_COURSE_ENDED'),
-            note: getMessage('COURSE_BOOKING.SUGGESTION_CONTACT_TEACHER'),
-            action: getMessage('COURSE_BOOKING.ACTION_CONTACT_TEACHER')
+            message: 'الدورة ختمت',
+            note: 'يمكنك التواصل مع المعلم للحصول على الدورة',
+            action: 'التواصل مع المعلم'
           }
         });
       } else {
         res.status(200).json({
           success: true,
-          message: getMessage('COURSE_BOOKING.REACTIVATED'),
+          message: 'تم إعادة تفعيل الحجز',
           data: booking
         });
       }
@@ -294,74 +293,74 @@ export class StudentCourseBookingController {
       if (error.message === 'Booking not found') {
         res.status(404).json({
           success: false,
-          message: getMessage('COURSE_BOOKING.NOT_FOUND'),
-          errors: [getMessage('COURSE_BOOKING.NOT_FOUND')]
+          message: 'الحجز غير موجود',
+          errors: ['الحجز غير موجود']
         });
       } else if (error.message === 'Access denied - booking does not belong to you') {
         res.status(403).json({
           success: false,
-          message: getMessage('COURSE_BOOKING.ACCESS_DENIED'),
-          errors: [getMessage('COURSE_BOOKING.ACCESS_DENIED')]
+          message: 'لا يوجد حجز موجود',
+          errors: ['لا يوجد حجز موجود']
         });
       } else if (error.message === 'Booking is already active and pending') {
         res.status(400).json({
           success: false,
-          message: getMessage('COURSE_BOOKING.ALREADY_ACTIVE'),
-          errors: [getMessage('COURSE_BOOKING.ALREADY_ACTIVE')],
-          suggestion: getMessage('COURSE_BOOKING.SUGGESTION_CHECK_STATUS'),
-          action: getMessage('COURSE_BOOKING.ACTION_CHECK_STATUS')
+          message: 'الحجز مفعل ومعلق',
+          errors: ['الحجز مفعل ومعلق'],
+          suggestion: 'يمكنك التحقق من حالة الحجز',
+          action: 'التحقق من حالة الحجز'
         });
       } else if (error.message === 'Booking is already approved and active') {
         res.status(400).json({
           success: false,
-          message: getMessage('COURSE_BOOKING.ALREADY_APPROVED'),
-          errors: [getMessage('COURSE_BOOKING.ALREADY_APPROVED')],
-          suggestion: getMessage('COURSE_BOOKING.SUGGESTION_CHECK_STATUS'),
-          action: getMessage('COURSE_BOOKING.ACTION_CHECK_STATUS')
+          message: 'الحجز مفعل ومعلق',
+          errors: ['الحجز مفعل ومعلق'],
+          suggestion: 'يمكنك التحقق من حالة الحجز',
+          action: 'التحقق من حالة الحجز'
         });
       } else if (error.message === 'Cannot reactivate rejected bookings. Please create a new booking instead.') {
         res.status(400).json({
           success: false,
-          message: getMessage('COURSE_BOOKING.CANNOT_REACTIVATE_REJECTED'),
-          errors: [getMessage('COURSE_BOOKING.CANNOT_REACTIVATE_REJECTED')],
-          suggestion: getMessage('COURSE_BOOKING.SUGGESTION_CREATE_NEW'),
-          action: getMessage('COURSE_BOOKING.ACTION_CREATE_NEW_BOOKING')
+          message: 'لا يمكن إعادة تفعيل الحجز المرفوض',
+          errors: ['لا يمكن إعادة تفعيل الحجز المرفوض'],
+          suggestion: 'يمكنك إنشاء حجز جديد',
+          action: 'إنشاء حجز جديد'
         });
       } else if (error.message.includes('Cannot reactivate booking with status:')) {
         res.status(400).json({
           success: false,
-          message: getMessage('COURSE_BOOKING.INVALID_STATUS_FOR_REACTIVATION'),
-          errors: [getMessage('COURSE_BOOKING.INVALID_STATUS_FOR_REACTIVATION')],
-          suggestion: getMessage('COURSE_BOOKING.SUGGESTION_CREATE_NEW'),
+          message: 'حالة الحجز غير مفعلة',
+          errors: ['حالة الحجز غير مفعلة'],
+          suggestion: 'يمكنك إنشاء حجز جديد',
           currentStatus: error.message.split(':')[1]?.trim(),
-          action: getMessage('COURSE_BOOKING.ACTION_CHECK_BOOKING_STATUS')
+          action: 'التحقق من حالة الحجز'
         });
       } else if (error.message === 'Cannot reactivate bookings cancelled by teacher') {
         res.status(403).json({
           success: false,
-          message: getMessage('COURSE_BOOKING.CANNOT_REACTIVATE_TEACHER_CANCELLED'),
-          errors: [getMessage('COURSE_BOOKING.CANNOT_REACTIVATE_TEACHER_CANCELLED')]
+          message: 'لا يمكن إعادة تفعيل الحجز الملغي من قبل المعلم',
+          errors: ['لا يمكن إعادة تفعيل الحجز الملغي من قبل المعلم']
         });
       } else if (error.message === 'Course is no longer available') {
         res.status(400).json({
           success: false,
-          message: getMessage('COURSE_BOOKING.COURSE_NOT_AVAILABLE'),
-          errors: [getMessage('COURSE_BOOKING.COURSE_NOT_AVAILABLE')]
+          message: 'الدورة غير موجودة',
+          errors: ['الدورة غير موجودة']
         });
       } else if (error.message === 'Course has already ended') {
         res.status(400).json({
           success: false,
-          message: getMessage('COURSE_BOOKING.COURSE_ENDED'),
-          errors: [getMessage('COURSE_BOOKING.COURSE_ENDED')],
-          suggestion: getMessage('COURSE_BOOKING.SUGGESTION_SEARCH_NEW_COURSES'),
-          details: getMessage('COURSE_BOOKING.COURSE_ENDED_DETAILS')
+          message: 'الدورة ختمت',
+          errors: ['الدورة ختمت'],
+          suggestion: 'يمكنك البحث عن دورات جديدة',
+          details: 'تفاصيل الدورة الختمتة'
         });
       } else {
         console.error('Error reactivating booking:', error);
         res.status(500).json({
           success: false,
-          message: getMessage('SERVER.INTERNAL_ERROR'),
-          errors: [getMessage('SERVER.SOMETHING_WENT_WRONG')]
+          message: 'خطأ داخلي في الخادم',
+          errors: ['حدث خطأ في الخادم']
         });
       }
     }
@@ -374,8 +373,8 @@ export class StudentCourseBookingController {
       if (!studentId) {
         res.status(401).json({
           success: false,
-          message: getMessage('AUTH.AUTHENTICATION_REQUIRED'),
-          errors: [getMessage('AUTH.USER_NOT_AUTHENTICATED')]
+          message: 'التحقق مطلوب',
+          errors: ['التحقق مطلوب']
         });
         return;
       }
@@ -384,8 +383,8 @@ export class StudentCourseBookingController {
       if (!id) {
         res.status(400).json({
           success: false,
-          message: getMessage('VALIDATION.BOOKING_ID_REQUIRED'),
-          errors: [getMessage('VALIDATION.BOOKING_ID_REQUIRED')]
+          message: 'معرف الحجز مطلوب',
+          errors: ['معرف الحجز مطلوب']
         });
         return;
       }
@@ -394,21 +393,21 @@ export class StudentCourseBookingController {
 
       res.status(200).json({
         success: true,
-        message: getMessage('COURSE_BOOKING.DELETED')
+        message: 'تم حذف الحجز'
       });
     } catch (error: any) {
       if (error.message === 'Booking not found or access denied') {
         res.status(404).json({
           success: false,
-          message: getMessage('COURSE_BOOKING.NOT_FOUND'),
-          errors: [getMessage('COURSE_BOOKING.ACCESS_DENIED')]
+          message: 'الحجز غير موجود',
+          errors: ['الحجز غير موجود']
         });
       } else {
         console.error('Error deleting booking:', error);
         res.status(500).json({
           success: false,
-          message: getMessage('SERVER.INTERNAL_ERROR'),
-          errors: [getMessage('SERVER.SOMETHING_WENT_WRONG')]
+          message: 'خطأ داخلي في الخادم',
+          errors: ['حدث خطأ في الخادم']
         });
       }
     }
@@ -421,8 +420,8 @@ export class StudentCourseBookingController {
       if (!studentId) {
         res.status(401).json({
           success: false,
-          message: getMessage('AUTH.AUTHENTICATION_REQUIRED'),
-          errors: [getMessage('AUTH.USER_NOT_AUTHENTICATED')]
+          message: 'التحقق مطلوب',
+          errors: ['التحقق مطلوب']
         });
         return;
       }
@@ -431,8 +430,8 @@ export class StudentCourseBookingController {
       if (!studyYear) {
         res.status(400).json({
           success: false,
-          message: getMessage('VALIDATION.STUDY_YEAR_REQUIRED'),
-          errors: [getMessage('VALIDATION.STUDY_YEAR_REQUIRED')]
+          message: 'السنة الدراسية مطلوبة',
+          errors: ['السنة الدراسية مطلوبة']
         });
         return;
       }
@@ -441,7 +440,7 @@ export class StudentCourseBookingController {
 
       res.status(200).json({
         success: true,
-        message: getMessage('COURSE_BOOKING.STATS_RETRIEVED'),
+        message: 'تم استرجاع إحصائيات الحجز',
         data: {
           approvedBookings: approvedCount
         }
@@ -450,8 +449,8 @@ export class StudentCourseBookingController {
       console.error('Error getting booking statistics:', error);
       res.status(500).json({
         success: false,
-        message: getMessage('SERVER.INTERNAL_ERROR'),
-        errors: [getMessage('SERVER.SOMETHING_WENT_WRONG')]
+        message: 'خطأ داخلي في الخادم',
+        errors: ['حدث خطأ في الخادم']
       });
     }
   }

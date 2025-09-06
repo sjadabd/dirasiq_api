@@ -1,6 +1,5 @@
 import { UserModel } from '@/models/user.model';
 import { ApiResponse } from '@/types';
-import { getMessage } from '@/utils/messages';
 import { LocationService } from './location.service';
 
 export interface TeacherSearchParams {
@@ -40,8 +39,8 @@ export class TeacherSearchService {
       if (!latitude || !longitude) {
         return {
           success: false,
-          message: getMessage('VALIDATION.COORDINATES_REQUIRED'),
-          errors: [getMessage('VALIDATION.COORDINATES_REQUIRED')]
+          message: 'الإحداثيات مطلوبة',
+          errors: ['الإحداثيات مطلوبة']
         };
       }
 
@@ -59,7 +58,7 @@ export class TeacherSearchService {
       if (!teachers || teachers.length === 0) {
         return {
           success: true,
-          message: getMessage('TEACHER.NO_TEACHERS_FOUND'),
+          message: 'لم يتم العثور على معلمين',
           data: { teachers: [], count: 0 },
           count: 0
         };
@@ -91,7 +90,7 @@ export class TeacherSearchService {
 
       return {
         success: true,
-        message: getMessage('TEACHER.TEACHERS_FOUND'),
+        message: 'تم العثور على معلمين',
         data: { teachers: results },
         count: results.length
       };
@@ -99,8 +98,8 @@ export class TeacherSearchService {
       console.error('Error searching teachers by coordinates:', error);
       return {
         success: false,
-        message: getMessage('GENERAL.OPERATION_FAILED'),
-        errors: [getMessage('SERVER.INTERNAL_ERROR')]
+        message: 'فشلت العملية',
+        errors: ['خطأ داخلي في الخادم']
       };
     }
   }
@@ -115,8 +114,8 @@ export class TeacherSearchService {
       if (!governorate && !city && !district) {
         return {
           success: false,
-          message: getMessage('VALIDATION.LOCATION_REQUIRED'),
-          errors: [getMessage('VALIDATION.LOCATION_REQUIRED')]
+          message: 'الموقع مطلوب',
+          errors: ['الموقع مطلوب']
         };
       }
 
@@ -134,7 +133,7 @@ export class TeacherSearchService {
       if (!teachers || teachers.length === 0) {
         return {
           success: true,
-          message: getMessage('TEACHER.NO_TEACHERS_FOUND'),
+          message: 'لم يتم العثور على معلمين',
           data: { teachers: [], count: 0 },
           count: 0
         };
@@ -157,7 +156,7 @@ export class TeacherSearchService {
 
       return {
         success: true,
-        message: getMessage('TEACHER.TEACHERS_FOUND'),
+        message: 'تم العثور على معلمين',
         data: { teachers: results },
         count: results.length
       };
@@ -165,8 +164,8 @@ export class TeacherSearchService {
       console.error('Error searching teachers by location:', error);
       return {
         success: false,
-        message: getMessage('GENERAL.OPERATION_FAILED'),
-        errors: [getMessage('SERVER.INTERNAL_ERROR')]
+        message: 'فشلت العملية',
+        errors: ['خطأ داخلي في الخادم']
       };
     }
   }
@@ -178,7 +177,7 @@ export class TeacherSearchService {
 
       return {
         success: true,
-        message: getMessage('LOCATION.GOVERNORATES_FOUND'),
+        message: 'تم العثور على المحافظات',
         data: { governorates },
         count: governorates.length
       };
@@ -186,8 +185,8 @@ export class TeacherSearchService {
       console.error('Error getting available governorates:', error);
       return {
         success: false,
-        message: getMessage('GENERAL.OPERATION_FAILED'),
-        errors: [getMessage('SERVER.INTERNAL_ERROR')]
+        message: 'فشلت العملية',
+        errors: ['خطأ داخلي في الخادم']
       };
     }
   }
@@ -199,7 +198,7 @@ export class TeacherSearchService {
 
       return {
         success: true,
-        message: getMessage('LOCATION.CITIES_FOUND'),
+        message: 'تم العثور على المدن',
         data: { cities },
         count: cities.length
       };
@@ -207,8 +206,8 @@ export class TeacherSearchService {
       console.error('Error getting available cities:', error);
       return {
         success: false,
-        message: getMessage('GENERAL.OPERATION_FAILED'),
-        errors: [getMessage('SERVER.INTERNAL_ERROR')]
+        message: 'فشلت العملية',
+        errors: ['خطأ داخلي في الخادم']
       };
     }
   }

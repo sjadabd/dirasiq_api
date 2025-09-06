@@ -1,7 +1,6 @@
 import { SubjectModel } from '@/models/subject.model';
 import { UserModel } from '@/models/user.model';
 import { ApiResponse, CreateSubjectRequest, UpdateSubjectRequest } from '@/types';
-import { getMessage } from '@/utils/messages';
 
 export class SubjectService {
   // Create new subject
@@ -12,8 +11,8 @@ export class SubjectService {
       if (!teacher || teacher.userType !== 'teacher') {
         return {
           success: false,
-          message: getMessage('SUBJECT.TEACHER_NOT_FOUND'),
-          errors: [getMessage('SUBJECT.TEACHER_NOT_FOUND')]
+          message: 'المعلم غير موجود',
+          errors: ['المعلم غير موجود']
         };
       }
 
@@ -22,8 +21,8 @@ export class SubjectService {
       if (existingSubject) {
         return {
           success: false,
-          message: getMessage('SUBJECT.ALREADY_EXISTS'),
-          errors: [getMessage('SUBJECT.ALREADY_EXISTS')]
+          message: 'المادة موجودة بالفعل',
+          errors: ['المادة موجودة بالفعل']
         };
       }
 
@@ -32,15 +31,15 @@ export class SubjectService {
 
       return {
         success: true,
-        message: getMessage('SUBJECT.CREATED'),
+        message: 'تم إنشاء المادة',
         data: { subject }
       };
     } catch (error) {
       console.error('Error creating subject:', error);
       return {
         success: false,
-        message: getMessage('GENERAL.OPERATION_FAILED'),
-        errors: [getMessage('SERVER.INTERNAL_ERROR')]
+        message: 'فشلت العملية',
+        errors: ['خطأ داخلي في الخادم']
       };
     }
   }
@@ -53,8 +52,8 @@ export class SubjectService {
       if (!teacher || teacher.userType !== 'teacher') {
         return {
           success: false,
-          message: getMessage('SUBJECT.TEACHER_NOT_FOUND'),
-          errors: [getMessage('SUBJECT.TEACHER_NOT_FOUND')]
+          message: 'المعلم غير موجود',
+          errors: ['المعلم غير موجود']
         };
       }
 
@@ -62,7 +61,7 @@ export class SubjectService {
 
       return {
         success: true,
-        message: getMessage('GENERAL.SUCCESS'),
+        message: 'تمت العملية بنجاح',
         data: result.subjects,
         count: result.total
       };
@@ -70,8 +69,8 @@ export class SubjectService {
       console.error('Error getting subjects:', error);
       return {
         success: false,
-        message: getMessage('GENERAL.OPERATION_FAILED'),
-        errors: [getMessage('SERVER.INTERNAL_ERROR')]
+        message: 'فشلت العملية',
+        errors: ['خطأ داخلي في الخادم']
       };
     }
   }
@@ -84,22 +83,22 @@ export class SubjectService {
       if (!subject) {
         return {
           success: false,
-          message: getMessage('SUBJECT.NOT_FOUND'),
-          errors: [getMessage('SUBJECT.NOT_FOUND')]
+          message: 'المادة غير موجودة',
+          errors: ['المادة غير موجودة']
         };
       }
 
       return {
         success: true,
-        message: getMessage('GENERAL.SUCCESS'),
+        message: 'تمت العملية بنجاح',
         data: { subject }
       };
     } catch (error) {
       console.error('Error getting subject:', error);
       return {
         success: false,
-        message: getMessage('GENERAL.OPERATION_FAILED'),
-        errors: [getMessage('SERVER.INTERNAL_ERROR')]
+        message: 'فشلت العملية',
+        errors: ['خطأ داخلي في الخادم']
       };
     }
   }
@@ -112,8 +111,8 @@ export class SubjectService {
       if (!existingSubject) {
         return {
           success: false,
-          message: getMessage('SUBJECT.NOT_FOUND'),
-          errors: [getMessage('SUBJECT.NOT_FOUND')]
+          message: 'المادة غير موجودة',
+          errors: ['المادة غير موجودة']
         };
       }
 
@@ -123,8 +122,8 @@ export class SubjectService {
         if (nameExists) {
           return {
             success: false,
-            message: getMessage('SUBJECT.ALREADY_EXISTS'),
-            errors: [getMessage('SUBJECT.ALREADY_EXISTS')]
+            message: 'المادة موجودة بالفعل',
+            errors: ['المادة موجودة بالفعل']
           };
         }
       }
@@ -135,22 +134,22 @@ export class SubjectService {
       if (!subject) {
         return {
           success: false,
-          message: getMessage('SUBJECT.NOT_FOUND'),
-          errors: [getMessage('SUBJECT.NOT_FOUND')]
+          message: 'المادة غير موجودة',
+          errors: ['المادة غير موجودة']
         };
       }
 
       return {
         success: true,
-        message: getMessage('SUBJECT.UPDATED'),
+        message: 'تم تحديث المادة',
         data: { subject }
       };
     } catch (error) {
       console.error('Error updating subject:', error);
       return {
         success: false,
-        message: getMessage('GENERAL.OPERATION_FAILED'),
-        errors: [getMessage('SERVER.INTERNAL_ERROR')]
+        message: 'فشلت العملية',
+        errors: ['خطأ داخلي في الخادم']
       };
     }
   }
@@ -163,8 +162,8 @@ export class SubjectService {
       if (!existingSubject) {
         return {
           success: false,
-          message: getMessage('SUBJECT.NOT_FOUND'),
-          errors: [getMessage('SUBJECT.NOT_FOUND')]
+          message: 'المادة غير موجودة',
+          errors: ['المادة غير موجودة']
         };
       }
 
@@ -174,21 +173,21 @@ export class SubjectService {
       if (!deleted) {
         return {
           success: false,
-          message: getMessage('SUBJECT.NOT_FOUND'),
-          errors: [getMessage('SUBJECT.NOT_FOUND')]
+          message: 'المادة غير موجودة',
+          errors: ['المادة غير موجودة']
         };
       }
 
       return {
         success: true,
-        message: getMessage('SUBJECT.DELETED')
+        message: 'تم حذف المادة'
       };
     } catch (error) {
       console.error('Error deleting subject:', error);
       return {
         success: false,
-        message: getMessage('GENERAL.OPERATION_FAILED'),
-        errors: [getMessage('SERVER.INTERNAL_ERROR')]
+        message: 'فشلت العملية',
+        errors: ['خطأ داخلي في الخادم']
       };
     }
   }

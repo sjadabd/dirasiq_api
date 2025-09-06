@@ -154,13 +154,13 @@ export class SubscriptionPackageModel {
       ${searchClause}
       ${filterClause}
       ORDER BY ${sortKey} ${sortOrder.toUpperCase()}
-      LIMIT $${paramCount} OFFSET $${paramCount + 1}
+      LIMIT ${limit} OFFSET ${offset}
     `;
 
     const countResult = await pool.query(countQuery, searchValues);
     const total = parseInt(countResult.rows[0].count);
 
-    const dataResult = await pool.query(dataQuery, [...searchValues, limit, offset]);
+    const dataResult = await pool.query(dataQuery, searchValues);
     const packages = dataResult.rows.map((row: any) => this.mapDatabaseToSubscriptionPackage(row));
 
     return {

@@ -1,6 +1,5 @@
 import { SubscriptionPackageModel } from '@/models/subscription-package.model';
 import { CreateSubscriptionPackageRequest, SubscriptionPackage, UpdateSubscriptionPackageRequest } from '@/types';
-import { getMessage } from '@/utils/messages';
 
 export class SubscriptionPackageService {
   // Create a new subscription package
@@ -16,8 +15,8 @@ export class SubscriptionPackageService {
       if (existingPackage) {
         return {
           success: false,
-          message: getMessage('SUBSCRIPTION.PACKAGE_NAME_EXISTS'),
-          errors: [getMessage('SUBSCRIPTION.PACKAGE_NAME_EXISTS')]
+          message: 'اسم الباقة موجود بالفعل',
+          errors: ['اسم الباقة موجود بالفعل']
         };
       }
 
@@ -32,8 +31,8 @@ export class SubscriptionPackageService {
       if (existingPackageWithSameSpecs) {
         return {
           success: false,
-          message: getMessage('SUBSCRIPTION.PACKAGE_DUPLICATE_SPECS'),
-          errors: [getMessage('SUBSCRIPTION.PACKAGE_DUPLICATE_SPECS')]
+          message: 'يوجد باقة بنفس المواصفات',
+          errors: ['يوجد باقة بنفس المواصفات']
         };
       }
 
@@ -41,24 +40,24 @@ export class SubscriptionPackageService {
       if (data.maxStudents <= 0) {
         return {
           success: false,
-          message: getMessage('VALIDATION.VALIDATION_FAILED'),
-          errors: [getMessage('SUBSCRIPTION.INVALID_MAX_STUDENTS')]
+          message: 'عدد الطلاب يجب أن يكون أكبر من صفر',
+          errors: ['عدد الطلاب يجب أن يكون أكبر من صفر']
         };
       }
 
       if (data.price < 0) {
         return {
           success: false,
-          message: getMessage('VALIDATION.VALIDATION_FAILED'),
-          errors: [getMessage('SUBSCRIPTION.INVALID_PRICE')]
+          message: 'السعر يجب أن يكون أكبر من أو يساوي صفر',
+          errors: ['السعر يجب أن يكون أكبر من أو يساوي صفر']
         };
       }
 
       if (data.durationDays <= 0) {
         return {
           success: false,
-          message: getMessage('VALIDATION.VALIDATION_FAILED'),
-          errors: [getMessage('SUBSCRIPTION.INVALID_DURATION')]
+          message: 'مدة الباقة يجب أن تكون أكبر من صفر',
+          errors: ['مدة الباقة يجب أن تكون أكبر من صفر']
         };
       }
 
@@ -66,8 +65,8 @@ export class SubscriptionPackageService {
       if (data.isFree && data.price !== 0) {
         return {
           success: false,
-          message: getMessage('VALIDATION.VALIDATION_FAILED'),
-          errors: [getMessage('SUBSCRIPTION.FREE_PACKAGE_PRICE_ZERO')]
+          message: 'الباقة المجانية يجب أن يكون سعرها صفر',
+          errors: ['الباقة المجانية يجب أن يكون سعرها صفر']
         };
       }
 
@@ -75,15 +74,15 @@ export class SubscriptionPackageService {
 
       return {
         success: true,
-        message: getMessage('SUBSCRIPTION.PACKAGE_CREATED'),
+        message: 'تم إنشاء الباقة بنجاح',
         data: package_
       };
     } catch (error) {
       console.error('Error creating subscription package:', error);
       return {
         success: false,
-        message: getMessage('GENERAL.OPERATION_FAILED'),
-        errors: [getMessage('SERVER.INTERNAL_ERROR')]
+        message: 'فشل في إنشاء الباقة',
+        errors: ['حدث خطأ في الخادم']
       };
     }
   }
@@ -101,22 +100,22 @@ export class SubscriptionPackageService {
       if (!package_) {
         return {
           success: false,
-          message: getMessage('SUBSCRIPTION.PACKAGE_NOT_FOUND'),
-          errors: [getMessage('SUBSCRIPTION.PACKAGE_NOT_FOUND')]
+          message: 'الباقة غير موجودة',
+          errors: ['الباقة غير موجودة']
         };
       }
 
       return {
         success: true,
-        message: getMessage('SUBSCRIPTION.PACKAGE_FOUND'),
+        message: 'تم العثور على الباقة',
         data: package_
       };
     } catch (error) {
       console.error('Error getting subscription package:', error);
       return {
         success: false,
-        message: getMessage('GENERAL.OPERATION_FAILED'),
-        errors: [getMessage('SERVER.INTERNAL_ERROR')]
+        message: 'فشل في جلب الباقة',
+        errors: ['حدث خطأ في الخادم']
       };
     }
   }
@@ -133,11 +132,8 @@ export class SubscriptionPackageService {
   }): Promise<{
     success: boolean;
     message: string;
-    data?: {
-      packages: SubscriptionPackage[];
-      total: number;
-      totalPages: number;
-    };
+    data?: SubscriptionPackage[];
+    count?: number;
     errors?: string[];
   }> {
     try {
@@ -145,15 +141,16 @@ export class SubscriptionPackageService {
 
       return {
         success: true,
-        message: getMessage('SUBSCRIPTION.PACKAGES_FOUND'),
-        data: result
+        message: 'تمت العملية بنجاح',
+        data: result.packages,
+        count: result.total
       };
     } catch (error) {
       console.error('Error getting subscription packages:', error);
       return {
         success: false,
-        message: getMessage('GENERAL.OPERATION_FAILED'),
-        errors: [getMessage('SERVER.INTERNAL_ERROR')]
+        message: 'فشل في جلب الباقات',
+        errors: ['حدث خطأ في الخادم']
       };
     }
   }
@@ -171,8 +168,8 @@ export class SubscriptionPackageService {
       if (!existingPackage) {
         return {
           success: false,
-          message: getMessage('SUBSCRIPTION.PACKAGE_NOT_FOUND'),
-          errors: [getMessage('SUBSCRIPTION.PACKAGE_NOT_FOUND')]
+          message: 'الباقة غير موجودة',
+          errors: ['الباقة غير موجودة']
         };
       }
 
@@ -182,8 +179,8 @@ export class SubscriptionPackageService {
         if (packageWithSameName) {
           return {
             success: false,
-            message: getMessage('SUBSCRIPTION.PACKAGE_NAME_EXISTS'),
-            errors: [getMessage('SUBSCRIPTION.PACKAGE_NAME_EXISTS')]
+            message: 'اسم الباقة موجود بالفعل',
+            errors: ['اسم الباقة موجود بالفعل']
           };
         }
       }
@@ -192,24 +189,24 @@ export class SubscriptionPackageService {
       if (data.maxStudents !== undefined && data.maxStudents <= 0) {
         return {
           success: false,
-          message: getMessage('VALIDATION.VALIDATION_FAILED'),
-          errors: [getMessage('SUBSCRIPTION.INVALID_MAX_STUDENTS')]
+          message: 'فشل في التحقق من البيانات',
+          errors: ['عدد الطلاب يجب أن يكون أكبر من صفر']
         };
       }
 
       if (data.price !== undefined && data.price < 0) {
         return {
           success: false,
-          message: getMessage('VALIDATION.VALIDATION_FAILED'),
-          errors: [getMessage('SUBSCRIPTION.INVALID_PRICE')]
+          message: 'فشل في التحقق من البيانات',
+          errors: ['السعر يجب أن يكون أكبر من أو يساوي صفر']
         };
       }
 
       if (data.durationDays !== undefined && data.durationDays <= 0) {
         return {
           success: false,
-          message: getMessage('VALIDATION.VALIDATION_FAILED'),
-          errors: [getMessage('SUBSCRIPTION.INVALID_DURATION')]
+          message: 'فشل في التحقق من البيانات',
+          errors: ['مدة الباقة يجب أن تكون أكبر من صفر']
         };
       }
 
@@ -217,8 +214,8 @@ export class SubscriptionPackageService {
       if (data.isFree === true && data.price !== undefined && data.price !== 0) {
         return {
           success: false,
-          message: getMessage('VALIDATION.VALIDATION_FAILED'),
-          errors: [getMessage('SUBSCRIPTION.FREE_PACKAGE_PRICE_ZERO')]
+          message: 'فشل في التحقق من البيانات',
+          errors: ['الباقة المجانية يجب أن يكون سعرها صفر']
         };
       }
 
@@ -227,22 +224,22 @@ export class SubscriptionPackageService {
       if (!updatedPackage) {
         return {
           success: false,
-          message: getMessage('GENERAL.OPERATION_FAILED'),
-          errors: [getMessage('SERVER.INTERNAL_ERROR')]
+          message: 'فشل في العملية',
+          errors: ['حدث خطأ في الخادم']
         };
       }
 
       return {
         success: true,
-        message: getMessage('SUBSCRIPTION.PACKAGE_UPDATED'),
+        message: 'تم تحديث الباقة بنجاح',
         data: updatedPackage
       };
     } catch (error) {
       console.error('Error updating subscription package:', error);
       return {
         success: false,
-        message: getMessage('GENERAL.OPERATION_FAILED'),
-        errors: [getMessage('SERVER.INTERNAL_ERROR')]
+        message: 'فشل في العملية',
+        errors: ['حدث خطأ في الخادم']
       };
     }
   }
@@ -259,21 +256,21 @@ export class SubscriptionPackageService {
       if (!success) {
         return {
           success: false,
-          message: getMessage('SUBSCRIPTION.PACKAGE_NOT_FOUND'),
-          errors: [getMessage('SUBSCRIPTION.PACKAGE_NOT_FOUND')]
+          message: 'الباقة غير موجودة',
+          errors: ['الباقة غير موجودة']
         };
       }
 
       return {
         success: true,
-        message: getMessage('SUBSCRIPTION.PACKAGE_ACTIVATED')
+        message: 'تم تفعيل الباقة بنجاح'
       };
     } catch (error) {
       console.error('Error activating subscription package:', error);
       return {
         success: false,
-        message: getMessage('GENERAL.OPERATION_FAILED'),
-        errors: [getMessage('SERVER.INTERNAL_ERROR')]
+        message: 'فشل في العملية',
+        errors: ['حدث خطأ في الخادم']
       };
     }
   }
@@ -290,21 +287,21 @@ export class SubscriptionPackageService {
       if (!success) {
         return {
           success: false,
-          message: getMessage('SUBSCRIPTION.PACKAGE_NOT_FOUND'),
-          errors: [getMessage('SUBSCRIPTION.PACKAGE_NOT_FOUND')]
+          message: 'الباقة غير موجودة',
+          errors: ['الباقة غير موجودة']
         };
       }
 
       return {
         success: true,
-        message: getMessage('SUBSCRIPTION.PACKAGE_DEACTIVATED')
+        message: 'تم إلغاء تفعيل الباقة بنجاح'
       };
     } catch (error) {
       console.error('Error deactivating subscription package:', error);
       return {
         success: false,
-        message: getMessage('GENERAL.OPERATION_FAILED'),
-        errors: [getMessage('SERVER.INTERNAL_ERROR')]
+        message: 'فشل في العملية',
+        errors: ['حدث خطأ في الخادم']
       };
     }
   }
@@ -321,21 +318,21 @@ export class SubscriptionPackageService {
       if (!success) {
         return {
           success: false,
-          message: getMessage('SUBSCRIPTION.PACKAGE_NOT_FOUND'),
-          errors: [getMessage('SUBSCRIPTION.PACKAGE_NOT_FOUND')]
+          message: 'الباقة غير موجودة',
+          errors: ['الباقة غير موجودة']
         };
       }
 
       return {
         success: true,
-        message: getMessage('SUBSCRIPTION.PACKAGE_DELETED')
+        message: 'تم حذف الباقة بنجاح'
       };
     } catch (error) {
       console.error('Error deleting subscription package:', error);
       return {
         success: false,
-        message: getMessage('GENERAL.OPERATION_FAILED'),
-        errors: [getMessage('SERVER.INTERNAL_ERROR')]
+        message: 'فشل في العملية',
+        errors: ['حدث خطأ في الخادم']
       };
     }
   }
@@ -352,15 +349,15 @@ export class SubscriptionPackageService {
 
       return {
         success: true,
-        message: getMessage('SUBSCRIPTION.ACTIVE_PACKAGES_FOUND'),
+        message: 'تم العثور على الباقات النشطة',
         data: packages
       };
     } catch (error) {
       console.error('Error getting active subscription packages:', error);
       return {
         success: false,
-        message: getMessage('GENERAL.OPERATION_FAILED'),
-        errors: [getMessage('SERVER.INTERNAL_ERROR')]
+        message: 'فشل في العملية',
+        errors: ['حدث خطأ في الخادم']
       };
     }
   }
@@ -378,22 +375,22 @@ export class SubscriptionPackageService {
       if (!package_) {
         return {
           success: false,
-          message: getMessage('SUBSCRIPTION.NO_FREE_PACKAGE'),
-          errors: [getMessage('SUBSCRIPTION.NO_FREE_PACKAGE')]
+          message: 'لا توجد باقة مجانية',
+          errors: ['لا توجد باقة مجانية']
         };
       }
 
       return {
         success: true,
-        message: getMessage('SUBSCRIPTION.FREE_PACKAGE_FOUND'),
+        message: 'تم العثور على الباقة المجانية',
         data: package_
       };
     } catch (error) {
       console.error('Error getting free subscription package:', error);
       return {
         success: false,
-        message: getMessage('GENERAL.OPERATION_FAILED'),
-        errors: [getMessage('SERVER.INTERNAL_ERROR')]
+        message: 'فشل في العملية',
+        errors: ['حدث خطأ في الخادم']
       };
     }
   }

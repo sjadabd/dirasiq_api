@@ -4,7 +4,6 @@ import { SubjectModel } from '@/models/subject.model';
 import { UserModel } from '@/models/user.model';
 import { ApiResponse, CreateCourseRequest, UpdateCourseRequest } from '@/types';
 import { ImageService } from '@/utils/image.service';
-import { getMessage } from '@/utils/messages';
 
 export class CourseService {
   // Create new course
@@ -15,8 +14,8 @@ export class CourseService {
       if (!teacher || teacher.userType !== 'teacher') {
         return {
           success: false,
-          message: getMessage('COURSE.TEACHER_NOT_FOUND'),
-          errors: [getMessage('COURSE.TEACHER_NOT_FOUND')]
+          message: 'المعلم غير موجود',
+          errors: ['المعلم غير موجود']
         };
       }
 
@@ -25,8 +24,8 @@ export class CourseService {
       if (!yearPattern.test(data.study_year)) {
         return {
           success: false,
-          message: getMessage('COURSE.INVALID_STUDY_YEAR'),
-          errors: [getMessage('COURSE.INVALID_STUDY_YEAR')]
+          message: 'السنة الدراسية غير صحيحة',
+          errors: ['السنة الدراسية غير صحيحة']
         };
       }
 
@@ -35,8 +34,8 @@ export class CourseService {
       if (!grade) {
         return {
           success: false,
-          message: getMessage('COURSE.GRADE_NOT_FOUND'),
-          errors: [getMessage('COURSE.GRADE_NOT_FOUND')]
+          message: 'الصف غير موجود',
+          errors: ['الصف غير موجود']
         };
       }
 
@@ -45,8 +44,8 @@ export class CourseService {
       if (!subject) {
         return {
           success: false,
-          message: getMessage('COURSE.SUBJECT_NOT_FOUND'),
-          errors: [getMessage('COURSE.SUBJECT_NOT_OWNED')]
+          message: 'المادة غير موجودة',
+          errors: ['المادة لا تنتمي للمعلم']
         };
       }
 
@@ -56,8 +55,8 @@ export class CourseService {
       if (endDate <= startDate) {
         return {
           success: false,
-          message: getMessage('COURSE.INVALID_DATE_RANGE'),
-          errors: [getMessage('COURSE.INVALID_DATE_RANGE')]
+          message: 'نطاق التاريخ غير صحيح',
+          errors: ['نطاق التاريخ غير صحيح']
         };
       }
 
@@ -65,8 +64,8 @@ export class CourseService {
       if (data.price < 0) {
         return {
           success: false,
-          message: getMessage('COURSE.INVALID_PRICE'),
-          errors: [getMessage('COURSE.INVALID_PRICE')]
+          message: 'السعر غير صحيح',
+          errors: ['السعر غير صحيح']
         };
       }
 
@@ -74,8 +73,8 @@ export class CourseService {
       if (data.seats_count <= 0) {
         return {
           success: false,
-          message: getMessage('COURSE.INVALID_SEATS_COUNT'),
-          errors: [getMessage('COURSE.INVALID_SEATS_COUNT')]
+          message: 'عدد المقاعد غير صحيح',
+          errors: ['عدد المقاعد غير صحيح']
         };
       }
 
@@ -90,8 +89,8 @@ export class CourseService {
       if (existingCourse) {
         return {
           success: false,
-          message: getMessage('COURSE.ALREADY_EXISTS'),
-          errors: [getMessage('COURSE.ALREADY_EXISTS')]
+          message: 'الدورة موجودة بالفعل',
+          errors: ['الدورة موجودة بالفعل']
         };
       }
 
@@ -103,8 +102,8 @@ export class CourseService {
         } catch (error) {
           return {
             success: false,
-            message: getMessage('COURSE.IMAGE_PROCESSING_ERROR'),
-            errors: [getMessage('COURSE.IMAGE_PROCESSING_ERROR')]
+            message: 'خطأ في معالجة الصورة',
+            errors: ['خطأ في معالجة الصورة']
           };
         }
       }
@@ -115,15 +114,15 @@ export class CourseService {
 
       return {
         success: true,
-        message: getMessage('COURSE.CREATED'),
+        message: 'تم إنشاء الدورة',
         data: { course }
       };
     } catch (error) {
       console.error('Error creating course:', error);
       return {
         success: false,
-        message: getMessage('GENERAL.OPERATION_FAILED'),
-        errors: [getMessage('SERVER.INTERNAL_ERROR')]
+        message: 'فشلت العملية',
+        errors: ['خطأ داخلي في الخادم']
       };
     }
   }
@@ -145,8 +144,8 @@ export class CourseService {
       if (!teacher || teacher.userType !== 'teacher') {
         return {
           success: false,
-          message: getMessage('COURSE.TEACHER_NOT_FOUND'),
-          errors: [getMessage('COURSE.TEACHER_NOT_FOUND')]
+          message: 'المعلم غير موجود',
+          errors: ['المعلم غير موجود']
         };
       }
 
@@ -154,7 +153,7 @@ export class CourseService {
 
       return {
         success: true,
-        message: getMessage('GENERAL.SUCCESS'),
+        message: 'تمت العملية بنجاح',
         data: result.courses,
         count: result.total
       };
@@ -162,8 +161,8 @@ export class CourseService {
       console.error('Error getting courses:', error);
       return {
         success: false,
-        message: getMessage('GENERAL.OPERATION_FAILED'),
-        errors: [getMessage('SERVER.INTERNAL_ERROR')]
+        message: 'فشلت العملية',
+        errors: ['خطأ داخلي في الخادم']
       };
     }
   }
@@ -176,22 +175,22 @@ export class CourseService {
       if (!course) {
         return {
           success: false,
-          message: getMessage('COURSE.NOT_FOUND'),
-          errors: [getMessage('COURSE.NOT_FOUND')]
+          message: 'الدورة غير موجودة',
+          errors: ['الدورة غير موجودة']
         };
       }
 
       return {
         success: true,
-        message: getMessage('GENERAL.SUCCESS'),
+        message: 'تمت العملية بنجاح',
         data: { course }
       };
     } catch (error) {
       console.error('Error getting course:', error);
       return {
         success: false,
-        message: getMessage('GENERAL.OPERATION_FAILED'),
-        errors: [getMessage('SERVER.INTERNAL_ERROR')]
+        message: 'فشلت العملية',
+        errors: ['خطأ داخلي في الخادم']
       };
     }
   }
@@ -204,8 +203,8 @@ export class CourseService {
       if (!existingCourse) {
         return {
           success: false,
-          message: getMessage('COURSE.NOT_FOUND'),
-          errors: [getMessage('COURSE.NOT_FOUND')]
+          message: 'الدورة غير موجودة',
+          errors: ['الدورة غير موجودة']
         };
       }
 
@@ -215,8 +214,8 @@ export class CourseService {
         if (!yearPattern.test(data.study_year)) {
           return {
             success: false,
-            message: getMessage('COURSE.INVALID_STUDY_YEAR'),
-            errors: [getMessage('COURSE.INVALID_STUDY_YEAR')]
+            message: 'السنة الدراسية غير صحيحة',
+            errors: ['السنة الدراسية غير صحيحة']
           };
         }
       }
@@ -227,8 +226,8 @@ export class CourseService {
         if (!grade) {
           return {
             success: false,
-            message: getMessage('COURSE.GRADE_NOT_FOUND'),
-            errors: [getMessage('COURSE.GRADE_NOT_FOUND')]
+            message: 'الصف غير موجود',
+            errors: ['الصف غير موجود']
           };
         }
       }
@@ -239,8 +238,8 @@ export class CourseService {
         if (!subject) {
           return {
             success: false,
-            message: getMessage('COURSE.SUBJECT_NOT_FOUND'),
-            errors: [getMessage('COURSE.SUBJECT_NOT_OWNED')]
+            message: 'المادة غير موجودة',
+            errors: ['المادة لا تنتمي للمعلم']
           };
         }
       }
@@ -252,8 +251,8 @@ export class CourseService {
         if (endDate <= startDate) {
           return {
             success: false,
-            message: getMessage('COURSE.INVALID_DATE_RANGE'),
-            errors: [getMessage('COURSE.INVALID_DATE_RANGE')]
+            message: 'نطاق التاريخ غير صحيح',
+            errors: ['نطاق التاريخ غير صحيح']
           };
         }
       }
@@ -262,8 +261,8 @@ export class CourseService {
       if (data.price !== undefined && data.price < 0) {
         return {
           success: false,
-          message: getMessage('COURSE.INVALID_PRICE'),
-          errors: [getMessage('COURSE.INVALID_PRICE')]
+          message: 'السعر غير صحيح',
+          errors: ['السعر غير صحيح']
         };
       }
 
@@ -271,8 +270,8 @@ export class CourseService {
       if (data.seats_count !== undefined && data.seats_count <= 0) {
         return {
           success: false,
-          message: getMessage('COURSE.INVALID_SEATS_COUNT'),
-          errors: [getMessage('COURSE.INVALID_SEATS_COUNT')]
+          message: 'عدد المقاعد غير صحيح',
+          errors: ['عدد المقاعد غير صحيح']
         };
       }
 
@@ -293,8 +292,8 @@ export class CourseService {
         if (nameExists) {
           return {
             success: false,
-            message: getMessage('COURSE.ALREADY_EXISTS'),
-            errors: [getMessage('COURSE.ALREADY_EXISTS')]
+            message: 'الدورة موجودة بالفعل',
+            errors: ['الدورة موجودة بالفعل']
           };
         }
       }
@@ -307,8 +306,8 @@ export class CourseService {
         } catch (error) {
           return {
             success: false,
-            message: getMessage('COURSE.IMAGE_PROCESSING_ERROR'),
-            errors: [getMessage('COURSE.IMAGE_PROCESSING_ERROR')]
+            message: 'خطأ في معالجة الصورة',
+            errors: ['خطأ في معالجة الصورة']
           };
         }
       }
@@ -320,22 +319,22 @@ export class CourseService {
       if (!course) {
         return {
           success: false,
-          message: getMessage('COURSE.NOT_FOUND'),
-          errors: [getMessage('COURSE.NOT_FOUND')]
+          message: 'الدورة غير موجودة',
+          errors: ['الدورة غير موجودة']
         };
       }
 
       return {
         success: true,
-        message: getMessage('COURSE.UPDATED'),
+        message: 'تم تحديث الدورة',
         data: { course }
       };
     } catch (error) {
       console.error('Error updating course:', error);
       return {
         success: false,
-        message: getMessage('GENERAL.OPERATION_FAILED'),
-        errors: [getMessage('SERVER.INTERNAL_ERROR')]
+        message: 'فشلت العملية',
+        errors: ['خطأ داخلي في الخادم']
       };
     }
   }
@@ -348,8 +347,8 @@ export class CourseService {
       if (!existingCourse) {
         return {
           success: false,
-          message: getMessage('COURSE.NOT_FOUND'),
-          errors: [getMessage('COURSE.NOT_FOUND')]
+          message: 'الدورة غير موجودة',
+          errors: ['الدورة غير موجودة']
         };
       }
 
@@ -359,21 +358,21 @@ export class CourseService {
       if (!deleted) {
         return {
           success: false,
-          message: getMessage('COURSE.NOT_FOUND'),
-          errors: [getMessage('COURSE.NOT_FOUND')]
+          message: 'الدورة غير موجودة',
+          errors: ['الدورة غير موجودة']
         };
       }
 
       return {
         success: true,
-        message: getMessage('COURSE.DELETED')
+        message: 'تم حذف الدورة'
       };
     } catch (error) {
       console.error('Error deleting course:', error);
       return {
         success: false,
-        message: getMessage('GENERAL.OPERATION_FAILED'),
-        errors: [getMessage('SERVER.INTERNAL_ERROR')]
+        message: 'فشلت العملية',
+        errors: ['خطأ داخلي في الخادم']
       };
     }
   }

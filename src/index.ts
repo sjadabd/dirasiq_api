@@ -8,7 +8,6 @@ import teacherRoutes from '@/routes/teacher';
 import teacherSearchRoutes from '@/routes/teacher-search.routes';
 import courseRoutes from '@/routes/teacher/course.routes';
 import subjectRoutes from '@/routes/teacher/subject.routes';
-import { getMessage } from '@/utils/messages';
 import compression from 'compression';
 import cors from 'cors';
 import dotenv from 'dotenv';
@@ -53,8 +52,8 @@ const limiter = rateLimit({
   max: parseInt(process.env['RATE_LIMIT_MAX_REQUESTS'] || '100'), // limit each IP to 100 requests per windowMs
   message: {
     success: false,
-    message: getMessage('SERVER.TOO_MANY_REQUESTS'),
-    errors: [getMessage('SERVER.TRY_AGAIN_LATER')]
+    message: 'عدد الطلبات كبير جداً',
+    errors: ['حاول مرة أخرى لاحقاً']
   },
   standardHeaders: true,
   legacyHeaders: false,
@@ -80,7 +79,7 @@ if (process.env['NODE_ENV'] === 'development') {
 app.get('/health', (_req, res) => {
   res.status(200).json({
     success: true,
-    message: getMessage('SERVER.SERVER_RUNNING'),
+    message: 'الخادم يعمل بنجاح',
     timestamp: new Date().toISOString(),
     environment: process.env['NODE_ENV'] || 'development'
   });
@@ -119,7 +118,7 @@ app.use('/api/teacher/enrollment', teacherRoutes);
 app.use('*', (req, res) => {
   res.status(404).json({
     success: false,
-    message: getMessage('SERVER.ROUTE_NOT_FOUND'),
+    message: 'المسار غير موجود',
     path: req.originalUrl
   });
 });
@@ -130,7 +129,7 @@ app.use((error: any, _req: express.Request, res: express.Response, _next: expres
 
   res.status(error.status || 500).json({
     success: false,
-    message: error.message || getMessage('SERVER.SOMETHING_WENT_WRONG'),
+    message: error.message || 'حدث خطأ في الخادم',
     ...(process.env['NODE_ENV'] === 'development' && { stack: error.stack })
   });
 });

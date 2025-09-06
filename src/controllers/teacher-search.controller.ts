@@ -1,5 +1,4 @@
 import { TeacherSearchService } from '@/services/teacher-search.service';
-import { getMessage } from '@/utils/messages';
 import { Request, Response } from 'express';
 import { body, validationResult } from 'express-validator';
 
@@ -9,18 +8,18 @@ export class TeacherSearchController {
     try {
       // Validate request query
       await Promise.all([
-        body('latitude').isFloat({ min: -90, max: 90 }).withMessage(getMessage('VALIDATION.INVALID_LATITUDE')).run(req),
-        body('longitude').isFloat({ min: -180, max: 180 }).withMessage(getMessage('VALIDATION.INVALID_LONGITUDE')).run(req),
-        body('maxDistance').optional().isFloat({ min: 0.1, max: 50 }).withMessage(getMessage('VALIDATION.INVALID_MAX_DISTANCE')).run(req),
-        body('page').optional().isInt({ min: 1 }).withMessage(getMessage('VALIDATION.INVALID_PAGE')).run(req),
-        body('limit').optional().isInt({ min: 1, max: 100 }).withMessage(getMessage('VALIDATION.INVALID_LIMIT')).run(req)
+        body('latitude').isFloat({ min: -90, max: 90 }).withMessage('خط العرض غير صحيح').run(req),
+        body('longitude').isFloat({ min: -180, max: 180 }).withMessage('خط الطول غير صحيح').run(req),
+        body('maxDistance').optional().isFloat({ min: 0.1, max: 50 }).withMessage('المسافة القصوى غير صحيحة').run(req),
+        body('page').optional().isInt({ min: 1 }).withMessage('رقم الصفحة غير صحيح').run(req),
+        body('limit').optional().isInt({ min: 1, max: 100 }).withMessage('الحد الأقصى غير صحيح').run(req)
       ]);
 
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
         res.status(400).json({
           success: false,
-          message: getMessage('VALIDATION.VALIDATION_FAILED'),
+          message: 'فشل في التحقق من البيانات',
           errors: errors.array().map(err => err.msg)
         });
         return;
@@ -48,8 +47,8 @@ export class TeacherSearchController {
       console.error('Error in searchByCoordinates controller:', error);
       res.status(500).json({
         success: false,
-        message: getMessage('SERVER.INTERNAL_ERROR'),
-        errors: [getMessage('SERVER.SOMETHING_WENT_WRONG')]
+        message: 'خطأ داخلي في الخادم',
+        errors: ['حدث خطأ في الخادم']
       });
     }
   }
@@ -59,18 +58,18 @@ export class TeacherSearchController {
     try {
       // Validate request query
       await Promise.all([
-        body('governorate').optional().isString().withMessage(getMessage('VALIDATION.INVALID_GOVERNORATE')).run(req),
-        body('city').optional().isString().withMessage(getMessage('VALIDATION.INVALID_CITY')).run(req),
-        body('district').optional().isString().withMessage(getMessage('VALIDATION.INVALID_DISTRICT')).run(req),
-        body('page').optional().isInt({ min: 1 }).withMessage(getMessage('VALIDATION.INVALID_PAGE')).run(req),
-        body('limit').optional().isInt({ min: 1, max: 100 }).withMessage(getMessage('VALIDATION.INVALID_LIMIT')).run(req)
+        body('governorate').optional().isString().withMessage('المحافظة غير صحيحة').run(req),
+        body('city').optional().isString().withMessage('المدينة غير صحيحة').run(req),
+        body('district').optional().isString().withMessage('المنطقة غير صحيحة').run(req),
+        body('page').optional().isInt({ min: 1 }).withMessage('رقم الصفحة غير صحيح').run(req),
+        body('limit').optional().isInt({ min: 1, max: 100 }).withMessage('الحد الأقصى غير صحيح').run(req)
       ]);
 
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
         res.status(400).json({
           success: false,
-          message: getMessage('VALIDATION.VALIDATION_FAILED'),
+          message: 'فشل في التحقق من البيانات',
           errors: errors.array().map(err => err.msg)
         });
         return;
@@ -82,8 +81,8 @@ export class TeacherSearchController {
       if (!governorate && !city && !district) {
         res.status(400).json({
           success: false,
-          message: getMessage('VALIDATION.LOCATION_REQUIRED'),
-          errors: [getMessage('VALIDATION.LOCATION_REQUIRED')]
+          message: 'الموقع مطلوب',
+          errors: ['الموقع مطلوب']
         });
         return;
       }
@@ -108,8 +107,8 @@ export class TeacherSearchController {
       console.error('Error in searchByLocation controller:', error);
       res.status(500).json({
         success: false,
-        message: getMessage('SERVER.INTERNAL_ERROR'),
-        errors: [getMessage('SERVER.SOMETHING_WENT_WRONG')]
+        message: 'خطأ داخلي في الخادم',
+        errors: ['حدث خطأ في الخادم']
       });
     }
   }
@@ -128,8 +127,8 @@ export class TeacherSearchController {
       console.error('Error in getGovernorates controller:', error);
       res.status(500).json({
         success: false,
-        message: getMessage('SERVER.INTERNAL_ERROR'),
-        errors: [getMessage('SERVER.SOMETHING_WENT_WRONG')]
+        message: 'خطأ داخلي في الخادم',
+        errors: ['حدث خطأ في الخادم']
       });
     }
   }
@@ -142,8 +141,8 @@ export class TeacherSearchController {
       if (!governorate) {
         res.status(400).json({
           success: false,
-          message: getMessage('VALIDATION.GOVERNORATE_REQUIRED'),
-          errors: [getMessage('VALIDATION.GOVERNORATE_REQUIRED')]
+          message: 'المحافظة مطلوبة',
+          errors: ['المحافظة مطلوبة']
         });
         return;
       }
@@ -159,8 +158,8 @@ export class TeacherSearchController {
       console.error('Error in getCities controller:', error);
       res.status(500).json({
         success: false,
-        message: getMessage('SERVER.INTERNAL_ERROR'),
-        errors: [getMessage('SERVER.SOMETHING_WENT_WRONG')]
+        message: 'خطأ داخلي في الخادم',
+        errors: ['حدث خطأ في الخادم']
       });
     }
   }

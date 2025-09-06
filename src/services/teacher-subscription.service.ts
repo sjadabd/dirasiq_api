@@ -4,7 +4,6 @@ import {
   CreateTeacherSubscriptionRequest,
   UpdateTeacherSubscriptionRequest
 } from '@/types'
-import { getMessage } from '@/utils/messages'
 
 export class TeacherSubscriptionService {
   // إنشاء اشتراك جديد
@@ -14,15 +13,15 @@ export class TeacherSubscriptionService {
 
       return {
         success: true,
-        message: getMessage('SUBSCRIPTION.CREATED_SUCCESSFULLY'),
+        message: 'تم إنشاء الاشتراك بنجاح',
         data: subscription
       }
     } catch (error) {
       console.error('Error creating teacher subscription:', error)
       return {
         success: false,
-        message: getMessage('GENERAL.OPERATION_FAILED'),
-        errors: [getMessage('SERVER.INTERNAL_ERROR')]
+        message: 'فشلت العملية',
+        errors: ['خطأ داخلي في الخادم']
       }
     }
   }
@@ -35,22 +34,22 @@ export class TeacherSubscriptionService {
       if (!subscription) {
         return {
           success: false,
-          message: getMessage('SUBSCRIPTION.NOT_FOUND'),
-          errors: [getMessage('SUBSCRIPTION.NOT_FOUND')]
+          message: 'الاشتراك غير موجود',
+          errors: ['الاشتراك غير موجود']
         }
       }
 
       return {
         success: true,
-        message: getMessage('SUBSCRIPTION.FOUND'),
+        message: 'تم العثور على الاشتراك',
         data: subscription
       }
     } catch (error) {
       console.error('Error finding subscription by ID:', error)
       return {
         success: false,
-        message: getMessage('GENERAL.OPERATION_FAILED'),
-        errors: [getMessage('SERVER.INTERNAL_ERROR')]
+        message: 'فشلت العملية',
+        errors: ['خطأ داخلي في الخادم']
       }
     }
   }
@@ -62,7 +61,7 @@ export class TeacherSubscriptionService {
 
       return {
         success: true,
-        message: getMessage('SUBSCRIPTION.FOUND'),
+        message: 'تم العثور على الاشتراك',
         data: subscriptions,
         count: subscriptions.length
       }
@@ -70,8 +69,8 @@ export class TeacherSubscriptionService {
       console.error('Error finding teacher subscriptions:', error)
       return {
         success: false,
-        message: getMessage('GENERAL.OPERATION_FAILED'),
-        errors: [getMessage('SERVER.INTERNAL_ERROR')]
+        message: 'فشلت العملية',
+        errors: ['خطأ داخلي في الخادم']
       }
     }
   }
@@ -84,22 +83,22 @@ export class TeacherSubscriptionService {
       if (!active) {
         return {
           success: false,
-          message: getMessage('SUBSCRIPTION.NO_ACTIVE'),
-          errors: [getMessage('SUBSCRIPTION.NO_ACTIVE')]
+          message: 'لا يوجد اشتراك نشط',
+          errors: ['لا يوجد اشتراك نشط']
         }
       }
 
       return {
         success: true,
-        message: getMessage('SUBSCRIPTION.ACTIVE_FOUND'),
+        message: 'تم العثور على الاشتراك النشط',
         data: active
       }
     } catch (error) {
       console.error('Error getting active subscription:', error)
       return {
         success: false,
-        message: getMessage('GENERAL.OPERATION_FAILED'),
-        errors: [getMessage('SERVER.INTERNAL_ERROR')]
+        message: 'فشلت العملية',
+        errors: ['خطأ داخلي في الخادم']
       }
     }
   }
@@ -112,22 +111,22 @@ export class TeacherSubscriptionService {
       if (!updated) {
         return {
           success: false,
-          message: getMessage('SUBSCRIPTION.NOT_FOUND_OR_NOT_UPDATED'),
-          errors: [getMessage('SUBSCRIPTION.NOT_FOUND_OR_NOT_UPDATED')]
+          message: 'الاشتراك غير موجود أو لم يتم تحديثه',
+          errors: ['الاشتراك غير موجود أو لم يتم تحديثه']
         }
       }
 
       return {
         success: true,
-        message: getMessage('SUBSCRIPTION.UPDATED_SUCCESSFULLY'),
+        message: 'تم تحديث الاشتراك بنجاح',
         data: updated
       }
     } catch (error) {
       console.error('Error updating subscription:', error)
       return {
         success: false,
-        message: getMessage('GENERAL.OPERATION_FAILED'),
-        errors: [getMessage('SERVER.INTERNAL_ERROR')]
+        message: 'فشلت العملية',
+        errors: ['خطأ داخلي في الخادم']
       }
     }
   }
@@ -140,21 +139,21 @@ export class TeacherSubscriptionService {
       if (!deleted) {
         return {
           success: false,
-          message: getMessage('SUBSCRIPTION.NOT_FOUND_OR_NOT_DELETED'),
-          errors: [getMessage('SUBSCRIPTION.NOT_FOUND_OR_NOT_DELETED')]
+          message: 'الاشتراك غير موجود أو لم يتم حذفه',
+          errors: ['الاشتراك غير موجود أو لم يتم حذفه']
         }
       }
 
       return {
         success: true,
-        message: getMessage('SUBSCRIPTION.DELETED_SUCCESSFULLY')
+        message: 'تم حذف الاشتراك بنجاح'
       }
     } catch (error) {
       console.error('Error deleting subscription:', error)
       return {
         success: false,
-        message: getMessage('GENERAL.OPERATION_FAILED'),
-        errors: [getMessage('SERVER.INTERNAL_ERROR')]
+        message: 'فشلت العملية',
+        errors: ['خطأ داخلي في الخادم']
       }
     }
   }

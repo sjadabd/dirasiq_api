@@ -1,6 +1,5 @@
 import { TokenModel } from '@/models/token.model';
 import { UserModel } from '@/models/user.model';
-import { getMessage } from '@/utils/messages';
 import { UserType } from '@/types';
 import { NextFunction, Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
@@ -23,8 +22,8 @@ export const authenticateToken = async (req: Request, res: Response, next: NextF
     if (!token) {
       res.status(401).json({
         success: false,
-        message: getMessage('AUTH.TOKEN_REQUIRED'),
-        errors: [getMessage('AUTH.NO_TOKEN_PROVIDED')]
+        message: 'رمز المصادقة مطلوب',
+        errors: ['لم يتم توفير رمز المصادقة']
       });
       return;
     }
@@ -34,8 +33,8 @@ export const authenticateToken = async (req: Request, res: Response, next: NextF
     if (!dbToken) {
       res.status(401).json({
         success: false,
-        message: getMessage('AUTH.INVALID_TOKEN'),
-        errors: [getMessage('AUTH.TOKEN_NOT_FOUND')]
+        message: 'رمز المصادقة غير صحيح',
+        errors: ['رمز المصادقة غير موجود']
       });
       return;
     }
@@ -45,8 +44,8 @@ export const authenticateToken = async (req: Request, res: Response, next: NextF
     if (!secret) {
       res.status(500).json({
         success: false,
-        message: getMessage('SERVER.INTERNAL_ERROR'),
-        errors: [getMessage('AUTH.JWT_SECRET_NOT_CONFIGURED')]
+        message: 'خطأ داخلي في الخادم',
+        errors: ['مفتاح JWT غير مُعد']
       });
       return;
     }
@@ -58,8 +57,8 @@ export const authenticateToken = async (req: Request, res: Response, next: NextF
     if (!user) {
       res.status(401).json({
         success: false,
-        message: getMessage('AUTH.USER_NOT_FOUND'),
-        errors: [getMessage('AUTH.USER_DOES_NOT_EXIST')]
+        message: 'المستخدم غير موجود',
+        errors: ['المستخدم غير موجود']
       });
       return;
     }
@@ -68,8 +67,8 @@ export const authenticateToken = async (req: Request, res: Response, next: NextF
     if (user.status !== 'active') {
       res.status(401).json({
         success: false,
-        message: getMessage('AUTH.ACCOUNT_NOT_ACTIVE'),
-        errors: [getMessage('AUTH.USER_ACCOUNT_NOT_ACTIVE')]
+        message: 'الحساب غير مفعل',
+        errors: ['حساب المستخدم غير مفعل']
       });
       return;
     }
@@ -80,8 +79,8 @@ export const authenticateToken = async (req: Request, res: Response, next: NextF
     if (error instanceof jwt.JsonWebTokenError) {
       res.status(401).json({
         success: false,
-        message: getMessage('AUTH.INVALID_TOKEN'),
-        errors: [getMessage('AUTH.TOKEN_VERIFICATION_FAILED')]
+        message: 'رمز المصادقة غير صحيح',
+        errors: ['فشل في التحقق من رمز المصادقة']
       });
       return;
     }
@@ -89,8 +88,8 @@ export const authenticateToken = async (req: Request, res: Response, next: NextF
     console.error('Authentication error:', error);
     res.status(500).json({
       success: false,
-      message: getMessage('AUTH.AUTHENTICATION_FAILED'),
-      errors: [getMessage('SERVER.INTERNAL_ERROR')]
+      message: 'فشل في المصادقة',
+      errors: ['خطأ داخلي في الخادم']
     });
   }
 };
@@ -100,8 +99,8 @@ export const requireSuperAdmin = (req: Request, res: Response, next: NextFunctio
   if (!req.user || req.user.userType !== UserType.SUPER_ADMIN) {
     res.status(403).json({
       success: false,
-      message: getMessage('AUTH.ACCESS_DENIED'),
-      errors: [getMessage('AUTH.SUPER_ADMIN_ACCESS_REQUIRED')]
+      message: 'الوصول مرفوض',
+      errors: ['مطلوب صلاحيات السوبر أدمن']
     });
     return;
   }
@@ -112,8 +111,8 @@ export const requireTeacher = (req: Request, res: Response, next: NextFunction):
   if (!req.user || req.user.userType !== UserType.TEACHER) {
     res.status(403).json({
       success: false,
-      message: getMessage('AUTH.ACCESS_DENIED'),
-      errors: [getMessage('AUTH.TEACHER_ACCESS_REQUIRED')]
+      message: 'الوصول مرفوض',
+      errors: ['مطلوب صلاحيات المعلم']
     });
     return;
   }
@@ -124,8 +123,8 @@ export const requireStudent = (req: Request, res: Response, next: NextFunction):
   if (!req.user || req.user.userType !== UserType.STUDENT) {
     res.status(403).json({
       success: false,
-      message: getMessage('AUTH.ACCESS_DENIED'),
-      errors: [getMessage('AUTH.STUDENT_ACCESS_REQUIRED')]
+      message: 'الوصول مرفوض',
+      errors: ['مطلوب صلاحيات الطالب']
     });
     return;
   }
@@ -137,8 +136,8 @@ export const requireAuth = (req: Request, res: Response, next: NextFunction): vo
   if (!req.user) {
     res.status(401).json({
       success: false,
-      message: getMessage('AUTH.AUTHENTICATION_REQUIRED'),
-      errors: [getMessage('AUTH.USER_NOT_AUTHENTICATED')]
+      message: 'المصادقة مطلوبة',
+      errors: ['المستخدم غير مصادق عليه']
     });
     return;
   }

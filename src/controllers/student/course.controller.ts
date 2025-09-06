@@ -1,5 +1,4 @@
 import { StudentService } from '@/services/student/student.service';
-import { getMessage } from '@/utils/messages';
 import { Request, Response } from 'express';
 import { body, validationResult } from 'express-validator';
 
@@ -9,16 +8,16 @@ export class StudentCourseController {
     try {
       // Validate request query
       await Promise.all([
-        body('maxDistance').optional().isFloat({ min: 0.1, max: 50 }).withMessage(getMessage('VALIDATION.INVALID_MAX_DISTANCE')).run(req),
-        body('page').optional().isInt({ min: 1 }).withMessage(getMessage('VALIDATION.INVALID_PAGE')).run(req),
-        body('limit').optional().isInt({ min: 1, max: 100 }).withMessage(getMessage('VALIDATION.INVALID_LIMIT')).run(req)
+        body('maxDistance').optional().isFloat({ min: 0.1, max: 50 }).withMessage('المسافة القصوى غير صحيحة').run(req),
+        body('page').optional().isInt({ min: 1 }).withMessage('رقم الصفحة غير صحيح').run(req),
+        body('limit').optional().isInt({ min: 1, max: 100 }).withMessage('الحد الأقصى غير صحيح').run(req)
       ]);
 
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
         res.status(400).json({
           success: false,
-          message: getMessage('VALIDATION.VALIDATION_FAILED'),
+          message: 'فشل في التحقق من البيانات',
           errors: errors.array().map(err => err.msg)
         });
         return;
@@ -62,8 +61,8 @@ export class StudentCourseController {
       console.error('Error in getSuggestedCourses controller:', error);
       res.status(500).json({
         success: false,
-        message: getMessage('SERVER.INTERNAL_ERROR'),
-        errors: [getMessage('SERVER.SOMETHING_WENT_WRONG')]
+        message: 'خطأ داخلي في الخادم',
+        errors: ['حدث خطأ في الخادم']
       });
     }
   }
@@ -78,8 +77,8 @@ export class StudentCourseController {
       if (!id) {
         res.status(400).json({
           success: false,
-          message: getMessage('VALIDATION.COURSE_ID_REQUIRED'),
-          errors: [getMessage('VALIDATION.COURSE_ID_REQUIRED')]
+          message: 'معرف الدورة مطلوب',
+          errors: ['معرف الدورة مطلوب']
         });
         return;
       }
@@ -95,8 +94,8 @@ export class StudentCourseController {
       console.error('Error in getCourseById controller:', error);
       res.status(500).json({
         success: false,
-        message: getMessage('SERVER.INTERNAL_ERROR'),
-        errors: [getMessage('SERVER.SOMETHING_WENT_WRONG')]
+        message: 'خطأ داخلي في الخادم',
+        errors: ['حدث خطأ في الخادم']
       });
     }
   }

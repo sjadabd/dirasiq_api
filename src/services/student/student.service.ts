@@ -2,7 +2,6 @@ import { CourseModel } from '@/models/course.model';
 import { StudentGradeModel } from '@/models/student-grade.model';
 import { UserModel } from '@/models/user.model';
 import { ApiResponse, StudentGrade } from '@/types';
-import { getMessage } from '@/utils/messages';
 
 export class StudentService {
   // Get active grades for student
@@ -13,22 +12,22 @@ export class StudentService {
       if (!studentGrades || studentGrades.length === 0) {
         return {
           success: false,
-          message: getMessage('STUDENT.NO_ACTIVE_GRADE'),
-          errors: [getMessage('STUDENT.NO_ACTIVE_GRADE')]
+          message: 'لا يوجد صف نشط',
+          errors: ['لا يوجد صف نشط']
         };
       }
 
       return {
         success: true,
-        message: getMessage('STUDENT.GRADES_FOUND'),
+        message: 'تم العثور على الصفوف',
         data: { grades: studentGrades }
       };
     } catch (error) {
       console.error('Error getting active grades for student:', error);
       return {
         success: false,
-        message: getMessage('GENERAL.OPERATION_FAILED'),
-        errors: [getMessage('SERVER.INTERNAL_ERROR')]
+        message: 'فشلت العملية',
+        errors: ['خطأ داخلي في الخادم']
       };
     }
   }
@@ -41,22 +40,22 @@ export class StudentService {
       if (!student || student.userType !== 'student') {
         return {
           success: false,
-          message: getMessage('STUDENT.NOT_FOUND'),
-          errors: [getMessage('STUDENT.NOT_FOUND')]
+          message: 'الطالب غير موجود',
+          errors: ['الطالب غير موجود']
         };
       }
 
       return {
         success: true,
-        message: getMessage('STUDENT.STUDENT_FOUND'),
+        message: 'تم العثور على الطالب',
         data: { student }
       };
     } catch (error) {
       console.error('Error getting student by ID:', error);
       return {
         success: false,
-        message: getMessage('GENERAL.OPERATION_FAILED'),
-        errors: [getMessage('SERVER.INTERNAL_ERROR')]
+        message: 'فشلت العملية',
+        errors: ['خطأ داخلي في الخادم']
       };
     }
   }
@@ -69,22 +68,22 @@ export class StudentService {
       if (!student || student.userType !== 'student') {
         return {
           success: false,
-          message: getMessage('STUDENT.NOT_FOUND'),
-          errors: [getMessage('STUDENT.NOT_FOUND')]
+          message: 'الطالب غير موجود',
+          errors: ['الطالب غير موجود']
         };
       }
 
       if (!student.latitude || !student.longitude) {
         return {
           success: false,
-          message: getMessage('STUDENT.LOCATION_NOT_SET'),
-          errors: [getMessage('STUDENT.LOCATION_NOT_SET')]
+          message: 'الموقع غير محدد',
+          errors: ['الموقع غير محدد']
         };
       }
 
       return {
         success: true,
-        message: getMessage('STUDENT.LOCATION_VALID'),
+        message: 'الموقع صحيح',
         data: {
           location: {
             latitude: student.latitude,
@@ -96,8 +95,8 @@ export class StudentService {
       console.error('Error validating student location:', error);
       return {
         success: false,
-        message: getMessage('GENERAL.OPERATION_FAILED'),
-        errors: [getMessage('SERVER.INTERNAL_ERROR')]
+        message: 'فشلت العملية',
+        errors: ['خطأ داخلي في الخادم']
       };
     }
   }
@@ -126,7 +125,7 @@ export class StudentService {
       if (!courses || courses.length === 0) {
         return {
           success: true,
-          message: getMessage('COURSE.NO_COURSES_FOUND'),
+          message: 'لم يتم العثور على دورات',
           data: { courses: [], count: 0 },
           count: 0
         };
@@ -134,7 +133,7 @@ export class StudentService {
 
       return {
         success: true,
-        message: getMessage('COURSE.COURSES_FOUND'),
+        message: 'تم العثور على الدورات',
         data: { courses },
         count: courses.length
       };
@@ -142,8 +141,8 @@ export class StudentService {
       console.error('Error getting suggested courses for student:', error);
       return {
         success: false,
-        message: getMessage('GENERAL.OPERATION_FAILED'),
-        errors: [getMessage('SERVER.INTERNAL_ERROR')]
+        message: 'فشلت العملية',
+        errors: ['خطأ داخلي في الخادم']
       };
     }
   }
@@ -156,8 +155,8 @@ export class StudentService {
       if (!course) {
         return {
           success: false,
-          message: getMessage('COURSE.NOT_FOUND'),
-          errors: [getMessage('COURSE.NOT_FOUND')]
+          message: 'الدورة غير موجودة',
+          errors: ['الدورة غير موجودة']
         };
       }
 
@@ -166,8 +165,8 @@ export class StudentService {
       if (!teacher) {
         return {
           success: false,
-          message: getMessage('COURSE.TEACHER_NOT_FOUND'),
-          errors: [getMessage('COURSE.TEACHER_NOT_FOUND')]
+          message: 'المعلم غير موجود',
+          errors: ['المعلم غير موجود']
         };
       }
 
@@ -198,15 +197,15 @@ export class StudentService {
 
       return {
         success: true,
-        message: getMessage('COURSE.COURSE_FOUND'),
+        message: 'تم العثور على الدورة',
         data: { course: courseWithDetails }
       };
     } catch (error) {
       console.error('Error getting course by ID for student:', error);
       return {
         success: false,
-        message: getMessage('GENERAL.OPERATION_FAILED'),
-        errors: [getMessage('SERVER.INTERNAL_ERROR')]
+        message: 'فشلت العملية',
+        errors: ['خطأ داخلي في الخادم']
       };
     }
   }

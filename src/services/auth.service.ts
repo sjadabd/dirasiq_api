@@ -14,7 +14,6 @@ import {
   UserStatus,
   UserType
 } from '@/types';
-import { getMessage } from '@/utils/messages';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 
@@ -27,8 +26,8 @@ export class AuthService {
       if (superAdminExists) {
         return {
           success: false,
-          message: getMessage('AUTH.SUPER_ADMIN_EXISTS'),
-          errors: [getMessage('AUTH.SUPER_ADMIN_EXISTS')]
+          message: 'السوبر أدمن موجود بالفعل',
+          errors: ['السوبر أدمن موجود بالفعل']
         };
       }
 
@@ -43,7 +42,7 @@ export class AuthService {
 
       return {
         success: true,
-        message: getMessage('AUTH.SUPER_ADMIN_REGISTERED'),
+        message: 'تم تسجيل السوبر أدمن بنجاح',
         data: {
           user: this.sanitizeUser(superAdmin)
         }
@@ -52,8 +51,8 @@ export class AuthService {
       console.error('Error registering super admin:', error);
       return {
         success: false,
-        message: getMessage('GENERAL.OPERATION_FAILED'),
-        errors: [getMessage('SERVER.INTERNAL_ERROR')]
+        message: 'فشل في العملية',
+        errors: ['حدث خطأ في الخادم']
       };
     }
   }
@@ -137,14 +136,14 @@ export class AuthService {
       if (!emailSent) {
         return {
           success: false,
-          message: getMessage('AUTH.EMAIL_SEND_FAILED'),
-          errors: [getMessage('AUTH.EMAIL_SEND_FAILED')]
+          message: 'فشل في إرسال البريد الإلكتروني',
+          errors: ['فشل في إرسال البريد الإلكتروني']
         };
       }
 
       return {
         success: true,
-        message: getMessage('AUTH.TEACHER_REGISTERED'),
+        message: 'تم تسجيل المعلم بنجاح',
         data: {
           user: this.sanitizeUser(teacher)
         }
@@ -153,8 +152,8 @@ export class AuthService {
       console.error('Error registering teacher:', error);
       return {
         success: false,
-        message: getMessage('GENERAL.OPERATION_FAILED'),
-        errors: [getMessage('SERVER.INTERNAL_ERROR')]
+        message: 'فشل في العملية',
+        errors: ['حدث خطأ في الخادم']
       };
     }
   }
@@ -239,14 +238,14 @@ export class AuthService {
       if (!emailSent) {
         return {
           success: false,
-          message: getMessage('AUTH.EMAIL_SEND_FAILED'),
-          errors: [getMessage('AUTH.EMAIL_SEND_FAILED')]
+          message: 'فشل في إرسال البريد الإلكتروني',
+          errors: ['فشل في إرسال البريد الإلكتروني']
         };
       }
 
       return {
         success: true,
-        message: getMessage('STUDENT.REGISTRATION_SUCCESS'),
+        message: 'تم تسجيل الطالب بنجاح',
         data: {
           user: this.sanitizeUser(student)
         }
@@ -255,8 +254,8 @@ export class AuthService {
       console.error('Error registering student:', error);
       return {
         success: false,
-        message: getMessage('GENERAL.OPERATION_FAILED'),
-        errors: [getMessage('SERVER.INTERNAL_ERROR')]
+        message: 'فشل في العملية',
+        errors: ['حدث خطأ في الخادم']
       };
     }
   }
@@ -269,8 +268,8 @@ export class AuthService {
       if (!user) {
         return {
           success: false,
-          message: getMessage('AUTH.INVALID_CREDENTIALS'),
-          errors: [getMessage('AUTH.INVALID_CREDENTIALS')]
+          message: 'بيانات الدخول غير صحيحة',
+          errors: ['بيانات الدخول غير صحيحة']
         };
       }
 
@@ -278,8 +277,8 @@ export class AuthService {
       if (user.status !== UserStatus.ACTIVE) {
         return {
           success: false,
-          message: getMessage('AUTH.ACCOUNT_NOT_ACTIVE'),
-          errors: [getMessage('AUTH.ACCOUNT_NOT_ACTIVE_ERROR')]
+          message: 'الحساب غير مفعل',
+          errors: ['الحساب غير مفعل، يرجى التحقق من بريدك الإلكتروني أو التواصل مع الدعم']
         };
       }
 
@@ -288,8 +287,8 @@ export class AuthService {
       if (!isPasswordValid) {
         return {
           success: false,
-          message: getMessage('AUTH.INVALID_CREDENTIALS'),
-          errors: [getMessage('AUTH.INVALID_CREDENTIALS')]
+          message: 'بيانات الدخول غير صحيحة',
+          errors: ['بيانات الدخول غير صحيحة']
         };
       }
 
@@ -301,7 +300,7 @@ export class AuthService {
 
       return {
         success: true,
-        message: getMessage('AUTH.LOGIN_SUCCESS'),
+        message: 'تم تسجيل الدخول بنجاح',
         data: {
           user: this.sanitizeUser(user),
           token,
@@ -313,8 +312,8 @@ export class AuthService {
       console.error('Error during login:', error);
       return {
         success: false,
-        message: getMessage('AUTH.AUTHENTICATION_FAILED'),
-        errors: [getMessage('SERVER.INTERNAL_ERROR')]
+        message: 'فشل في المصادقة',
+        errors: ['حدث خطأ في الخادم']
       };
     }
   }
@@ -327,21 +326,21 @@ export class AuthService {
       if (!deleted) {
         return {
           success: false,
-          message: getMessage('AUTH.INVALID_TOKEN'),
-          errors: [getMessage('AUTH.TOKEN_NOT_FOUND')]
+          message: 'التوكن غير صحيح',
+          errors: ['التوكن غير موجود أو منتهي الصلاحية']
         };
       }
 
       return {
         success: true,
-        message: getMessage('AUTH.LOGOUT_SUCCESS')
+        message: 'تم تسجيل الخروج بنجاح'
       };
     } catch (error) {
       console.error('Error during logout:', error);
       return {
         success: false,
-        message: getMessage('AUTH.AUTHENTICATION_FAILED'),
-        errors: [getMessage('SERVER.INTERNAL_ERROR')]
+        message: 'فشل في المصادقة',
+        errors: ['حدث خطأ في الخادم']
       };
     }
   }
@@ -354,21 +353,21 @@ export class AuthService {
       if (!verified) {
         return {
           success: false,
-          message: getMessage('AUTH.VERIFICATION_FAILED'),
-          errors: [getMessage('AUTH.TOKEN_EXPIRED')]
+          message: 'فشل في التحقق من البريد الإلكتروني',
+          errors: ['انتهت صلاحية الرمز']
         };
       }
 
       return {
         success: true,
-        message: getMessage('AUTH.EMAIL_VERIFIED')
+        message: 'تم التحقق من البريد الإلكتروني بنجاح'
       };
     } catch (error) {
       console.error('Error verifying email:', error);
       return {
         success: false,
-        message: getMessage('AUTH.VERIFICATION_FAILED'),
-        errors: [getMessage('SERVER.INTERNAL_ERROR')]
+        message: 'فشل في التحقق من البريد الإلكتروني',
+        errors: ['حدث خطأ في الخادم']
       };
     }
   }
@@ -381,8 +380,8 @@ export class AuthService {
       if (!resent) {
         return {
           success: false,
-          message: getMessage('AUTH.VERIFICATION_FAILED'),
-          errors: [getMessage('AUTH.EMAIL_NOT_VERIFIED')]
+          message: 'فشل في التحقق من البريد الإلكتروني',
+          errors: ['البريد الإلكتروني غير محقق']
         };
       }
 
@@ -395,14 +394,14 @@ export class AuthService {
 
       return {
         success: true,
-        message: getMessage('AUTH.VERIFICATION_CODE_SENT')
+        message: 'تم إرسال رمز التحقق بنجاح'
       };
     } catch (error) {
       console.error('Error resending verification code:', error);
       return {
         success: false,
-        message: getMessage('AUTH.VERIFICATION_FAILED'),
-        errors: [getMessage('SERVER.INTERNAL_ERROR')]
+        message: 'فشل في التحقق من البريد الإلكتروني',
+        errors: ['حدث خطأ في الخادم']
       };
     }
   }
@@ -415,8 +414,8 @@ export class AuthService {
       if (!resetCode) {
         return {
           success: false,
-          message: getMessage('AUTH.USER_NOT_FOUND'),
-          errors: [getMessage('AUTH.USER_NOT_FOUND')]
+          message: 'المستخدم غير موجود',
+          errors: ['المستخدم غير موجود']
         };
       }
 
@@ -427,22 +426,22 @@ export class AuthService {
         if (!emailSent) {
           return {
             success: false,
-            message: getMessage('AUTH.EMAIL_SEND_FAILED'),
-            errors: [getMessage('AUTH.EMAIL_SEND_FAILED')]
+            message: 'فشل في إرسال البريد الإلكتروني',
+            errors: ['فشل في إرسال البريد الإلكتروني']
           };
         }
       }
 
       return {
         success: true,
-        message: getMessage('AUTH.PASSWORD_RESET_CODE_SENT')
+        message: 'تم إرسال رمز إعادة تعيين كلمة المرور بنجاح'
       };
     } catch (error) {
       console.error('Error requesting password reset:', error);
       return {
         success: false,
-        message: getMessage('AUTH.PASSWORD_RESET_FAILED'),
-        errors: [getMessage('SERVER.INTERNAL_ERROR')]
+        message: 'فشل في إعادة تعيين كلمة المرور',
+        errors: ['حدث خطأ في الخادم']
       };
     }
   }
@@ -455,21 +454,21 @@ export class AuthService {
       if (!reset) {
         return {
           success: false,
-          message: getMessage('AUTH.RESET_CODE_INVALID'),
-          errors: [getMessage('AUTH.RESET_CODE_INVALID')]
+          message: 'رمز إعادة التعيين غير صحيح أو منتهي الصلاحية',
+          errors: ['رمز إعادة التعيين غير صحيح أو منتهي الصلاحية']
         };
       }
 
       return {
         success: true,
-        message: getMessage('AUTH.PASSWORD_RESET_SUCCESS')
+        message: 'تم إعادة تعيين كلمة المرور بنجاح'
       };
     } catch (error) {
       console.error('Error resetting password:', error);
       return {
         success: false,
-        message: getMessage('AUTH.PASSWORD_RESET_FAILED'),
-        errors: [getMessage('SERVER.INTERNAL_ERROR')]
+        message: 'فشل في إعادة تعيين كلمة المرور',
+        errors: ['حدث خطأ في الخادم']
       };
     }
   }
@@ -484,7 +483,7 @@ export class AuthService {
 
     const secret = process.env['JWT_SECRET'];
     if (!secret) {
-      throw new Error(getMessage('AUTH.JWT_SECRET_NOT_CONFIGURED'));
+      throw new Error('مفتاح JWT غير مُعد');
     }
 
     const expiresIn = process.env['JWT_EXPIRES_IN'] || '4h';
@@ -650,8 +649,8 @@ export class AuthService {
       console.error('Error in googleAuth service:', error);
       return {
         success: false,
-        message: getMessage('SERVER.INTERNAL_ERROR'),
-        errors: [getMessage('SERVER.SOMETHING_WENT_WRONG')]
+        message: 'حدث خطأ في الخادم',
+        errors: ['حدث خطأ في الخادم']
       };
     }
   }
@@ -742,8 +741,8 @@ export class AuthService {
       console.error('Error in completeProfile service:', error);
       return {
         success: false,
-        message: getMessage('SERVER.INTERNAL_ERROR'),
-        errors: [getMessage('SERVER.SOMETHING_WENT_WRONG')]
+        message: 'حدث خطأ في الخادم',
+        errors: ['حدث خطأ في الخادم']
       };
     }
   }

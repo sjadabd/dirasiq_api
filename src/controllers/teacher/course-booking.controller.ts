@@ -1,7 +1,6 @@
 import { TeacherSubscriptionModel } from '@/models/teacher-subscription.model';
 import { CourseBookingService } from '@/services/course-booking.service';
 import { BookingStatus, UpdateCourseBookingRequest } from '@/types';
-import { getMessage } from '@/utils/messages';
 import { Request, Response } from 'express';
 
 export class TeacherCourseBookingController {
@@ -18,8 +17,8 @@ export class TeacherCourseBookingController {
       if (!studyYear) {
         res.status(400).json({
           success: false,
-          message: getMessage('VALIDATION.STUDY_YEAR_REQUIRED'),
-          errors: [getMessage('VALIDATION.STUDY_YEAR_REQUIRED')]
+          message: 'السنة الدراسية مطلوبة',
+          errors: ['السنة الدراسية مطلوبة']
         });
         return;
       }
@@ -32,7 +31,7 @@ export class TeacherCourseBookingController {
 
       res.status(200).json({
         success: true,
-        message: getMessage('COURSE_BOOKING.RETRIEVED_SUCCESSFULLY'),
+        message: 'تم استرجاع الحجوزات بنجاح',
         data: result.bookings,
         pagination: {
           page,
@@ -45,8 +44,8 @@ export class TeacherCourseBookingController {
       console.error('Error getting teacher bookings:', error);
       res.status(500).json({
         success: false,
-        message: getMessage('SERVER.INTERNAL_ERROR'),
-        errors: [getMessage('SERVER.SOMETHING_WENT_WRONG')]
+        message: 'خطأ داخلي في الخادم',
+        errors: ['حدث خطأ في الخادم']
       });
     }
   }
@@ -64,8 +63,8 @@ export class TeacherCourseBookingController {
       if (!id) {
         res.status(400).json({
           success: false,
-          message: getMessage('VALIDATION.BOOKING_ID_REQUIRED'),
-          errors: [getMessage('VALIDATION.BOOKING_ID_REQUIRED')]
+          message: 'معرف الحجز مطلوب',
+          errors: ['معرف الحجز مطلوب']
         });
         return;
       }
@@ -75,8 +74,8 @@ export class TeacherCourseBookingController {
       if (!booking) {
         res.status(404).json({
           success: false,
-          message: getMessage('COURSE_BOOKING.NOT_FOUND'),
-          errors: [getMessage('COURSE_BOOKING.NOT_FOUND')]
+          message: 'الحجز غير موجود',
+          errors: ['الحجز غير موجود']
         });
         return;
       }
@@ -85,23 +84,23 @@ export class TeacherCourseBookingController {
       if (booking.teacherId !== teacherId) {
         res.status(403).json({
           success: false,
-          message: getMessage('COURSE_BOOKING.ACCESS_DENIED'),
-          errors: [getMessage('COURSE_BOOKING.ACCESS_DENIED')]
+          message: 'الوصول مرفوض',
+          errors: ['الوصول مرفوض']
         });
         return;
       }
 
       res.status(200).json({
         success: true,
-        message: getMessage('COURSE_BOOKING.RETRIEVED_SUCCESSFULLY'),
+        message: 'تم استرجاع الحجوزات بنجاح',
         data: booking
       });
     } catch (error: any) {
       console.error('Error getting booking:', error);
       res.status(500).json({
         success: false,
-        message: getMessage('SERVER.INTERNAL_ERROR'),
-        errors: [getMessage('SERVER.SOMETHING_WENT_WRONG')]
+        message: 'خطأ داخلي في الخادم',
+        errors: ['حدث خطأ في الخادم']
       });
     }
   }
@@ -119,8 +118,8 @@ export class TeacherCourseBookingController {
       if (!id) {
         res.status(400).json({
           success: false,
-          message: getMessage('VALIDATION.BOOKING_ID_REQUIRED'),
-          errors: [getMessage('VALIDATION.BOOKING_ID_REQUIRED')]
+          message: 'معرف الحجز مطلوب',
+          errors: ['معرف الحجز مطلوب']
         });
         return;
       }
@@ -136,22 +135,22 @@ export class TeacherCourseBookingController {
 
       res.status(200).json({
         success: true,
-        message: getMessage('COURSE_BOOKING.APPROVED'),
+        message: 'تم اعتماد الحجز',
         data: booking
       });
     } catch (error: any) {
       if (error.message === 'Booking not found or access denied') {
         res.status(404).json({
           success: false,
-          message: getMessage('COURSE_BOOKING.NOT_FOUND'),
-          errors: [getMessage('COURSE_BOOKING.ACCESS_DENIED')]
+          message: 'الحجز غير موجود',
+          errors: ['الوصول مرفوض']
         });
       } else {
         console.error('Error approving booking:', error);
         res.status(500).json({
           success: false,
-          message: getMessage('SERVER.INTERNAL_ERROR'),
-          errors: [getMessage('SERVER.SOMETHING_WENT_WRONG')]
+          message: 'خطأ داخلي في الخادم',
+          errors: ['حدث خطأ في الخادم']
         });
       }
     }
@@ -170,8 +169,8 @@ export class TeacherCourseBookingController {
       if (!id) {
         res.status(400).json({
           success: false,
-          message: getMessage('VALIDATION.BOOKING_ID_REQUIRED'),
-          errors: [getMessage('VALIDATION.BOOKING_ID_REQUIRED')]
+          message: 'معرف الحجز مطلوب',
+          errors: ['معرف الحجز مطلوب']
         });
         return;
       }
@@ -181,8 +180,8 @@ export class TeacherCourseBookingController {
       if (!rejectionReason) {
         res.status(400).json({
           success: false,
-          message: getMessage('COURSE_BOOKING.REJECTION_REASON_REQUIRED'),
-          errors: [getMessage('COURSE_BOOKING.REJECTION_REASON_REQUIRED')]
+          message: 'سبب الرفض مطلوب',
+          errors: ['سبب الرفض مطلوب']
         });
         return;
       }
@@ -197,22 +196,22 @@ export class TeacherCourseBookingController {
 
       res.status(200).json({
         success: true,
-        message: getMessage('COURSE_BOOKING.REJECTED'),
+        message: 'تم رفض الحجز',
         data: booking
       });
     } catch (error: any) {
       if (error.message === 'Booking not found or access denied') {
         res.status(404).json({
           success: false,
-          message: getMessage('COURSE_BOOKING.NOT_FOUND'),
-          errors: [getMessage('COURSE_BOOKING.ACCESS_DENIED')]
+          message: 'الحجز غير موجود',
+          errors: ['الوصول مرفوض']
         });
       } else {
         console.error('Error rejecting booking:', error);
         res.status(500).json({
           success: false,
-          message: getMessage('SERVER.INTERNAL_ERROR'),
-          errors: [getMessage('SERVER.SOMETHING_WENT_WRONG')]
+          message: 'خطأ داخلي في الخادم',
+          errors: ['حدث خطأ في الخادم']
         });
       }
     }
@@ -231,8 +230,8 @@ export class TeacherCourseBookingController {
       if (!id) {
         res.status(400).json({
           success: false,
-          message: getMessage('VALIDATION.BOOKING_ID_REQUIRED'),
-          errors: [getMessage('VALIDATION.BOOKING_ID_REQUIRED')]
+          message: 'معرف الحجز مطلوب',
+          errors: ['معرف الحجز مطلوب']
         });
         return;
       }
@@ -242,8 +241,8 @@ export class TeacherCourseBookingController {
       if (!teacherResponse) {
         res.status(400).json({
           success: false,
-          message: getMessage('COURSE_BOOKING.TEACHER_RESPONSE_OPTIONAL'),
-          errors: [getMessage('COURSE_BOOKING.TEACHER_RESPONSE_OPTIONAL')]
+          message: 'رد المعلم اختياري',
+          errors: ['رد المعلم اختياري']
         });
         return;
       }
@@ -256,22 +255,22 @@ export class TeacherCourseBookingController {
 
       res.status(200).json({
         success: true,
-        message: getMessage('COURSE_BOOKING.STATUS_UPDATED'),
+        message: 'تم تحديث حالة الحجز',
         data: booking
       });
     } catch (error: any) {
       if (error.message === 'Booking not found or access denied') {
         res.status(404).json({
           success: false,
-          message: getMessage('COURSE_BOOKING.NOT_FOUND'),
-          errors: [getMessage('COURSE_BOOKING.ACCESS_DENIED')]
+          message: 'الحجز غير موجود',
+          errors: ['الوصول مرفوض']
         });
       } else {
         console.error('Error updating teacher response:', error);
         res.status(500).json({
           success: false,
-          message: getMessage('SERVER.INTERNAL_ERROR'),
-          errors: [getMessage('SERVER.SOMETHING_WENT_WRONG')]
+          message: 'خطأ داخلي في الخادم',
+          errors: ['حدث خطأ في الخادم']
         });
       }
     }
@@ -290,8 +289,8 @@ export class TeacherCourseBookingController {
       if (!id) {
         res.status(400).json({
           success: false,
-          message: getMessage('VALIDATION.BOOKING_ID_REQUIRED'),
-          errors: [getMessage('VALIDATION.BOOKING_ID_REQUIRED')]
+          message: 'معرف الحجز مطلوب',
+          errors: ['معرف الحجز مطلوب']
         });
         return;
       }
@@ -300,21 +299,21 @@ export class TeacherCourseBookingController {
 
       res.status(200).json({
         success: true,
-        message: getMessage('COURSE_BOOKING.DELETED')
+        message: 'تم حذف الحجز'
       });
     } catch (error: any) {
       if (error.message === 'Booking not found or access denied') {
         res.status(404).json({
           success: false,
-          message: getMessage('COURSE_BOOKING.NOT_FOUND'),
-          errors: [getMessage('COURSE_BOOKING.ACCESS_DENIED')]
+          message: 'الحجز غير موجود',
+          errors: ['الوصول مرفوض']
         });
       } else {
         console.error('Error deleting booking:', error);
         res.status(500).json({
           success: false,
-          message: getMessage('SERVER.INTERNAL_ERROR'),
-          errors: [getMessage('SERVER.SOMETHING_WENT_WRONG')]
+          message: 'خطأ داخلي في الخادم',
+          errors: ['حدث خطأ في الخادم']
         });
       }
     }
@@ -333,8 +332,8 @@ export class TeacherCourseBookingController {
       if (!id) {
         res.status(400).json({
           success: false,
-          message: getMessage('VALIDATION.BOOKING_ID_REQUIRED'),
-          errors: [getMessage('VALIDATION.BOOKING_ID_REQUIRED')]
+          message: 'معرف الحجز مطلوب',
+          errors: ['معرف الحجز مطلوب']
         });
         return;
       }
@@ -347,8 +346,8 @@ export class TeacherCourseBookingController {
       if (!currentBooking) {
         res.status(404).json({
           success: false,
-          message: getMessage('COURSE_BOOKING.NOT_FOUND'),
-          errors: [getMessage('COURSE_BOOKING.NOT_FOUND')]
+          message: 'الحجز غير موجود',
+          errors: ['الحجز غير موجود']
         });
         return;
       }
@@ -357,8 +356,8 @@ export class TeacherCourseBookingController {
       if (currentBooking.teacherId !== teacherId) {
         res.status(403).json({
           success: false,
-          message: getMessage('COURSE_BOOKING.ACCESS_DENIED'),
-          errors: [getMessage('COURSE_BOOKING.ACCESS_DENIED')]
+          message: 'الوصول مرفوض',
+          errors: ['الوصول مرفوض']
         });
         return;
       }
@@ -400,8 +399,8 @@ export class TeacherCourseBookingController {
       console.error('Error reactivating booking:', error);
       res.status(500).json({
         success: false,
-        message: getMessage('SERVER.INTERNAL_ERROR'),
-        errors: [getMessage('SERVER.SOMETHING_WENT_WRONG')]
+        message: 'خطأ داخلي في الخادم',
+        errors: ['حدث خطأ في الخادم']
       });
     }
   }
@@ -419,8 +418,8 @@ export class TeacherCourseBookingController {
       if (!studyYear) {
         res.status(400).json({
           success: false,
-          message: getMessage('VALIDATION.STUDY_YEAR_REQUIRED'),
-          errors: [getMessage('VALIDATION.STUDY_YEAR_REQUIRED')]
+          message: 'السنة الدراسية مطلوبة',
+          errors: ['السنة الدراسية مطلوبة']
         });
         return;
       }
@@ -429,7 +428,7 @@ export class TeacherCourseBookingController {
 
       res.status(200).json({
         success: true,
-        message: getMessage('COURSE_BOOKING.STATS_RETRIEVED'),
+        message: 'تم استرجاع إحصائيات الحجز',
         data: {
           pendingBookings: pendingCount
         }
@@ -438,8 +437,8 @@ export class TeacherCourseBookingController {
       console.error('Error getting booking statistics:', error);
       res.status(500).json({
         success: false,
-        message: getMessage('SERVER.INTERNAL_ERROR'),
-        errors: [getMessage('SERVER.SOMETHING_WENT_WRONG')]
+        message: 'خطأ داخلي في الخادم',
+        errors: ['حدث خطأ في الخادم']
       });
     }
   }

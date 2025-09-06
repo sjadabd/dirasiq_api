@@ -1,5 +1,4 @@
 import { SubjectService } from '@/services/teacher/subject.service';
-import { getMessage } from '@/utils/messages';
 import { Request, Response } from 'express';
 import { body, param, query, validationResult } from 'express-validator';
 
@@ -9,7 +8,7 @@ export class SubjectController {
     try {
       // Validate request body
       await Promise.all([
-        body('name').notEmpty().withMessage(getMessage('SUBJECT.NAME_REQUIRED')).run(req),
+        body('name').notEmpty().withMessage('اسم المادة مطلوب').run(req),
         body('description').optional().isString().withMessage('Description must be a string').run(req)
       ]);
 
@@ -17,7 +16,7 @@ export class SubjectController {
       if (!errors.isEmpty()) {
         res.status(400).json({
           success: false,
-          message: getMessage('VALIDATION.VALIDATION_FAILED'),
+          message: 'فشل في التحقق من البيانات',
           errors: errors.array().map(err => err.msg)
         });
         return;
@@ -35,8 +34,8 @@ export class SubjectController {
       console.error('Error in create subject controller:', error);
       res.status(500).json({
         success: false,
-        message: getMessage('SERVER.INTERNAL_ERROR'),
-        errors: [getMessage('SERVER.SOMETHING_WENT_WRONG')]
+        message: 'خطأ داخلي في الخادم',
+        errors: ['حدث خطأ في الخادم']
       });
     }
   }
@@ -55,7 +54,7 @@ export class SubjectController {
       if (!errors.isEmpty()) {
         res.status(400).json({
           success: false,
-          message: getMessage('VALIDATION.VALIDATION_FAILED'),
+          message: 'فشل في التحقق من البيانات',
           errors: errors.array().map(err => err.msg)
         });
         return;
@@ -82,8 +81,8 @@ export class SubjectController {
       console.error('Error in get all subjects controller:', error);
       res.status(500).json({
         success: false,
-        message: getMessage('SERVER.INTERNAL_ERROR'),
-        errors: [getMessage('SERVER.SOMETHING_WENT_WRONG')]
+        message: 'خطأ داخلي في الخادم',
+        errors: ['حدث خطأ في الخادم']
       });
     }
   }
@@ -97,7 +96,7 @@ export class SubjectController {
       if (!errors.isEmpty()) {
         res.status(400).json({
           success: false,
-          message: getMessage('VALIDATION.VALIDATION_FAILED'),
+          message: 'فشل في التحقق من البيانات',
           errors: errors.array().map(err => err.msg)
         });
         return;
@@ -117,8 +116,8 @@ export class SubjectController {
       console.error('Error in get subject by ID controller:', error);
       res.status(500).json({
         success: false,
-        message: getMessage('SERVER.INTERNAL_ERROR'),
-        errors: [getMessage('SERVER.SOMETHING_WENT_WRONG')]
+        message: 'خطأ داخلي في الخادم',
+        errors: ['حدث خطأ في الخادم']
       });
     }
   }
@@ -129,7 +128,7 @@ export class SubjectController {
       // Validate request parameters and body
       await Promise.all([
         param('id').isUUID().withMessage('ID must be a valid UUID').run(req),
-        body('name').optional().notEmpty().withMessage(getMessage('SUBJECT.NAME_REQUIRED')).run(req),
+        body('name').optional().notEmpty().withMessage('اسم المادة مطلوب').run(req),
         body('description').optional().isString().withMessage('Description must be a string').run(req)
       ]);
 
@@ -137,7 +136,7 @@ export class SubjectController {
       if (!errors.isEmpty()) {
         res.status(400).json({
           success: false,
-          message: getMessage('VALIDATION.VALIDATION_FAILED'),
+          message: 'فشل في التحقق من البيانات',
           errors: errors.array().map(err => err.msg)
         });
         return;
@@ -157,8 +156,8 @@ export class SubjectController {
       console.error('Error in update subject controller:', error);
       res.status(500).json({
         success: false,
-        message: getMessage('SERVER.INTERNAL_ERROR'),
-        errors: [getMessage('SERVER.SOMETHING_WENT_WRONG')]
+        message: 'خطأ داخلي في الخادم',
+        errors: ['حدث خطأ في الخادم']
       });
     }
   }
@@ -172,7 +171,7 @@ export class SubjectController {
       if (!errors.isEmpty()) {
         res.status(400).json({
           success: false,
-          message: getMessage('VALIDATION.VALIDATION_FAILED'),
+          message: 'فشل في التحقق من البيانات',
           errors: errors.array().map(err => err.msg)
         });
         return;
@@ -192,8 +191,8 @@ export class SubjectController {
       console.error('Error in delete subject controller:', error);
       res.status(500).json({
         success: false,
-        message: getMessage('SERVER.INTERNAL_ERROR'),
-        errors: [getMessage('SERVER.SOMETHING_WENT_WRONG')]
+        message: 'خطأ داخلي في الخادم',
+        errors: ['حدث خطأ في الخادم']
       });
     }
   }

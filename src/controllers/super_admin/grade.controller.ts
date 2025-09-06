@@ -1,5 +1,4 @@
 import { GradeService } from '@/services/super_admin/grade.service';
-import { getMessage } from '@/utils/messages';
 import { Request, Response } from 'express';
 import { body, param, query, validationResult } from 'express-validator';
 
@@ -9,7 +8,7 @@ export class GradeController {
     try {
       // Validate request body
       await Promise.all([
-        body('name').notEmpty().withMessage(getMessage('GRADE.NAME_REQUIRED')).run(req),
+        body('name').notEmpty().withMessage('اسم الصف مطلوب').run(req),
         body('description').optional().isString().withMessage('Description must be a string').run(req),
         body('isActive').optional().isBoolean().withMessage('isActive must be a boolean').run(req)
       ]);
@@ -18,7 +17,7 @@ export class GradeController {
       if (!errors.isEmpty()) {
         res.status(400).json({
           success: false,
-          message: getMessage('VALIDATION.VALIDATION_FAILED'),
+          message: 'فشل في التحقق من البيانات',
           errors: errors.array().map(err => err.msg)
         });
         return;
@@ -35,8 +34,8 @@ export class GradeController {
       console.error('Error in create grade controller:', error);
       res.status(500).json({
         success: false,
-        message: getMessage('SERVER.INTERNAL_ERROR'),
-        errors: [getMessage('SERVER.SOMETHING_WENT_WRONG')]
+        message: 'خطأ داخلي في الخادم',
+        errors: ['حدث خطأ في الخادم']
       });
     }
   }
@@ -55,7 +54,7 @@ export class GradeController {
       if (!errors.isEmpty()) {
         res.status(400).json({
           success: false,
-          message: getMessage('VALIDATION.VALIDATION_FAILED'),
+          message: 'فشل في التحقق من البيانات',
           errors: errors.array().map(err => err.msg)
         });
         return;
@@ -81,8 +80,8 @@ export class GradeController {
       console.error('Error in get all grades controller:', error);
       res.status(500).json({
         success: false,
-        message: getMessage('SERVER.INTERNAL_ERROR'),
-        errors: [getMessage('SERVER.SOMETHING_WENT_WRONG')]
+        message: 'خطأ داخلي في الخادم',
+        errors: ['حدث خطأ في الخادم']
       });
     }
   }
@@ -101,8 +100,8 @@ export class GradeController {
       console.error('Error in get active grades controller:', error);
       res.status(500).json({
         success: false,
-        message: getMessage('SERVER.INTERNAL_ERROR'),
-        errors: [getMessage('SERVER.SOMETHING_WENT_WRONG')]
+        message: 'خطأ داخلي في الخادم',
+        errors: ['حدث خطأ في الخادم']
       });
     }
   }
@@ -116,7 +115,7 @@ export class GradeController {
       if (!errors.isEmpty()) {
         res.status(400).json({
           success: false,
-          message: getMessage('VALIDATION.VALIDATION_FAILED'),
+          message: 'فشل في التحقق من البيانات',
           errors: errors.array().map(err => err.msg)
         });
         return;
@@ -134,8 +133,8 @@ export class GradeController {
       console.error('Error in get grade by ID controller:', error);
       res.status(500).json({
         success: false,
-        message: getMessage('SERVER.INTERNAL_ERROR'),
-        errors: [getMessage('SERVER.SOMETHING_WENT_WRONG')]
+        message: 'خطأ داخلي في الخادم',
+        errors: ['حدث خطأ في الخادم']
       });
     }
   }
@@ -146,7 +145,7 @@ export class GradeController {
       // Validate request parameters and body
       await Promise.all([
         param('id').isUUID().withMessage('ID must be a valid UUID').run(req),
-        body('name').optional().notEmpty().withMessage(getMessage('GRADE.NAME_REQUIRED')).run(req),
+        body('name').optional().notEmpty().withMessage('اسم الصف مطلوب').run(req),
         body('description').optional().isString().withMessage('Description must be a string').run(req),
         body('isActive').optional().isBoolean().withMessage('isActive must be a boolean').run(req)
       ]);
@@ -155,7 +154,7 @@ export class GradeController {
       if (!errors.isEmpty()) {
         res.status(400).json({
           success: false,
-          message: getMessage('VALIDATION.VALIDATION_FAILED'),
+          message: 'فشل في التحقق من البيانات',
           errors: errors.array().map(err => err.msg)
         });
         return;
@@ -173,8 +172,8 @@ export class GradeController {
       console.error('Error in update grade controller:', error);
       res.status(500).json({
         success: false,
-        message: getMessage('SERVER.INTERNAL_ERROR'),
-        errors: [getMessage('SERVER.SOMETHING_WENT_WRONG')]
+        message: 'خطأ داخلي في الخادم',
+        errors: ['حدث خطأ في الخادم']
       });
     }
   }
@@ -188,7 +187,7 @@ export class GradeController {
       if (!errors.isEmpty()) {
         res.status(400).json({
           success: false,
-          message: getMessage('VALIDATION.VALIDATION_FAILED'),
+          message: 'فشل في التحقق من البيانات',
           errors: errors.array().map(err => err.msg)
         });
         return;
@@ -206,8 +205,8 @@ export class GradeController {
       console.error('Error in delete grade controller:', error);
       res.status(500).json({
         success: false,
-        message: getMessage('SERVER.INTERNAL_ERROR'),
-        errors: [getMessage('SERVER.SOMETHING_WENT_WRONG')]
+        message: 'خطأ داخلي في الخادم',
+        errors: ['حدث خطأ في الخادم']
       });
     }
   }

@@ -1,5 +1,4 @@
 import { CourseService } from '@/services/teacher/course.service';
-import { getMessage } from '@/utils/messages';
 import { Request, Response } from 'express';
 import { body, param, query, validationResult } from 'express-validator';
 
@@ -9,14 +8,14 @@ export class CourseController {
     try {
       // Validate request body
       await Promise.all([
-        body('study_year').notEmpty().withMessage(getMessage('COURSE.STUDY_YEAR_REQUIRED')).run(req),
+        body('study_year').notEmpty().withMessage('السنة الدراسية مطلوبة').run(req),
         body('grade_id').isUUID().withMessage('Grade ID must be a valid UUID').run(req),
         body('subject_id').isUUID().withMessage('Subject ID must be a valid UUID').run(req),
-        body('course_name').notEmpty().withMessage(getMessage('COURSE.NAME_REQUIRED')).run(req),
+        body('course_name').notEmpty().withMessage('اسم الدورة مطلوب').run(req),
         body('start_date').isISO8601().withMessage('Start date must be a valid date').run(req),
         body('end_date').isISO8601().withMessage('End date must be a valid date').run(req),
-        body('price').isFloat({ min: 0 }).withMessage(getMessage('COURSE.INVALID_PRICE')).run(req),
-        body('seats_count').isInt({ min: 1 }).withMessage(getMessage('COURSE.INVALID_SEATS_COUNT')).run(req),
+        body('price').isFloat({ min: 0 }).withMessage('السعر غير صحيح').run(req),
+        body('seats_count').isInt({ min: 1 }).withMessage('عدد المقاعد غير صحيح').run(req),
         body('course_images').optional().isArray().withMessage('Course images must be an array').run(req),
         body('description').optional().isString().withMessage('Description must be a string').run(req)
       ]);
@@ -25,7 +24,7 @@ export class CourseController {
       if (!errors.isEmpty()) {
         res.status(400).json({
           success: false,
-          message: getMessage('VALIDATION.VALIDATION_FAILED'),
+          message: 'فشل في التحقق من البيانات',
           errors: errors.array().map(err => err.msg)
         });
         return;
@@ -43,8 +42,8 @@ export class CourseController {
       console.error('Error in create course controller:', error);
       res.status(500).json({
         success: false,
-        message: getMessage('SERVER.INTERNAL_ERROR'),
-        errors: [getMessage('SERVER.SOMETHING_WENT_WRONG')]
+        message: 'خطأ داخلي في الخادم',
+        errors: ['حدث خطأ في الخادم']
       });
     }
   }
@@ -83,7 +82,7 @@ export class CourseController {
       if (!errors.isEmpty()) {
         res.status(400).json({
           success: false,
-          message: getMessage('VALIDATION.VALIDATION_FAILED'),
+          message: 'فشل في التحقق من البيانات',
           errors: errors.array().map(err => err.msg)
         });
         return;
@@ -135,8 +134,8 @@ export class CourseController {
       console.error('Error in get all courses controller:', error);
       res.status(500).json({
         success: false,
-        message: getMessage('SERVER.INTERNAL_ERROR'),
-        errors: [getMessage('SERVER.SOMETHING_WENT_WRONG')]
+        message: 'خطأ داخلي في الخادم',
+        errors: ['حدث خطأ في الخادم']
       });
     }
   }
@@ -150,7 +149,7 @@ export class CourseController {
       if (!errors.isEmpty()) {
         res.status(400).json({
           success: false,
-          message: getMessage('VALIDATION.VALIDATION_FAILED'),
+          message: 'فشل في التحقق من البيانات',
           errors: errors.array().map(err => err.msg)
         });
         return;
@@ -170,8 +169,8 @@ export class CourseController {
       console.error('Error in get course by ID controller:', error);
       res.status(500).json({
         success: false,
-        message: getMessage('SERVER.INTERNAL_ERROR'),
-        errors: [getMessage('SERVER.SOMETHING_WENT_WRONG')]
+        message: 'خطأ داخلي في الخادم',
+        errors: ['حدث خطأ في الخادم']
       });
     }
   }
@@ -185,11 +184,11 @@ export class CourseController {
         body('study_year').optional().isString().withMessage('Study year must be a string').run(req),
         body('grade_id').optional().isUUID().withMessage('Grade ID must be a valid UUID').run(req),
         body('subject_id').optional().isUUID().withMessage('Subject ID must be a valid UUID').run(req),
-        body('course_name').optional().notEmpty().withMessage(getMessage('COURSE.NAME_REQUIRED')).run(req),
+        body('course_name').optional().notEmpty().withMessage('اسم الدورة مطلوب').run(req),
         body('start_date').optional().isISO8601().withMessage('Start date must be a valid date').run(req),
         body('end_date').optional().isISO8601().withMessage('End date must be a valid date').run(req),
-        body('price').optional().isFloat({ min: 0 }).withMessage(getMessage('COURSE.INVALID_PRICE')).run(req),
-        body('seats_count').optional().isInt({ min: 1 }).withMessage(getMessage('COURSE.INVALID_SEATS_COUNT')).run(req),
+        body('price').optional().isFloat({ min: 0 }).withMessage('السعر غير صحيح').run(req),
+        body('seats_count').optional().isInt({ min: 1 }).withMessage('عدد المقاعد غير صحيح').run(req),
         body('course_images').optional().isArray().withMessage('Course images must be an array').run(req),
         body('description').optional().isString().withMessage('Description must be a string').run(req)
       ]);
@@ -198,7 +197,7 @@ export class CourseController {
       if (!errors.isEmpty()) {
         res.status(400).json({
           success: false,
-          message: getMessage('VALIDATION.VALIDATION_FAILED'),
+          message: 'فشل في التحقق من البيانات',
           errors: errors.array().map(err => err.msg)
         });
         return;
@@ -218,8 +217,8 @@ export class CourseController {
       console.error('Error in update course controller:', error);
       res.status(500).json({
         success: false,
-        message: getMessage('SERVER.INTERNAL_ERROR'),
-        errors: [getMessage('SERVER.SOMETHING_WENT_WRONG')]
+        message: 'خطأ داخلي في الخادم',
+        errors: ['حدث خطأ في الخادم']
       });
     }
   }
@@ -233,7 +232,7 @@ export class CourseController {
       if (!errors.isEmpty()) {
         res.status(400).json({
           success: false,
-          message: getMessage('VALIDATION.VALIDATION_FAILED'),
+          message: 'فشل في التحقق من البيانات',
           errors: errors.array().map(err => err.msg)
         });
         return;
@@ -253,8 +252,8 @@ export class CourseController {
       console.error('Error in delete course controller:', error);
       res.status(500).json({
         success: false,
-        message: getMessage('SERVER.INTERNAL_ERROR'),
-        errors: [getMessage('SERVER.SOMETHING_WENT_WRONG')]
+        message: 'خطأ داخلي في الخادم',
+        errors: ['حدث خطأ في الخادم']
       });
     }
   }

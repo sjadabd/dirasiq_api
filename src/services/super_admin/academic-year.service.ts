@@ -4,7 +4,6 @@ import {
   CreateAcademicYearRequest,
   UpdateAcademicYearRequest
 } from '@/types';
-import { getMessage } from '@/utils/messages';
 
 export class AcademicYearService {
   // Create new academic year
@@ -15,8 +14,8 @@ export class AcademicYearService {
       if (!yearPattern.test(data.year)) {
         return {
           success: false,
-          message: getMessage('ACADEMIC_YEAR.INVALID_FORMAT'),
-          errors: [getMessage('ACADEMIC_YEAR.YEAR_PATTERN')]
+          message: 'تنسيق السنة الأكاديمية غير صحيح',
+          errors: ['يجب أن تكون السنة بصيغة YYYY-YYYY']
         };
       }
 
@@ -25,8 +24,8 @@ export class AcademicYearService {
       if (existingYear) {
         return {
           success: false,
-          message: getMessage('ACADEMIC_YEAR.ALREADY_EXISTS'),
-          errors: [getMessage('ACADEMIC_YEAR.ALREADY_EXISTS')]
+          message: 'السنة الأكاديمية موجودة بالفعل',
+          errors: ['السنة الأكاديمية موجودة بالفعل']
         };
       }
 
@@ -35,15 +34,15 @@ export class AcademicYearService {
 
       return {
         success: true,
-        message: getMessage('ACADEMIC_YEAR.CREATED'),
+        message: 'تم إنشاء السنة الأكاديمية',
         data: { academicYear }
       };
     } catch (error) {
       console.error('Error creating academic year:', error);
       return {
         success: false,
-        message: getMessage('GENERAL.OPERATION_FAILED'),
-        errors: [getMessage('SERVER.INTERNAL_ERROR')]
+        message: 'فشلت العملية',
+        errors: ['خطأ داخلي في الخادم']
       };
     }
   }
@@ -55,7 +54,7 @@ export class AcademicYearService {
 
       return {
         success: true,
-        message: getMessage('GENERAL.SUCCESS'),
+        message: 'تمت العملية بنجاح',
         data: result.academicYears,
         count: result.total
       };
@@ -63,8 +62,8 @@ export class AcademicYearService {
       console.error('Error getting academic years:', error);
       return {
         success: false,
-        message: getMessage('GENERAL.OPERATION_FAILED'),
-        errors: [getMessage('SERVER.INTERNAL_ERROR')]
+        message: 'فشلت العملية',
+        errors: ['خطأ داخلي في الخادم']
       };
     }
   }
@@ -77,22 +76,22 @@ export class AcademicYearService {
       if (!academicYear) {
         return {
           success: false,
-          message: getMessage('ACADEMIC_YEAR.NOT_FOUND'),
-          errors: [getMessage('ACADEMIC_YEAR.NOT_FOUND')]
+          message: 'السنة الأكاديمية غير موجودة',
+          errors: ['السنة الأكاديمية غير موجودة']
         };
       }
 
       return {
         success: true,
-        message: getMessage('GENERAL.SUCCESS'),
+        message: 'تمت العملية بنجاح',
         data: { academicYear }
       };
     } catch (error) {
       console.error('Error getting academic year:', error);
       return {
         success: false,
-        message: getMessage('GENERAL.OPERATION_FAILED'),
-        errors: [getMessage('SERVER.INTERNAL_ERROR')]
+        message: 'فشلت العملية',
+        errors: ['خطأ داخلي في الخادم']
       };
     }
   }
@@ -105,22 +104,22 @@ export class AcademicYearService {
       if (!academicYear) {
         return {
           success: false,
-          message: getMessage('ACADEMIC_YEAR.NO_ACTIVE_YEAR'),
-          errors: [getMessage('ACADEMIC_YEAR.NO_ACTIVE_YEAR')]
+          message: 'لا توجد سنة أكاديمية نشطة',
+          errors: ['لا توجد سنة أكاديمية نشطة']
         };
       }
 
       return {
         success: true,
-        message: getMessage('GENERAL.SUCCESS'),
+        message: 'تمت العملية بنجاح',
         data: { academicYear }
       };
     } catch (error) {
       console.error('Error getting active academic year:', error);
       return {
         success: false,
-        message: getMessage('GENERAL.OPERATION_FAILED'),
-        errors: [getMessage('SERVER.INTERNAL_ERROR')]
+        message: 'فشلت العملية',
+        errors: ['خطأ داخلي في الخادم']
       };
     }
   }
@@ -133,8 +132,8 @@ export class AcademicYearService {
       if (!exists) {
         return {
           success: false,
-          message: getMessage('ACADEMIC_YEAR.NOT_FOUND'),
-          errors: [getMessage('ACADEMIC_YEAR.NOT_FOUND')]
+          message: 'السنة الأكاديمية غير موجودة',
+          errors: ['السنة الأكاديمية غير موجودة']
         };
       }
 
@@ -144,8 +143,8 @@ export class AcademicYearService {
         if (!yearPattern.test(data.year)) {
           return {
             success: false,
-            message: getMessage('ACADEMIC_YEAR.INVALID_FORMAT'),
-            errors: [getMessage('ACADEMIC_YEAR.YEAR_PATTERN')]
+            message: 'تنسيق السنة الأكاديمية غير صحيح',
+            errors: ['يجب أن تكون السنة بصيغة YYYY-YYYY']
           };
         }
 
@@ -154,8 +153,8 @@ export class AcademicYearService {
         if (existingYear) {
           return {
             success: false,
-            message: getMessage('ACADEMIC_YEAR.ALREADY_EXISTS'),
-            errors: [getMessage('ACADEMIC_YEAR.ALREADY_EXISTS')]
+            message: 'السنة الأكاديمية موجودة بالفعل',
+            errors: ['السنة الأكاديمية موجودة بالفعل']
           };
         }
       }
@@ -166,22 +165,22 @@ export class AcademicYearService {
       if (!academicYear) {
         return {
           success: false,
-          message: getMessage('ACADEMIC_YEAR.NOT_FOUND'),
-          errors: [getMessage('ACADEMIC_YEAR.NOT_FOUND')]
+          message: 'السنة الأكاديمية غير موجودة',
+          errors: ['السنة الأكاديمية غير موجودة']
         };
       }
 
       return {
         success: true,
-        message: getMessage('ACADEMIC_YEAR.UPDATED'),
+        message: 'تم تحديث السنة الأكاديمية',
         data: { academicYear }
       };
     } catch (error) {
       console.error('Error updating academic year:', error);
       return {
         success: false,
-        message: getMessage('GENERAL.OPERATION_FAILED'),
-        errors: [getMessage('SERVER.INTERNAL_ERROR')]
+        message: 'فشلت العملية',
+        errors: ['خطأ داخلي في الخادم']
       };
     }
   }
@@ -194,8 +193,8 @@ export class AcademicYearService {
       if (!academicYear) {
         return {
           success: false,
-          message: getMessage('ACADEMIC_YEAR.NOT_FOUND'),
-          errors: [getMessage('ACADEMIC_YEAR.NOT_FOUND')]
+          message: 'السنة الأكاديمية غير موجودة',
+          errors: ['السنة الأكاديمية غير موجودة']
         };
       }
 
@@ -203,8 +202,8 @@ export class AcademicYearService {
       if (academicYear.is_active) {
         return {
           success: false,
-          message: getMessage('ACADEMIC_YEAR.CANNOT_DELETE_ACTIVE'),
-          errors: [getMessage('ACADEMIC_YEAR.CANNOT_DELETE_ACTIVE')]
+          message: 'لا يمكن حذف السنة الأكاديمية النشطة',
+          errors: ['لا يمكن حذف السنة الأكاديمية النشطة']
         };
       }
 
@@ -214,21 +213,21 @@ export class AcademicYearService {
       if (!deleted) {
         return {
           success: false,
-          message: getMessage('ACADEMIC_YEAR.NOT_FOUND'),
-          errors: [getMessage('ACADEMIC_YEAR.NOT_FOUND')]
+          message: 'السنة الأكاديمية غير موجودة',
+          errors: ['السنة الأكاديمية غير موجودة']
         };
       }
 
       return {
         success: true,
-        message: getMessage('ACADEMIC_YEAR.DELETED')
+        message: 'تم حذف السنة الأكاديمية'
       };
     } catch (error) {
       console.error('Error deleting academic year:', error);
       return {
         success: false,
-        message: getMessage('GENERAL.OPERATION_FAILED'),
-        errors: [getMessage('SERVER.INTERNAL_ERROR')]
+        message: 'فشلت العملية',
+        errors: ['خطأ داخلي في الخادم']
       };
     }
   }
@@ -241,8 +240,8 @@ export class AcademicYearService {
       if (!exists) {
         return {
           success: false,
-          message: getMessage('ACADEMIC_YEAR.NOT_FOUND'),
-          errors: [getMessage('ACADEMIC_YEAR.NOT_FOUND')]
+          message: 'السنة الأكاديمية غير موجودة',
+          errors: ['السنة الأكاديمية غير موجودة']
         };
       }
 
@@ -252,22 +251,22 @@ export class AcademicYearService {
       if (!academicYear) {
         return {
           success: false,
-          message: getMessage('ACADEMIC_YEAR.NOT_FOUND'),
-          errors: [getMessage('ACADEMIC_YEAR.NOT_FOUND')]
+          message: 'السنة الأكاديمية غير موجودة',
+          errors: ['السنة الأكاديمية غير موجودة']
         };
       }
 
       return {
         success: true,
-        message: getMessage('ACADEMIC_YEAR.ACTIVATED'),
+        message: 'تم تفعيل السنة الأكاديمية',
         data: { academicYear }
       };
     } catch (error) {
       console.error('Error activating academic year:', error);
       return {
         success: false,
-        message: getMessage('GENERAL.OPERATION_FAILED'),
-        errors: [getMessage('SERVER.INTERNAL_ERROR')]
+        message: 'فشلت العملية',
+        errors: ['خطأ داخلي في الخادم']
       };
     }
   }

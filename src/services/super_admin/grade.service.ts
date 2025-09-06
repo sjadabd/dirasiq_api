@@ -1,6 +1,5 @@
 import { GradeModel } from '@/models/grade.model';
 import { ApiResponse, CreateGradeRequest, UpdateGradeRequest } from '@/types';
-import { getMessage } from '@/utils/messages';
 
 export class GradeService {
   // Create new grade (Super Admin only)
@@ -11,8 +10,8 @@ export class GradeService {
       if (existingGrade) {
         return {
           success: false,
-          message: getMessage('GRADE.ALREADY_EXISTS'),
-          errors: [getMessage('GRADE.ALREADY_EXISTS')]
+          message: 'الصف موجود بالفعل',
+          errors: ['الصف موجود بالفعل']
         };
       }
 
@@ -21,15 +20,15 @@ export class GradeService {
 
       return {
         success: true,
-        message: getMessage('GRADE.CREATED'),
+        message: 'تم إنشاء الصف',
         data: { grade }
       };
     } catch (error) {
       console.error('Error creating grade:', error);
       return {
         success: false,
-        message: getMessage('GENERAL.OPERATION_FAILED'),
-        errors: [getMessage('SERVER.INTERNAL_ERROR')]
+        message: 'فشلت العملية',
+        errors: ['خطأ داخلي في الخادم']
       };
     }
   }
@@ -41,7 +40,7 @@ export class GradeService {
 
       return {
         success: true,
-        message: getMessage('GENERAL.SUCCESS'),
+        message: 'تمت العملية بنجاح',
         data: result.grades,
         count: result.total
       };
@@ -49,8 +48,8 @@ export class GradeService {
       console.error('Error getting grades:', error);
       return {
         success: false,
-        message: getMessage('GENERAL.OPERATION_FAILED'),
-        errors: [getMessage('SERVER.INTERNAL_ERROR')]
+        message: 'فشلت العملية',
+        errors: ['خطأ داخلي في الخادم']
       };
     }
   }
@@ -62,15 +61,15 @@ export class GradeService {
 
       return {
         success: true,
-        message: getMessage('GENERAL.SUCCESS'),
+        message: 'تمت العملية بنجاح',
         data: grades
       };
     } catch (error) {
       console.error('Error getting active grades:', error);
       return {
         success: false,
-        message: getMessage('GENERAL.OPERATION_FAILED'),
-        errors: [getMessage('SERVER.INTERNAL_ERROR')]
+        message: 'فشلت العملية',
+        errors: ['خطأ داخلي في الخادم']
       };
     }
   }
@@ -83,22 +82,22 @@ export class GradeService {
       if (!grade) {
         return {
           success: false,
-          message: getMessage('GRADE.NOT_FOUND'),
-          errors: [getMessage('GRADE.NOT_FOUND')]
+          message: 'الصف غير موجود',
+          errors: ['الصف غير موجود']
         };
       }
 
       return {
         success: true,
-        message: getMessage('GENERAL.SUCCESS'),
+        message: 'تمت العملية بنجاح',
         data: { grade }
       };
     } catch (error) {
       console.error('Error getting grade:', error);
       return {
         success: false,
-        message: getMessage('GENERAL.OPERATION_FAILED'),
-        errors: [getMessage('SERVER.INTERNAL_ERROR')]
+        message: 'فشلت العملية',
+        errors: ['خطأ داخلي في الخادم']
       };
     }
   }
@@ -111,8 +110,8 @@ export class GradeService {
       if (!existingGrade) {
         return {
           success: false,
-          message: getMessage('GRADE.NOT_FOUND'),
-          errors: [getMessage('GRADE.NOT_FOUND')]
+          message: 'الصف غير موجود',
+          errors: ['الصف غير موجود']
         };
       }
 
@@ -122,8 +121,8 @@ export class GradeService {
         if (nameExists) {
           return {
             success: false,
-            message: getMessage('GRADE.ALREADY_EXISTS'),
-            errors: [getMessage('GRADE.ALREADY_EXISTS')]
+            message: 'الصف موجود بالفعل',
+            errors: ['الصف موجود بالفعل']
           };
         }
       }
@@ -134,22 +133,22 @@ export class GradeService {
       if (!updatedGrade) {
         return {
           success: false,
-          message: getMessage('GRADE.NOT_FOUND'),
-          errors: [getMessage('GRADE.NOT_FOUND')]
+          message: 'الصف غير موجود',
+          errors: ['الصف غير موجود']
         };
       }
 
       return {
         success: true,
-        message: getMessage('GRADE.UPDATED'),
+        message: 'تم تحديث الصف',
         data: { grade: updatedGrade }
       };
     } catch (error) {
       console.error('Error updating grade:', error);
       return {
         success: false,
-        message: getMessage('GENERAL.OPERATION_FAILED'),
-        errors: [getMessage('SERVER.INTERNAL_ERROR')]
+        message: 'فشلت العملية',
+        errors: ['خطأ داخلي في الخادم']
       };
     }
   }
@@ -162,8 +161,8 @@ export class GradeService {
       if (!existingGrade) {
         return {
           success: false,
-          message: getMessage('GRADE.NOT_FOUND'),
-          errors: [getMessage('GRADE.NOT_FOUND')]
+          message: 'الصف غير موجود',
+          errors: ['الصف غير موجود']
         };
       }
 
@@ -173,21 +172,21 @@ export class GradeService {
       if (!deleted) {
         return {
           success: false,
-          message: getMessage('GENERAL.OPERATION_FAILED'),
-          errors: [getMessage('SERVER.INTERNAL_ERROR')]
+          message: 'فشلت العملية',
+          errors: ['خطأ داخلي في الخادم']
         };
       }
 
       return {
         success: true,
-        message: getMessage('GRADE.DELETED')
+        message: 'تم حذف الصف'
       };
     } catch (error) {
       console.error('Error deleting grade:', error);
       return {
         success: false,
-        message: getMessage('GENERAL.OPERATION_FAILED'),
-        errors: [getMessage('SERVER.INTERNAL_ERROR')]
+        message: 'فشلت العملية',
+        errors: ['خطأ داخلي في الخادم']
       };
     }
   }
