@@ -63,6 +63,8 @@ export interface Teacher extends BaseUser {
   experienceYears: number;
   visitorId?: string;
   deviceInfo?: string;
+  gender?: Gender;
+  birthDate?: Date;
 }
 
 export interface Student extends BaseUser {

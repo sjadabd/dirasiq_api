@@ -54,6 +54,16 @@ export class GradeService {
     }
   }
 
+  static async getAllActive() {
+    try {
+      const grades = await GradeModel.findActive();
+      return { success: true, data: grades };
+    } catch (err: any) {
+      return { success: false, message: 'فشل في جلب الصفوف', errors: [err.message] };
+    }
+  }
+
+
   // Get active grades only (for public use)
   static async getActive(): Promise<ApiResponse> {
     try {

@@ -617,17 +617,49 @@ export class AuthController {
       // Validate based on user type
       if (userType === 'teacher') {
         await Promise.all([
+          body('name').notEmpty().withMessage('الاسم مطلوب').run(req),
           body('phone').notEmpty().withMessage('رقم الهاتف مطلوب').run(req),
-          body('address').notEmpty().withMessage('العنوان مطلوب').run(req),
           body('bio').notEmpty().withMessage('النبذة الشخصية مطلوبة').run(req),
           body('experienceYears').isInt({ min: 0 }).withMessage('سنوات الخبرة مطلوبة').run(req),
           body('gradeIds').isArray({ min: 1 }).withMessage('معرف الصف مطلوب').run(req),
-          body('studyYear').notEmpty().withMessage('السنة الدراسية مطلوبة').run(req)
+          body('gradeIds.*').isUUID().withMessage('الصف غير موجود').run(req),
+          body('studyYear').notEmpty().withMessage('السنة الدراسية مطلوبة')
+            .matches(/^[0-9]{4}-[0-9]{4}$/).withMessage('تنسيق السنة الدراسية غير صحيح').run(req),
+          body('latitude').isFloat({ min: -90, max: 90 }).withMessage('خط العرض غير صحيح').run(req),
+          body('longitude').isFloat({ min: -180, max: 180 }).withMessage('خط الطول غير صحيح').run(req),
+          body('address').optional().isLength({ max: 1000 }).withMessage('العنوان طويل جداً').run(req),
+          body('formattedAddress').optional().isLength({ max: 1000 }).withMessage('العنوان المنسق طويل جداً').run(req),
+          body('country').optional().isLength({ max: 100 }).withMessage('اسم البلد طويل جداً').run(req),
+          body('city').optional().isLength({ max: 100 }).withMessage('اسم المدينة طويل جداً').run(req),
+          body('state').optional().isLength({ max: 100 }).withMessage('اسم المحافظة طويل جداً').run(req),
+          body('zipcode').optional().isLength({ max: 20 }).withMessage('الرمز البريدي طويل جداً').run(req),
+          body('streetName').optional().isLength({ max: 255 }).withMessage('اسم الشارع طويل جداً').run(req),
+          body('suburb').optional().isLength({ max: 100 }).withMessage('اسم الحي طويل جداً').run(req),
+          body('locationConfidence').optional().isFloat({ min: 0, max: 1 }).withMessage('ثقة الموقع غير صحيحة').run(req),
+          body('gender').optional().isIn(['male', 'female']).withMessage('الجنس غير صحيح').run(req),
+          body('birthDate').optional().isISO8601().withMessage('تنسيق تاريخ الميلاد غير صحيح').run(req)
         ]);
       } else if (userType === 'student') {
         await Promise.all([
-          body('gradeId').notEmpty().withMessage('معرف الصف مطلوب').run(req),
-          body('studyYear').notEmpty().withMessage('السنة الدراسية مطلوبة').run(req)
+          body('gradeId').notEmpty().withMessage('معرف الصف مطلوب').isUUID().withMessage('الصف غير موجود').run(req),
+          body('studyYear').notEmpty().withMessage('السنة الدراسية مطلوبة')
+            .matches(/^[0-9]{4}-[0-9]{4}$/).withMessage('تنسيق السنة الدراسية غير صحيح').run(req),
+          body('latitude').isFloat({ min: -90, max: 90 }).withMessage('خط العرض غير صحيح').run(req),
+          body('longitude').isFloat({ min: -180, max: 180 }).withMessage('خط الطول غير صحيح').run(req),
+          body('studentPhone').optional().matches(/^\+?[1-9]\d{1,14}$/).withMessage('تنسيق رقم هاتف الطالب غير صحيح').run(req),
+          body('parentPhone').optional().matches(/^\+?[1-9]\d{1,14}$/).withMessage('تنسيق رقم هاتف الوالد غير صحيح').run(req),
+          body('schoolName').optional().isLength({ max: 255 }).withMessage('اسم المدرسة طويل جداً').run(req),
+          body('gender').optional().isIn(['male', 'female']).withMessage('الجنس غير صحيح').run(req),
+          body('birthDate').optional().isISO8601().withMessage('تنسيق تاريخ الميلاد غير صحيح').run(req),
+          body('address').optional().isLength({ max: 1000 }).withMessage('العنوان طويل جداً').run(req),
+          body('formattedAddress').optional().isLength({ max: 1000 }).withMessage('العنوان المنسق طويل جداً').run(req),
+          body('country').optional().isLength({ max: 100 }).withMessage('اسم البلد طويل جداً').run(req),
+          body('city').optional().isLength({ max: 100 }).withMessage('اسم المدينة طويل جداً').run(req),
+          body('state').optional().isLength({ max: 100 }).withMessage('اسم المحافظة طويل جداً').run(req),
+          body('zipcode').optional().isLength({ max: 20 }).withMessage('الرمز البريدي طويل جداً').run(req),
+          body('streetName').optional().isLength({ max: 255 }).withMessage('اسم الشارع طويل جداً').run(req),
+          body('suburb').optional().isLength({ max: 100 }).withMessage('اسم الحي طويل جداً').run(req),
+          body('locationConfidence').optional().isFloat({ min: 0, max: 1 }).withMessage('ثقة الموقع غير صحيحة').run(req)
         ]);
       }
 

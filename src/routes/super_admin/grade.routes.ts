@@ -4,18 +4,18 @@ import { Router } from 'express';
 
 const router = Router();
 
-// Public route - no authentication required
-router.get('/active', GradeController.getActive);
-
-// Protected routes - require authentication and super admin role
 router.use(authenticateToken);
-router.use(requireSuperAdmin);
+router.get('/all', GradeController.getAllActive);
 
-// Grade management routes (Super Admin only)
+/**
+ * === مسارات Super Admin ===
+ * تحتاج تسجيل الدخول + صلاحية Super Admin
+ */
+router.use(requireSuperAdmin);
 router.post('/', GradeController.create);
-router.get('/', GradeController.getAll);
 router.get('/:id', GradeController.getById);
 router.put('/:id', GradeController.update);
 router.delete('/:id', GradeController.delete);
+router.get('/active', GradeController.getActive);
 
 export default router;

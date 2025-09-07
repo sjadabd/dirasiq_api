@@ -86,6 +86,26 @@ export class GradeController {
     }
   }
 
+  static async getAllActive(_req: Request, res: Response): Promise<void> {
+    try {
+      // جلب الصفوف النشطة فقط من السيرفيس
+      const result = await GradeService.getAllActive(); // هذه الدالة يجب أن تعيد فقط الصفوف المفعلّة
+
+      if (result.success) {
+        res.status(200).json(result);
+      } else {
+        res.status(500).json(result);
+      }
+    } catch (error) {
+      console.error('Error in get all active grades controller:', error);
+      res.status(500).json({
+        success: false,
+        message: 'خطأ داخلي في الخادم',
+        errors: ['حدث خطأ في الخادم']
+      });
+    }
+  }
+
   // Get active grades only (for public use)
   static async getActive(_req: Request, res: Response): Promise<void> {
     try {

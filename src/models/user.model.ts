@@ -287,6 +287,7 @@ export class UserModel {
 
     updates.push(`updated_at = $${paramCount}`);
     values.push(new Date());
+    paramCount++;
     values.push(id);
 
     const query = `
@@ -441,6 +442,8 @@ export class UserModel {
         experienceYears: dbUser.experience_years,
         visitorId: dbUser.visitor_id,
         deviceInfo: dbUser.device_info,
+        gender: dbUser.gender,
+        birthDate: dbUser.birth_date,
       } as Teacher;
     }
 

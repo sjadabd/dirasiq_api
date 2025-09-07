@@ -1,9 +1,12 @@
+import pool from '@/config/database';
 import { sendPasswordResetEmail, sendVerificationEmail } from '@/config/email';
+import { GradeModel } from '@/models/grade.model';
 import { StudentGradeModel } from '@/models/student-grade.model';
 import { TeacherGradeModel } from '@/models/teacher-grade.model';
 import { TokenModel } from '@/models/token.model';
 import { UserModel } from '@/models/user.model';
 import { GeocodingService } from '@/services/geocoding.service';
+import { AcademicYearService } from '@/services/super_admin/academic-year.service';
 import {
   ApiResponse,
   LoginRequest,
@@ -295,6 +298,13 @@ export class AuthService {
       // Check if profile is complete
       const isProfileComplete = this.isProfileComplete(user);
 
+      // Get active academic year
+      const academicYearResponse = await AcademicYearService.getActive();
+      const activeAcademicYear = academicYearResponse.success ? academicYearResponse.data?.academicYear : null;
+
+      // Get enhanced user data
+      const enhancedUser = await this.getEnhancedUserData(user);
+
       // Generate token
       const token = await this.generateToken(user);
 
@@ -302,10 +312,14 @@ export class AuthService {
         success: true,
         message: 'تم تسجيل الدخول بنجاح',
         data: {
-          user: this.sanitizeUser(user),
+          user: {
+            ...enhancedUser,
+            studyYear: activeAcademicYear?.year
+          },
           token,
           isProfileComplete: isProfileComplete,
-          requiresProfileCompletion: !isProfileComplete
+          requiresProfileCompletion: !isProfileComplete,
+          activeAcademicYear: activeAcademicYear
         }
       };
     } catch (error) {
@@ -551,6 +565,13 @@ export class AuthService {
         // Check if profile is complete
         const isProfileComplete = this.isProfileComplete(existingUser);
 
+        // Get active academic year
+        const academicYearResponse = await AcademicYearService.getActive();
+        const activeAcademicYear = academicYearResponse.success ? academicYearResponse.data?.academicYear : null;
+
+        // Get enhanced user data
+        const enhancedUser = await this.getEnhancedUserData(existingUser);
+
         // Generate JWT token for existing user
         const token = jwt.sign(
           {
@@ -573,11 +594,15 @@ export class AuthService {
           success: true,
           message: 'تم تسجيل الدخول بنجاح',
           data: {
-            user: this.sanitizeUser(existingUser),
+            user: {
+              ...enhancedUser,
+              studyYear: activeAcademicYear?.year
+            },
             token,
             isNewUser: false,
             isProfileComplete: isProfileComplete,
-            requiresProfileCompletion: !isProfileComplete
+            requiresProfileCompletion: !isProfileComplete,
+            activeAcademicYear: activeAcademicYear
           }
         };
       }
@@ -616,6 +641,13 @@ export class AuthService {
         });
       }
 
+      // Get active academic year
+      const academicYearResponse = await AcademicYearService.getActive();
+      const activeAcademicYear = academicYearResponse.success ? academicYearResponse.data?.academicYear : null;
+
+      // Get enhanced user data
+      const enhancedUser = await this.getEnhancedUserData(newUser);
+
       // Generate JWT token for new user
       const token = jwt.sign(
         {
@@ -638,11 +670,15 @@ export class AuthService {
         success: true,
         message: 'تم إنشاء الحساب وتسجيل الدخول بنجاح',
         data: {
-          user: this.sanitizeUser(newUser),
+          user: {
+            ...enhancedUser,
+            studyYear: activeAcademicYear?.year
+          },
           token,
           isNewUser: true,
           isProfileComplete: false, // New user always has incomplete profile
-          requiresProfileCompletion: true
+          requiresProfileCompletion: true,
+          activeAcademicYear: activeAcademicYear
         }
       };
     } catch (error) {
@@ -667,18 +703,80 @@ export class AuthService {
         };
       }
 
+      // Extract location data
+      const { latitude, longitude, address, formattedAddress, country, city, state, zipcode, streetName, suburb, locationConfidence } = profileData;
+
+      // Get location details from coordinates using GeocodingService
+      let locationDetails = null;
+      if (latitude && longitude) {
+        try {
+          const geocodingService = new GeocodingService();
+          locationDetails = await geocodingService.getLocationDetails(latitude, longitude);
+        } catch (error) {
+          console.error('Error getting location details:', error);
+          // Continue without location details if geocoding fails
+        }
+      }
+
+      // Prepare user update data with location information
+      const updateData: any = {
+        latitude: Number(latitude),
+        longitude: Number(longitude)
+      };
+
+      // Use geocoded data if available, otherwise use provided data
+      if (locationDetails) {
+        updateData.formatted_address = locationDetails.formattedAddress;
+        updateData.country = locationDetails.country;
+        updateData.city = locationDetails.city;
+        updateData.state = locationDetails.state;
+        updateData.zipcode = locationDetails.zipcode;
+        updateData.street_name = locationDetails.streetName;
+        updateData.suburb = locationDetails.suburb;
+        updateData.location_confidence = locationDetails.confidence;
+        // Use geocoded address as the main address if no address provided
+        if (!address) {
+          updateData.address = locationDetails.formattedAddress;
+        } else {
+          updateData.address = address;
+        }
+      } else {
+        // Fallback to provided data if geocoding fails
+        if (formattedAddress) updateData.formatted_address = formattedAddress;
+        if (country) updateData.country = country;
+        if (city) updateData.city = city;
+        if (state) updateData.state = state;
+        if (zipcode) updateData.zipcode = zipcode;
+        if (streetName) updateData.street_name = streetName;
+        if (suburb) updateData.suburb = suburb;
+        if (locationConfidence !== undefined) updateData.location_confidence = Number(locationConfidence);
+        if (address) updateData.address = address;
+      }
+
       if (userType === 'teacher') {
-        const { phone, address, bio, experienceYears, gradeIds, studyYear } = profileData;
+        const { name, phone, bio, experienceYears, gradeIds, studyYear, gender, birthDate } = profileData;
+
+        // Add teacher-specific data
+        updateData.name = name;
+        updateData.phone = phone;
+        updateData.bio = bio;
+        updateData.experience_years = parseInt(experienceYears);
+
+        // Add optional teacher data
+        if (gender) updateData.gender = gender;
+        if (birthDate) updateData.birth_date = birthDate;
 
         // Update teacher profile
-        const updatedUser = await UserModel.update(userId, {
-          phone,
-          address,
-          bio,
-          experienceYears: parseInt(experienceYears)
-        });
+        const updatedUser = await UserModel.update(userId, updateData);
 
-        // Create teacher grades
+        // First, delete all existing teacher grades for this teacher and study year (hard delete)
+        const deleteQuery = `
+          DELETE FROM teacher_grades 
+          WHERE teacher_id = $1 AND study_year = $2
+        `;
+        await pool.query(deleteQuery, [userId, studyYear]);
+
+        // Then create new teacher grades
         for (const gradeId of gradeIds) {
           await TeacherGradeModel.create({
             teacherId: userId,
@@ -690,26 +788,32 @@ export class AuthService {
         // Check if profile is now complete
         const isProfileComplete = updatedUser ? this.isProfileComplete(updatedUser) : false;
 
+        // Get enhanced user data
+        const enhancedUser = updatedUser ? await this.getEnhancedUserData(updatedUser) : null;
+
         return {
           success: true,
           message: 'تم تحديث الملف الشخصي بنجاح',
           data: {
-            user: updatedUser ? this.sanitizeUser(updatedUser) : null,
+            user: enhancedUser,
             isProfileComplete: isProfileComplete,
-            requiresProfileCompletion: !isProfileComplete
+            requiresProfileCompletion: !isProfileComplete,
+            locationDetails: locationDetails
           }
         };
       } else if (userType === 'student') {
-        const { gradeId, studyYear, studentPhone, parentPhone, schoolName, gender, birthDate } = profileData;
+        const { name, gradeId, studyYear, studentPhone, parentPhone, schoolName, gender, birthDate } = profileData;
+
+        // Add student-specific data
+        updateData.name = name;
+        updateData.studentPhone = studentPhone;
+        updateData.parentPhone = parentPhone;
+        updateData.schoolName = schoolName;
+        updateData.gender = gender;
+        updateData.birthDate = birthDate;
 
         // Update student profile
-        const updatedUser = await UserModel.update(userId, {
-          studentPhone,
-          parentPhone,
-          schoolName,
-          gender,
-          birthDate
-        });
+        const updatedUser = await UserModel.update(userId, updateData);
 
         // Create student grade
         await StudentGradeModel.create({
@@ -721,13 +825,17 @@ export class AuthService {
         // Check if profile is now complete
         const isProfileComplete = updatedUser ? this.isProfileComplete(updatedUser) : false;
 
+        // Get enhanced user data
+        const enhancedUser = updatedUser ? await this.getEnhancedUserData(updatedUser) : null;
+
         return {
           success: true,
           message: 'تم تحديث الملف الشخصي بنجاح',
           data: {
-            user: updatedUser ? this.sanitizeUser(updatedUser) : null,
+            user: enhancedUser,
             isProfileComplete: isProfileComplete,
-            requiresProfileCompletion: !isProfileComplete
+            requiresProfileCompletion: !isProfileComplete,
+            locationDetails: locationDetails
           }
         };
       }
@@ -751,5 +859,89 @@ export class AuthService {
   private static sanitizeUser(user: User): Partial<User> {
     const { password, ...sanitizedUser } = user;
     return sanitizedUser;
+  }
+
+  // Get enhanced user data with additional information
+  private static async getEnhancedUserData(user: User): Promise<any> {
+    const sanitizedUser = this.sanitizeUser(user);
+
+    // If user is a teacher, add teacher-specific data
+    if (user.userType === 'teacher') {
+      try {
+        // Get teacher grades
+        const teacherGrades = await TeacherGradeModel.findByTeacherId(user.id);
+
+        // Get grade details for each teacher grade
+        const gradesWithDetails = await Promise.all(
+          teacherGrades.map(async (teacherGrade) => {
+            const grade = await GradeModel.findById(teacherGrade.gradeId);
+            return {
+              id: teacherGrade.id,
+              gradeId: teacherGrade.gradeId,
+              gradeName: grade?.name || 'Unknown Grade',
+              studyYear: teacherGrade.studyYear,
+              createdAt: teacherGrade.createdAt
+            };
+          })
+        );
+
+        return {
+          ...sanitizedUser,
+          teacherGrades: gradesWithDetails,
+          // Include location data if available
+          location: {
+            latitude: user.latitude,
+            longitude: user.longitude,
+            address: user.address,
+            formattedAddress: user.formattedAddress,
+            country: user.country,
+            city: user.city,
+            state: user.state,
+            zipcode: user.zipcode,
+            streetName: user.streetName,
+            suburb: user.suburb,
+            locationConfidence: user.locationConfidence
+          }
+        };
+      } catch (error) {
+        console.error('Error getting enhanced teacher data:', error);
+        // Return basic user data if there's an error
+        return {
+          ...sanitizedUser,
+          teacherGrades: [],
+          location: {
+            latitude: user.latitude,
+            longitude: user.longitude,
+            address: user.address,
+            formattedAddress: user.formattedAddress,
+            country: user.country,
+            city: user.city,
+            state: user.state,
+            zipcode: user.zipcode,
+            streetName: user.streetName,
+            suburb: user.suburb,
+            locationConfidence: user.locationConfidence
+          }
+        };
+      }
+    }
+
+    // For non-teachers, return basic data with location
+    return {
+      ...sanitizedUser,
+      location: {
+        latitude: (user as any).latitude,
+        longitude: (user as any).longitude,
+        address: (user as any).address,
+        formattedAddress: (user as any).formattedAddress,
+        country: (user as any).country,
+        city: (user as any).city,
+        state: (user as any).state,
+        zipcode: (user as any).zipcode,
+        streetName: (user as any).streetName,
+        suburb: (user as any).suburb,
+        locationConfidence: (user as any).locationConfidence
+      }
+    };
   }
 }
