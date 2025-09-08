@@ -30,10 +30,11 @@ app.use(helmet({
       defaultSrc: ["'self'"],
       styleSrc: ["'self'", "'unsafe-inline'"],
       scriptSrc: ["'self'"],
-      imgSrc: ["'self'", "data:", "https:"],
+      imgSrc: ["'self'", "data:", "https:", "http://localhost:3000", "http://localhost:3001", "http://localhost:5173"],
     },
   },
   crossOriginEmbedderPolicy: false,
+  crossOriginResourcePolicy: { policy: "cross-origin" },
 }));
 
 // CORS configuration
@@ -85,9 +86,25 @@ app.get('/health', (_req, res) => {
   });
 });
 
-// Serve static files
-app.use('/public', express.static(path.join(__dirname, '../public')));
-app.use('/uploads', express.static(path.join(__dirname, '../public/uploads')));
+// Serve static files with CORS
+app.use('/public', cors({
+  origin: true,
+  credentials: false,
+  methods: ['GET'],
+  allowedHeaders: ['Content-Type']
+}), express.static(path.join(__dirname, '../public')));
+
+app.use('/uploads', cors({
+  origin: true,
+  credentials: false,
+  methods: ['GET'],
+  allowedHeaders: ['Content-Type']
+}), (_req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET');
+  res.header('Access-Control-Allow-Headers', 'Content-Type');
+  next();
+}, express.static(path.join(__dirname, '../public/uploads')));
 
 // API routes
 app.use('/api/auth', authRoutes);

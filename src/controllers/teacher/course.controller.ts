@@ -57,7 +57,15 @@ export class CourseController {
         query('limit').optional().isInt({ min: 1, max: 100 }).withMessage('Limit must be between 1 and 100').run(req),
         query('search').optional().isString().withMessage('Search must be a string').run(req),
         query('study_year').optional().isString().withMessage('Study year must be a string').run(req),
-        query('deleted').optional().isIn(['true', 'false']).withMessage('Deleted must be true or false').run(req),
+        query('deleted').optional().custom((value) => {
+          if (value === undefined || value === null || value === 'null') {
+            return true; // Allow null/undefined
+          }
+          if (value === 'true' || value === 'false') {
+            return true; // Allow boolean strings
+          }
+          throw new Error('deleted must be true, false, or null');
+        }).withMessage('deleted must be true, false, or null').run(req),
         query('grade_id').optional().custom((value) => {
           if (value && value !== 'null' && value !== 'undefined' && value !== '') {
             const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -250,6 +258,81 @@ export class CourseController {
       }
     } catch (error) {
       console.error('Error in delete course controller:', error);
+      res.status(500).json({
+        success: false,
+        message: 'خطأ داخلي في الخادم',
+        errors: ['حدث خطأ في الخادم']
+      });
+    }
+  }
+
+  // Get deleted courses that are not expired
+  static async getDeletedNotExpired(req: Request, res: Response): Promise<void> {
+    try {
+      // Validate query parameters
+      await Promise.all([
+        query('page').optional().isInt({ min: 1 }).withMessage('Page must be a positive integer').run(req),
+        query('limit').optional().isInt({ min: 1, max: 100 }).withMessage('Limit must be between 1 and 100').run(req)
+      ]);
+
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        res.status(400).json({
+          success: false,
+          message: 'فشل في التحقق من البيانات',
+          errors: errors.array().map(err => err.msg)
+        });
+        return;
+      }
+
+      const teacherId = (req as any).user.id;
+      const page = parseInt(req.query['page'] as string) || 1;
+      const limit = parseInt(req.query['limit'] as string) || 10;
+
+      const result = await CourseService.getDeletedNotExpired(teacherId, page, limit);
+
+      if (result.success) {
+        res.status(200).json(result);
+      } else {
+        res.status(500).json(result);
+      }
+    } catch (error) {
+      console.error('Error in get deleted not expired courses controller:', error);
+      res.status(500).json({
+        success: false,
+        message: 'خطأ داخلي في الخادم',
+        errors: ['حدث خطأ في الخادم']
+      });
+    }
+  }
+
+  // Restore deleted course
+  static async restore(req: Request, res: Response): Promise<void> {
+    try {
+      await param('id').isUUID().withMessage('ID must be a valid UUID').run(req);
+
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        res.status(400).json({
+          success: false,
+          message: 'فشل في التحقق من البيانات',
+          errors: errors.array().map(err => err.msg)
+        });
+        return;
+      }
+
+      const teacherId = (req as any).user.id;
+      const id = req.params['id'] || '';
+
+      const result = await CourseService.restore(id, teacherId);
+
+      if (result.success) {
+        res.status(200).json(result);
+      } else {
+        res.status(404).json(result);
+      }
+    } catch (error) {
+      console.error('Error in restore course controller:', error);
       res.status(500).json({
         success: false,
         message: 'خطأ داخلي في الخادم',

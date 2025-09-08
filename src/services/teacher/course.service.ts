@@ -52,11 +52,21 @@ export class CourseService {
       // Validate dates
       const startDate = new Date(data.start_date);
       const endDate = new Date(data.end_date);
+      const currentDate = new Date();
+
       if (endDate <= startDate) {
         return {
           success: false,
-          message: 'نطاق التاريخ غير صحيح',
-          errors: ['نطاق التاريخ غير صحيح']
+          message: 'تاريخ الانتهاء يجب أن يكون بعد تاريخ البداية',
+          errors: ['تاريخ الانتهاء يجب أن يكون بعد تاريخ البداية']
+        };
+      }
+
+      if (endDate <= currentDate) {
+        return {
+          success: false,
+          message: 'تاريخ الانتهاء يجب أن يكون في المستقبل',
+          errors: ['تاريخ الانتهاء يجب أن يكون في المستقبل']
         };
       }
 
@@ -248,11 +258,54 @@ export class CourseService {
       if (data.start_date && data.end_date) {
         const startDate = new Date(data.start_date);
         const endDate = new Date(data.end_date);
+        const currentDate = new Date();
+
         if (endDate <= startDate) {
           return {
             success: false,
-            message: 'نطاق التاريخ غير صحيح',
-            errors: ['نطاق التاريخ غير صحيح']
+            message: 'تاريخ الانتهاء يجب أن يكون بعد تاريخ البداية',
+            errors: ['تاريخ الانتهاء يجب أن يكون بعد تاريخ البداية']
+          };
+        }
+
+        if (endDate <= currentDate) {
+          return {
+            success: false,
+            message: 'تاريخ الانتهاء يجب أن يكون في المستقبل',
+            errors: ['تاريخ الانتهاء يجب أن يكون في المستقبل']
+          };
+        }
+      } else if (data.end_date) {
+        // If only end_date is provided, validate it against existing start_date
+        const endDate = new Date(data.end_date);
+        const currentDate = new Date();
+        const existingStartDate = new Date(existingCourse.start_date);
+
+        if (endDate <= existingStartDate) {
+          return {
+            success: false,
+            message: 'تاريخ الانتهاء يجب أن يكون بعد تاريخ البداية',
+            errors: ['تاريخ الانتهاء يجب أن يكون بعد تاريخ البداية']
+          };
+        }
+
+        if (endDate <= currentDate) {
+          return {
+            success: false,
+            message: 'تاريخ الانتهاء يجب أن يكون في المستقبل',
+            errors: ['تاريخ الانتهاء يجب أن يكون في المستقبل']
+          };
+        }
+      } else if (data.start_date) {
+        // If only start_date is provided, validate it against existing end_date
+        const startDate = new Date(data.start_date);
+        const existingEndDate = new Date(existingCourse.end_date);
+
+        if (existingEndDate <= startDate) {
+          return {
+            success: false,
+            message: 'تاريخ الانتهاء يجب أن يكون بعد تاريخ البداية',
+            errors: ['تاريخ الانتهاء يجب أن يكون بعد تاريخ البداية']
           };
         }
       }
@@ -369,6 +422,80 @@ export class CourseService {
       };
     } catch (error) {
       console.error('Error deleting course:', error);
+      return {
+        success: false,
+        message: 'فشلت العملية',
+        errors: ['خطأ داخلي في الخادم']
+      };
+    }
+  }
+
+  // Get deleted courses that are not expired
+  static async getDeletedNotExpired(
+    teacherId: string,
+    page: number = 1,
+    limit: number = 10
+  ): Promise<ApiResponse> {
+    try {
+      // Validate teacher exists and is a teacher
+      const teacher = await UserModel.findById(teacherId);
+      if (!teacher || teacher.userType !== 'teacher') {
+        return {
+          success: false,
+          message: 'المعلم غير موجود',
+          errors: ['المعلم غير موجود']
+        };
+      }
+
+      const result = await CourseModel.findDeletedNotExpiredByTeacher(teacherId, page, limit);
+
+      return {
+        success: true,
+        message: 'تم جلب الدورات المحذوفة غير المنتهية الصلاحية',
+        data: result.courses,
+        count: result.total
+      };
+    } catch (error) {
+      console.error('Error getting deleted not expired courses:', error);
+      return {
+        success: false,
+        message: 'فشلت العملية',
+        errors: ['خطأ داخلي في الخادم']
+      };
+    }
+  }
+
+  // Restore deleted course
+  static async restore(id: string, teacherId: string): Promise<ApiResponse> {
+    try {
+      // Validate teacher exists and is a teacher
+      const teacher = await UserModel.findById(teacherId);
+      if (!teacher || teacher.userType !== 'teacher') {
+        return {
+          success: false,
+          message: 'المعلم غير موجود',
+          errors: ['المعلم غير موجود']
+        };
+      }
+
+      // Restore course
+      const restoredCourse = await CourseModel.restore(id, teacherId);
+
+      if (!restoredCourse) {
+        return {
+          success: false,
+          message: 'لا يمكن استرجاع الدورة - إما أنها غير موجودة أو منتهية الصلاحية',
+          errors: ['لا يمكن استرجاع الدورة - إما أنها غير موجودة أو منتهية الصلاحية']
+        };
+      }
+
+      return {
+        success: true,
+        message: 'تم استرجاع الدورة بنجاح',
+        data: { course: restoredCourse }
+      };
+    } catch (error) {
+      console.error('Error restoring course:', error);
       return {
         success: false,
         message: 'فشلت العملية',

@@ -11,8 +11,13 @@ router.use(requireTeacher);
 // Subject routes
 router.post('/', SubjectController.create);
 router.get('/', SubjectController.getAll);
+router.get('/all', SubjectController.getAllSubjects);
 router.get('/:id', SubjectController.getById);
 router.put('/:id', SubjectController.update);
 router.delete('/:id', SubjectController.delete);
+
+// Soft delete management routes
+router.patch('/:id/restore', SubjectController.restore);
+router.delete('/:id/hard', SubjectController.hardDelete);
 
 export default router;

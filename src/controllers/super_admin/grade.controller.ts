@@ -230,4 +230,43 @@ export class GradeController {
       });
     }
   }
+
+  // Get user grades based on user type (all users)
+  static async getUserGrades(req: Request, res: Response): Promise<void> {
+    try {
+      // Validate query parameters
+      await Promise.all([
+        query('study_year').optional().isString().withMessage('Study year must be a string').run(req)
+      ]);
+
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        res.status(400).json({
+          success: false,
+          message: 'فشل في التحقق من البيانات',
+          errors: errors.array().map(err => err.msg)
+        });
+        return;
+      }
+
+      const userId = (req as any).user.id;
+      const userType = (req as any).user.userType;
+      const studyYear = req.query['study_year'] as string;
+
+      const result = await GradeService.getUserGrades(userId, userType, studyYear);
+
+      if (result.success) {
+        res.status(200).json(result);
+      } else {
+        res.status(400).json(result);
+      }
+    } catch (error) {
+      console.error('Error in get user grades controller:', error);
+      res.status(500).json({
+        success: false,
+        message: 'خطأ داخلي في الخادم',
+        errors: ['حدث خطأ في الخادم']
+      });
+    }
+  }
 }

@@ -200,4 +200,105 @@ export class GradeService {
       };
     }
   }
+
+  // Get user grades based on user type
+  static async getUserGrades(userId: string, userType: string, studyYear?: string): Promise<ApiResponse> {
+    try {
+      // Validate user exists
+      const { UserModel } = await import('@/models/user.model');
+      const user = await UserModel.findById(userId);
+      if (!user) {
+        return {
+          success: false,
+          message: 'المستخدم غير موجود',
+          errors: ['المستخدم غير موجود']
+        };
+      }
+
+      // Get active academic year if studyYear not provided
+      let activeStudyYear = studyYear;
+      if (!activeStudyYear) {
+        const { AcademicYearModel } = await import('@/models/academic-year.model');
+        const activeAcademicYear = await AcademicYearModel.getActive();
+        if (activeAcademicYear) {
+          activeStudyYear = activeAcademicYear.year;
+        }
+      }
+
+      if (!activeStudyYear) {
+        return {
+          success: false,
+          message: 'لا توجد سنة دراسية نشطة',
+          errors: ['لا توجد سنة دراسية نشطة']
+        };
+      }
+
+      let userGrades: any[] = [];
+
+      if (userType === 'teacher') {
+        // Get teacher grades
+        const { TeacherGradeModel } = await import('@/models/teacher-grade.model');
+        const teacherGrades = await TeacherGradeModel.findByTeacherId(userId);
+
+        // Filter by study year and get grade details
+        const filteredGrades = teacherGrades.filter(tg => tg.studyYear === activeStudyYear);
+
+        userGrades = await Promise.all(
+          filteredGrades.map(async (tg) => {
+            const grade = await GradeModel.findById(tg.gradeId);
+            return {
+              id: tg.id,
+              gradeId: tg.gradeId,
+              gradeName: grade?.name || 'غير محدد',
+              studyYear: tg.studyYear,
+              createdAt: tg.createdAt
+            };
+          })
+        );
+      } else if (userType === 'student') {
+        // Get student grades
+        const { StudentGradeModel } = await import('@/models/student-grade.model');
+        const studentGrades = await StudentGradeModel.findByStudentId(userId);
+
+        // Filter by study year and get grade details
+        const filteredGrades = studentGrades.filter(sg => sg.studyYear === activeStudyYear);
+
+        userGrades = await Promise.all(
+          filteredGrades.map(async (sg) => {
+            const grade = await GradeModel.findById(sg.gradeId);
+            return {
+              id: sg.id,
+              gradeId: sg.gradeId,
+              gradeName: grade?.name || 'غير محدد',
+              studyYear: sg.studyYear,
+              createdAt: sg.createdAt
+            };
+          })
+        );
+      } else {
+        return {
+          success: false,
+          message: 'نوع المستخدم غير مدعوم',
+          errors: ['نوع المستخدم غير مدعوم']
+        };
+      }
+
+      return {
+        success: true,
+        message: 'تم جلب المراحل بنجاح',
+        data: {
+          userType,
+          studyYear: activeStudyYear,
+          grades: userGrades
+        }
+      };
+    } catch (error) {
+      console.error('Error getting user grades:', error);
+      return {
+        success: false,
+        message: 'فشلت العملية',
+        errors: ['خطأ داخلي في الخادم']
+      };
+    }
+  }
 }

@@ -279,6 +279,60 @@ export class CourseModel {
     return result.rows[0] || null;
   }
 
+  // Find deleted courses that are not expired (end_date > current date)
+  static async findDeletedNotExpiredByTeacher(
+    teacherId: string,
+    page: number = 1,
+    limit: number = 10
+  ): Promise<{ courses: Course[], total: number }> {
+    const offset = (page - 1) * limit;
+
+    const query = `
+      SELECT
+        c.*,
+        g.name as grade_name,
+        s.name as subject_name
+      FROM courses c
+      LEFT JOIN grades g ON c.grade_id = g.id
+      LEFT JOIN subjects s ON c.subject_id = s.id
+      WHERE c.teacher_id = $1
+        AND c.is_deleted = true
+        AND c.end_date > CURRENT_DATE
+      ORDER BY c.updated_at DESC
+      LIMIT $2 OFFSET $3
+    `;
+
+    const countQuery = `
+      SELECT COUNT(*) as count
+      FROM courses c
+      WHERE c.teacher_id = $1
+        AND c.is_deleted = true
+        AND c.end_date > CURRENT_DATE
+    `;
+
+    const [result, countResult] = await Promise.all([
+      pool.query(query, [teacherId, limit, offset]),
+      pool.query(countQuery, [teacherId])
+    ]);
+
+    return {
+      courses: result.rows,
+      total: parseInt(countResult.rows[0].count)
+    };
+  }
+
+  // Restore deleted course (only if not expired)
+  static async restore(id: string, teacherId: string): Promise<Course | null> {
+    const query = `
+      UPDATE courses
+      SET is_deleted = false, updated_at = CURRENT_TIMESTAMP
+      WHERE id = $1 AND teacher_id = $2 AND is_deleted = true AND end_date > CURRENT_DATE
+      RETURNING *
+    `;
+    const result = await pool.query(query, [id, teacherId]);
+    return result.rows[0] || null;
+  }
+
   // Find courses by grades and location for students
   static async findByGradesAndLocation(
     gradeIds: string[],

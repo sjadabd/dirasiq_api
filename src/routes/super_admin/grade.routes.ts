@@ -6,6 +6,7 @@ const router = Router();
 
 router.use(authenticateToken);
 router.get('/all', GradeController.getAllActive);
+router.get('/my-grades', GradeController.getUserGrades);
 
 /**
  * === مسارات Super Admin ===

@@ -92,42 +92,45 @@ export class ImageService {
   }
 
   // Update course images (handle both base64 and existing paths)
-  static async updateCourseImages(newImages: string[], existingImages: string[]): Promise<string[]> {
-    const updatedPaths: string[] = [];
-    const imagesToDelete: string[] = [];
+  // Update course images (handle both base64 and existing paths)
+  static async updateCourseImages(newImages: string[], oldImages: string[]): Promise<string[]> {
+    const finalImages: string[] = [];
+    const oldImagesSet = new Set(oldImages); // لتسهيل التحقق من الصور القديمة
+    const keptImages: Set<string> = new Set();
 
     for (let i = 0; i < newImages.length; i++) {
       const image = newImages[i];
 
       if (!image) continue;
 
-      // Check if it's base64 data
-      if (image.startsWith('data:image/')) {
-        // Save new image
-        const filename = `course_image_${i}`;
+      if (image.startsWith("data:image/")) {
+        // صورة جديدة → احفظها
+        const filename = `course_image_${Date.now()}_${i}`;
         const savedPath = await this.saveBase64Image(image, filename);
-        updatedPaths.push(savedPath);
+        finalImages.push(savedPath);
 
-        // Mark existing image for deletion if it exists
-        const existingImage = existingImages[i];
-        if (existingImage) {
-          imagesToDelete.push(existingImage);
+        // إذا بنفس الموقع كانت قديمة → نحذفها
+        const oldImage = oldImages[i];
+        if (oldImage && oldImagesSet.has(oldImage)) {
+          await this.deleteImage(oldImage);
         }
       } else {
-        // It's an existing path, keep it
-        updatedPaths.push(image);
+        // صورة قديمة (رابط) → نحافظ عليها
+        finalImages.push(image);
+        keptImages.add(image);
       }
     }
 
-    // Delete old images that were replaced
-    for (const imagePath of imagesToDelete) {
-      if (imagePath) {
-        await this.deleteImage(imagePath);
+    // حذف الصور القديمة التي لم يتم إرسالها نهائياً
+    for (const oldImage of oldImages) {
+      if (oldImage && !keptImages.has(oldImage)) {
+        await this.deleteImage(oldImage);
       }
     }
 
-    return updatedPaths;
+    return finalImages;
   }
+
 
   // Delete all course images
   static async deleteCourseImages(imagePaths: string[]): Promise<void> {
