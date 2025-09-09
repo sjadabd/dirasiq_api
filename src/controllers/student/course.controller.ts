@@ -24,14 +24,17 @@ export class StudentCourseController {
       }
 
       const studentId = (req as any).user.id;
-      const { maxDistance = 5, page = 1, limit = 10 } = req.query; // Default 5km
+      const { maxDistance = 5, page = 1, limit = 10 } = req.query;
 
       // Get student's active grades
       const gradesResult = await StudentService.getActiveGrades(studentId);
+      console.log(gradesResult)
+
       if (!gradesResult.success) {
         res.status(404).json(gradesResult);
         return;
       }
+
 
       // Validate student location
       const locationResult = await StudentService.validateStudentLocation(studentId);
