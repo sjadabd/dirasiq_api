@@ -19,23 +19,19 @@ export class NotificationCronService {
    */
   start(): void {
     if (this.isRunning) {
-      console.log('⚠️ Notification cron service is already running');
       return;
     }
 
     // Run every minute to check for pending notifications
     cron.schedule('* * * * *', async () => {
       try {
-        console.log('🔄 Processing pending notifications...');
         await this.notificationService.processPendingNotifications();
-        console.log('✅ Pending notifications processed successfully');
       } catch (error) {
         console.error('❌ Error processing pending notifications:', error);
       }
     });
 
     this.isRunning = true;
-    console.log('🚀 Notification cron service started - checking every minute');
   }
 
   /**
@@ -43,13 +39,11 @@ export class NotificationCronService {
    */
   stop(): void {
     if (!this.isRunning) {
-      console.log('⚠️ Notification cron service is not running');
       return;
     }
 
     // Note: node-cron doesn't have a destroy method, we'll just set the flag
     this.isRunning = false;
-    console.log('🛑 Notification cron service stopped');
   }
 
   /**

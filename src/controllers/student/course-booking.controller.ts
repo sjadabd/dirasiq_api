@@ -1,4 +1,4 @@
-import { CourseBookingService } from '@/services/course-booking.service';
+import { CourseBookingService } from '@/services/teacher/course-booking.service';
 import { CreateCourseBookingRequest } from '@/types';
 import { Request, Response } from 'express';
 

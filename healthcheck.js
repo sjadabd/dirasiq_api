@@ -4,11 +4,10 @@ const options = {
   host: 'localhost',
   port: process.env.PORT || 3000,
   path: '/health',
-  timeout: 2000
+  timeout: 2000,
 };
 
-const request = http.request(options, (res) => {
-  console.log(`Health check status: ${res.statusCode}`);
+const request = http.request(options, res => {
   if (res.statusCode === 200) {
     process.exit(0);
   } else {
@@ -16,7 +15,7 @@ const request = http.request(options, (res) => {
   }
 });
 
-request.on('error', (err) => {
+request.on('error', err => {
   console.error('Health check failed:', err.message);
   process.exit(1);
 });

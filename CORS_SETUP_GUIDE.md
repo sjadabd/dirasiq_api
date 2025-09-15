@@ -10,34 +10,40 @@
 
 ```typescript
 // CORS configuration
-const allowedOrigins = process.env['NODE_ENV'] === 'production'
-  ? ['https://yourdomain.com'] // Replace with your frontend domain
-  : [
-      'http://localhost:3000', 
-      'http://localhost:3001', 
-      'http://localhost:5173',
-      process.env['FRONTEND_URL'] || 'http://localhost:5173'
-    ].filter((origin, index, self) => self.indexOf(origin) === index); // Remove duplicates
+const allowedOrigins =
+  process.env['NODE_ENV'] === 'production'
+    ? ['https://yourdomain.com'] // Replace with your frontend domain
+    : [
+        'http://localhost:3000',
+        'http://localhost:3001',
+        'http://localhost:5173',
+        process.env['FRONTEND_URL'] || 'http://localhost:5173',
+      ].filter((origin, index, self) => self.indexOf(origin) === index); // Remove duplicates
 
-app.use(cors({
-  origin: allowedOrigins,
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-  exposedHeaders: ['Authorization'],
-}));
+app.use(
+  cors({
+    origin: allowedOrigins,
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+    exposedHeaders: ['Authorization'],
+  })
+);
 ```
 
 ### 2. **Preflight Requests Handling**
 
 ```typescript
 // Handle preflight requests
-app.options('*', cors({
-  origin: allowedOrigins,
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-}));
+app.options(
+  '*',
+  cors({
+    origin: allowedOrigins,
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  })
+);
 ```
 
 ### 3. **Manual CORS Headers**
@@ -46,16 +52,22 @@ app.options('*', cors({
 // Additional CORS middleware for manual header setting
 app.use((req, res, next) => {
   const origin = req.headers.origin;
-  
+
   if (origin && allowedOrigins.includes(origin)) {
     res.header('Access-Control-Allow-Origin', origin);
   }
-  
+
   res.header('Access-Control-Allow-Credentials', 'true');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+  res.header(
+    'Access-Control-Allow-Methods',
+    'GET, POST, PUT, DELETE, PATCH, OPTIONS'
+  );
+  res.header(
+    'Access-Control-Allow-Headers',
+    'Content-Type, Authorization, X-Requested-With'
+  );
   res.header('Access-Control-Expose-Headers', 'Authorization');
-  
+
   next();
 });
 ```
@@ -78,12 +90,14 @@ FRONTEND_URL=http://localhost:5173
 ## المنافذ المسموحة
 
 ### Development Mode:
+
 - ✅ `http://localhost:3000` (Backend default)
 - ✅ `http://localhost:3001` (Alternative backend)
 - ✅ `http://localhost:5173` (Vite default)
 - ✅ `http://localhost:8080` (إذا تم تحديده في FRONTEND_URL)
 
 ### Production Mode:
+
 - ✅ `https://yourdomain.com` (يجب تحديثه لاسم النطاق الحقيقي)
 
 ## الطرق المسموحة
@@ -98,30 +112,37 @@ FRONTEND_URL=http://localhost:5173
 ## Headers المسموحة
 
 ### Request Headers:
+
 - ✅ `Content-Type`
 - ✅ `Authorization`
 - ✅ `X-Requested-With`
 
 ### Response Headers:
+
 - ✅ `Authorization` (exposed)
 
 ## إعدادات الأمان
 
 ### 1. **Credentials Support**
+
 ```typescript
-credentials: true
+credentials: true;
 ```
+
 - يسمح بإرسال cookies و authentication headers
 
 ### 2. **Origin Validation**
+
 ```typescript
 if (origin && allowedOrigins.includes(origin)) {
   res.header('Access-Control-Allow-Origin', origin);
 }
 ```
+
 - التحقق من صحة Origin قبل السماح بالوصول
 
 ### 3. **Method Validation**
+
 - فقط الطرق المحددة مسموحة
 - منع الطرق الخطيرة
 
@@ -149,13 +170,14 @@ fetch('http://localhost:3000/api/auth/google-auth', {
   },
   credentials: 'include', // مهم للـ cookies
   body: JSON.stringify({
-    googleData: { /* ... */ },
-    userType: 'teacher'
-  })
+    googleData: {
+      /* ... */
+    },
+    userType: 'teacher',
+  }),
 })
-.then(response => response.json())
-.then(data => console.log(data))
-.catch(error => console.error('Error:', error));
+  .then(response => response.json())
+  .catch(error => console.error('Error:', error));
 ```
 
 ### 3. **اختبار باستخدام Axios**
@@ -169,16 +191,19 @@ const api = axios.create({
   withCredentials: true, // مهم للـ cookies
   headers: {
     'Content-Type': 'application/json',
-  }
+  },
 });
 
 // استخدام API
-api.post('/auth/google-auth', {
-  googleData: { /* ... */ },
-  userType: 'teacher'
-})
-.then(response => console.log(response.data))
-.catch(error => console.error('Error:', error));
+api
+  .post('/auth/google-auth', {
+    googleData: {
+      /* ... */
+    },
+    userType: 'teacher',
+  })
+  .then(response => console.log(response.data))
+  .catch(error => console.error('Error:', error));
 ```
 
 ## استكشاف الأخطاء
@@ -186,11 +211,12 @@ api.post('/auth/google-auth', {
 ### 1. **خطأ CORS في المتصفح**
 
 ```
-Access to fetch at 'http://localhost:3000/api/auth/google-auth' 
+Access to fetch at 'http://localhost:3000/api/auth/google-auth'
 from origin 'http://localhost:5173' has been blocked by CORS policy
 ```
 
 **الحل:**
+
 - تأكد من أن `http://localhost:5173` موجود في `allowedOrigins`
 - تأكد من إعادة تشغيل السيرفر بعد التغييرات
 
@@ -201,17 +227,19 @@ Response to preflight request doesn't pass access control check
 ```
 
 **الحل:**
+
 - تأكد من وجود `app.options('*', cors(...))`
 - تأكد من أن الطريقة والـ headers مسموحة
 
 ### 3. **خطأ Credentials**
 
 ```
-The value of the 'Access-Control-Allow-Credentials' header is 'true' 
+The value of the 'Access-Control-Allow-Credentials' header is 'true'
 but the 'Access-Control-Allow-Origin' header is '*'
 ```
 
 **الحل:**
+
 - لا تستخدم `*` مع `credentials: true`
 - استخدم قائمة محددة من الـ origins
 
@@ -229,11 +257,11 @@ export default {
       '/api': {
         target: 'http://localhost:3000',
         changeOrigin: true,
-        secure: false
-      }
-    }
-  }
-}
+        secure: false,
+      },
+    },
+  },
+};
 ```
 
 ### 2. **Axios Configuration**
@@ -243,34 +271,35 @@ export default {
 import axios from 'axios';
 
 const api = axios.create({
-  baseURL: process.env.NODE_ENV === 'production' 
-    ? 'https://yourdomain.com/api' 
-    : 'http://localhost:3000/api',
+  baseURL:
+    process.env.NODE_ENV === 'production'
+      ? 'https://yourdomain.com/api'
+      : 'http://localhost:3000/api',
   withCredentials: true,
   timeout: 10000,
   headers: {
     'Content-Type': 'application/json',
-  }
+  },
 });
 
 // Request interceptor
 api.interceptors.request.use(
-  (config) => {
+  config => {
     const token = localStorage.getItem('token');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
     return config;
   },
-  (error) => {
+  error => {
     return Promise.reject(error);
   }
 );
 
 // Response interceptor
 api.interceptors.response.use(
-  (response) => response,
-  (error) => {
+  response => response,
+  error => {
     if (error.response?.status === 401) {
       localStorage.removeItem('token');
       window.location.href = '/login';
@@ -288,17 +317,18 @@ export default api;
 
 ```typescript
 // في src/index.ts
-const allowedOrigins = process.env['NODE_ENV'] === 'production'
-  ? [
-      'https://yourdomain.com',
-      'https://www.yourdomain.com',
-      'https://app.yourdomain.com'
-    ]
-  : [
-      'http://localhost:3000', 
-      'http://localhost:3001', 
-      'http://localhost:5173'
-    ];
+const allowedOrigins =
+  process.env['NODE_ENV'] === 'production'
+    ? [
+        'https://yourdomain.com',
+        'https://www.yourdomain.com',
+        'https://app.yourdomain.com',
+      ]
+    : [
+        'http://localhost:3000',
+        'http://localhost:3001',
+        'http://localhost:5173',
+      ];
 ```
 
 ### 2. **متغيرات البيئة للإنتاج**

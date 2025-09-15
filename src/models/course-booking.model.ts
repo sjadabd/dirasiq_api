@@ -144,8 +144,8 @@ export class CourseBookingModel {
     }
 
     const countQuery = `
-      SELECT COUNT(*) FROM course_bookings cb
-      ${whereClause}
+    SELECT COUNT(*) FROM course_bookings cb
+    ${whereClause}
     `;
     const countResult = await pool.query(countQuery, params);
     const total = parseInt(countResult.rows[0].count);
@@ -565,7 +565,6 @@ export class CourseBookingModel {
       const courseEndDate = new Date(courseResult.rows[0].end_date);
       if (courseEndDate < new Date()) {
         // Instead of throwing error, we'll reactivate with a note
-        console.log('Course has ended, but allowing reactivation for student convenience');
       }
 
       // التحقق من السعة قبل إعادة التفعيل

@@ -13,6 +13,12 @@ router.get('/', TeacherCourseBookingController.getMyBookings);
 // Get a specific booking by ID with details
 router.get('/:id', TeacherCourseBookingController.getBookingById);
 
+// Pre-approve a booking (موافقة أولية)
+router.patch('/:id/pre-approve', TeacherCourseBookingController.preApproveBooking);
+
+// Confirm a booking (تأكيد الحجز)
+router.patch('/:id/confirm', TeacherCourseBookingController.confirmBooking);
+
 // Approve a booking
 router.patch('/:id/approve', TeacherCourseBookingController.approveBooking);
 

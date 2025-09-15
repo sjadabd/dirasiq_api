@@ -1,9 +1,22 @@
+import { CourseBookingModel } from '@/models/course-booking.model';
 import { TeacherSubscriptionModel } from '@/models/teacher-subscription.model';
-import { CourseBookingService } from '@/services/course-booking.service';
-import { BookingStatus, UpdateCourseBookingRequest } from '@/types';
+import { NotificationService } from '@/services/notification.service';
+import { CourseBookingService } from '@/services/teacher/course-booking.service';
+import { BookingStatus, CourseBooking, UpdateCourseBookingRequest } from '@/types';
 import { Request, Response } from 'express';
 
 export class TeacherCourseBookingController {
+  private static notificationService: NotificationService;
+
+  static {
+    // Initialize notification service
+    const oneSignalConfig = {
+      appId: process.env['ONESIGNAL_APP_ID'] || '',
+      restApiKey: process.env['ONESIGNAL_REST_API_KEY'] || ''
+    };
+    this.notificationService = new NotificationService(oneSignalConfig);
+  }
+
   // Get all bookings for the current teacher
   static async getMyBookings(req: Request, res: Response): Promise<void> {
     try {
@@ -25,9 +38,14 @@ export class TeacherCourseBookingController {
 
       const page = parseInt(req.query['page'] as string) || 1;
       const limit = parseInt(req.query['limit'] as string) || 10;
-      const status = req.query['status'] as any;
 
-      const result = await CourseBookingService.getTeacherBookings(teacherId, studyYear, page, limit, status);
+      // ✅ تنظيف قيمة status
+      let status = req.query['status'] as string | undefined;
+      if (!status || status === 'null' || status.trim() === '') {
+        status = undefined;
+      }
+
+      const result = await CourseBookingService.getTeacherBookings(teacherId, studyYear, page, limit, status as any);
 
       res.status(200).json({
         success: true,
@@ -105,6 +123,92 @@ export class TeacherCourseBookingController {
     }
   }
 
+  // Pre-approve a booking
+  static async preApproveBooking(req: Request, res: Response): Promise<void> {
+    try {
+      const teacherId = req.user?.id;
+      if (!teacherId) {
+        res.status(401).json({ error: 'Unauthorized' });
+        return;
+      }
+
+      const { id } = req.params;
+      if (!id) {
+        res.status(400).json({ success: false, message: 'معرف الحجز مطلوب' });
+        return;
+      }
+
+      const { teacherResponse } = req.body;
+
+      const data: UpdateCourseBookingRequest = {
+        status: BookingStatus.PRE_APPROVED,
+        teacherResponse,
+      };
+
+      const booking = await CourseBookingService.updateBookingStatus(id, teacherId, data);
+      await TeacherCourseBookingController.sendBookingStatusNotification(booking);
+
+      res.status(200).json({
+        success: true,
+        message: 'تم إعطاء موافقة أولية للحجز',
+        data: booking,
+      });
+    } catch (error: any) {
+      console.error('Error pre-approving booking:', error);
+      res.status(500).json({ success: false, message: 'خطأ داخلي في الخادم' });
+    }
+  }
+
+  // Confirm a booking
+  static async confirmBooking(req: Request, res: Response): Promise<void> {
+    try {
+      const teacherId = req.user?.id;
+      if (!teacherId) {
+        res.status(401).json({ error: 'Unauthorized' });
+        return;
+      }
+
+      const { id } = req.params;
+      if (!id) {
+        res.status(400).json({ success: false, message: 'معرف الحجز مطلوب' });
+        return;
+      }
+
+      const { teacherResponse } = req.body;
+
+      // تحقق من أن الحجز في حالة موافقة أولية قبل التأكيد
+      const currentBooking = await CourseBookingService.getBookingByIdWithDetails(id);
+      if (!currentBooking) {
+        res.status(404).json({ success: false, message: 'الحجز غير موجود' });
+        return;
+      }
+      if (currentBooking.status !== BookingStatus.PRE_APPROVED) {
+        res.status(400).json({
+          success: false,
+          message: 'يمكن تأكيد الحجز فقط بعد الموافقة الأولية',
+        });
+        return;
+      }
+
+      const data: UpdateCourseBookingRequest = {
+        status: BookingStatus.CONFIRMED,
+        teacherResponse,
+      };
+
+      const booking = await CourseBookingService.updateBookingStatus(id, teacherId, data);
+      await TeacherCourseBookingController.sendBookingStatusNotification(booking);
+
+      res.status(200).json({
+        success: true,
+        message: 'تم تأكيد الحجز بنجاح',
+        data: booking,
+      });
+    } catch (error: any) {
+      console.error('Error confirming booking:', error);
+      res.status(500).json({ success: false, message: 'خطأ داخلي في الخادم' });
+    }
+  }
+
   // Approve a booking
   static async approveBooking(req: Request, res: Response): Promise<void> {
     try {
@@ -132,6 +236,7 @@ export class TeacherCourseBookingController {
       };
 
       const booking = await CourseBookingService.updateBookingStatus(id, teacherId, data);
+      await TeacherCourseBookingController.sendBookingStatusNotification(booking);
 
       res.status(200).json({
         success: true,
@@ -193,6 +298,7 @@ export class TeacherCourseBookingController {
       };
 
       const booking = await CourseBookingService.updateBookingStatus(id, teacherId, data);
+      await TeacherCourseBookingController.sendBookingStatusNotification(booking);
 
       res.status(200).json({
         success: true,
@@ -252,6 +358,7 @@ export class TeacherCourseBookingController {
       };
 
       const booking = await CourseBookingService.updateBookingStatus(id, teacherId, data);
+      await TeacherCourseBookingController.sendBookingStatusNotification(booking);
 
       res.status(200).json({
         success: true,
@@ -384,11 +491,12 @@ export class TeacherCourseBookingController {
       }
 
       const data: UpdateCourseBookingRequest = {
-        status: BookingStatus.APPROVED,
-        teacherResponse
+        status: BookingStatus.PRE_APPROVED,
+        teacherResponse,
       };
 
       const booking = await CourseBookingService.updateBookingStatus(id, teacherId, data);
+      await TeacherCourseBookingController.sendBookingStatusNotification(booking);
 
       res.status(200).json({
         success: true,
@@ -442,4 +550,64 @@ export class TeacherCourseBookingController {
       });
     }
   }
+
+  // Send notification to student about booking status change
+  private static async sendBookingStatusNotification(booking: CourseBooking): Promise<void> {
+    try {
+      // Get booking details with course and student information
+      const bookingDetails = await CourseBookingModel.findByIdWithDetails(booking.id);
+
+      if (!bookingDetails) {
+        console.error('Could not find booking details for notification');
+        return;
+      }
+
+      const { course, student } = bookingDetails;
+
+      // اختر الرسالة حسب الحالة
+      let message = '';
+      switch (booking.status) {
+        case BookingStatus.PRE_APPROVED:
+          message = `تمت الموافقة الأولية على طلبك في دورة ${course.courseName}. نرجو حضورك في الموعد المحدد لتائكيد حجزك.`;
+          break;
+        case BookingStatus.CONFIRMED:
+          message = `تم تأكيد حجزك في دورة ${course.courseName}. مرحبا بك.`;
+          break;
+        case BookingStatus.APPROVED:
+          message = `تمت الموافقة النهائية على طلبك في دورة ${course.courseName}.`;
+          break;
+        case BookingStatus.REJECTED:
+          message = `تم رفض طلبك في دورة ${course.courseName}.`;
+          break;
+        case BookingStatus.CANCELLED:
+          message = `تم إلغاء حجزك في دورة ${course.courseName}.`;
+          break;
+        default:
+          message = `تحديث جديد على حالة حجزك في دورة ${course.courseName}.`;
+      }
+
+      // Create notification data
+      const notificationData = {
+        title: `تحديث حالة الحجز - ${course.courseName}`,
+        message,
+        type: 'booking_status' as any,
+        priority: 'high' as any,
+        recipientType: 'specific_students' as any,
+        recipientIds: [booking.studentId], // 🎯 الطالب هو المستلم
+        data: {
+          bookingId: booking.id,
+          courseId: booking.courseId,
+          courseName: course.courseName,
+          studentName: student.name,
+          status: booking.status,
+        },
+        createdBy: booking.teacherId // المدرس اللي غير الحالة
+      };
+
+      await this.notificationService.createAndSendNotification(notificationData);
+    } catch (error) {
+      console.error('❌ Error sending booking status notification:', error);
+    }
+  }
+
 }

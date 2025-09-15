@@ -69,12 +69,9 @@ export class NotificationService {
     if (options.url) notification.url = options.url;
     if (options.imageUrl) notification.large_icon = options.imageUrl;
     if (options.collapseId) notification.collapse_id = options.collapseId;
-
-    console.log('📤 Sending OneSignal notification to players:', validPlayerIds);
     const response = await this.oneSignal.createNotification(notification);
 
     if (response.statusCode === 200) {
-      console.log('✅ Notification sent successfully');
       return true;
     } else {
       console.error('❌ Notification failed:', response.body);
@@ -96,8 +93,6 @@ export class NotificationService {
         priority: options.priority || 'normal',
         ttl: options.ttl || 3600,
       };
-
-      console.log('📤 Sending OneSignal notification to ALL users');
       const response = await this.oneSignal.createNotification(notification);
       return response.statusCode === 200;
     } catch (error: any) {

@@ -1,7 +1,7 @@
 -- Enable UUID extension (if not already enabled)
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
--- Create course_bookings table
+-- Create course_bookings table if not exists
 CREATE TABLE IF NOT EXISTS course_bookings (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
 
@@ -11,7 +11,8 @@ CREATE TABLE IF NOT EXISTS course_bookings (
     study_year VARCHAR(9) NOT NULL,
 
     -- Status and control
-    status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected', 'cancelled')),
+    status VARCHAR(20) NOT NULL DEFAULT 'pending'
+        CHECK (status IN ('pending', 'pre_approved', 'confirmed', 'approved', 'rejected', 'cancelled')),
     cancelled_by VARCHAR(10) CHECK (cancelled_by IN ('student', 'teacher')),
     reactivated_at TIMESTAMP WITH TIME ZONE,
 
@@ -33,7 +34,26 @@ CREATE TABLE IF NOT EXISTS course_bookings (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- Add comments to new fields
+-- Drop and recreate CHECK constraint on status to allow new values
+ALTER TABLE course_bookings DROP CONSTRAINT IF EXISTS course_bookings_status_check;
+
+ALTER TABLE course_bookings
+    ADD CONSTRAINT course_bookings_status_check
+    CHECK (
+        status IN ('pending', 'pre_approved', 'confirmed', 'approved', 'rejected', 'cancelled')
+    );
+
+-- Comments for status field
+COMMENT ON COLUMN course_bookings.status IS
+'الحالات الممكنة:
+- pending: قيد الانتظار
+- pre_approved: موافقة أولية من المدرس
+- confirmed: تم تأكيد الحجز
+- approved: موافق عليه نهائياً
+- rejected: مرفوض
+- cancelled: ملغي';
+
+-- Add comments to other fields
 COMMENT ON COLUMN course_bookings.study_year IS 'Academic year for the course (format: YYYY-YYYY)';
 COMMENT ON COLUMN course_bookings.cancelled_by IS 'Indicates who cancelled the booking: student or teacher';
 COMMENT ON COLUMN course_bookings.reactivated_at IS 'Timestamp when a cancelled booking was reactivated by student';

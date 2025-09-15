@@ -28,7 +28,6 @@ export class StudentCourseController {
 
       // Get student's active grades
       const gradesResult = await StudentService.getActiveGrades(studentId);
-      console.log(gradesResult)
 
       if (!gradesResult.success) {
         res.status(404).json(gradesResult);

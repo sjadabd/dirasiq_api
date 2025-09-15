@@ -10,7 +10,7 @@ export const loginInGoogleWithToken = async (googleToken, userType) => {
   try {
     const response = await axios.post(`${API_BASE_URL}/auth/google-auth`, {
       googleToken: googleToken, // JWT token من Google
-      userType: userType
+      userType: userType,
     });
 
     return response.data;
@@ -26,9 +26,9 @@ export const loginInGoogleWithData = async (googleUserData, userType) => {
     // إعداد البيانات المطلوبة
     const googleData = {
       // البيانات الإجبارية
-      iss: "https://accounts.google.com",
-      azp: "347174406018-8q0gaa0spce1hr7rsa1okge2or0sd6br.apps.googleusercontent.com",
-      aud: "347174406018-8q0gaa0spce1hr7rsa1okge2or0sd6br.apps.googleusercontent.com",
+      iss: 'https://accounts.google.com',
+      azp: '347174406018-8q0gaa0spce1hr7rsa1okge2or0sd6br.apps.googleusercontent.com',
+      aud: '347174406018-8q0gaa0spce1hr7rsa1okge2or0sd6br.apps.googleusercontent.com',
       sub: googleUserData.sub || googleUserData.id, // Google User ID
       email: googleUserData.email,
       email_verified: googleUserData.email_verified !== false, // افتراض true إذا لم يتم تحديده
@@ -43,12 +43,14 @@ export const loginInGoogleWithData = async (googleUserData, userType) => {
       nbf: googleUserData.nbf || Math.floor(Date.now() / 1000),
       iat: googleUserData.iat || Math.floor(Date.now() / 1000),
       exp: googleUserData.exp || Math.floor(Date.now() / 1000) + 3600, // ساعة واحدة
-      jti: googleUserData.jti || `google_${googleUserData.sub || googleUserData.id}_${Date.now()}`
+      jti:
+        googleUserData.jti ||
+        `google_${googleUserData.sub || googleUserData.id}_${Date.now()}`,
     };
 
     const response = await axios.post(`${API_BASE_URL}/auth/google-auth`, {
       googleData: googleData,
-      userType: userType
+      userType: userType,
     });
 
     return response.data;
@@ -59,12 +61,12 @@ export const loginInGoogleWithData = async (googleUserData, userType) => {
 };
 
 // دالة مساعدة لاستخراج البيانات من Google User Object
-export const extractGoogleData = (googleUser) => {
+export const extractGoogleData = googleUser => {
   // إذا كان لديك JWT token
   if (googleUser.credential?.idToken) {
     return {
       type: 'token',
-      data: googleUser.credential.idToken
+      data: googleUser.credential.idToken,
     };
   }
 
@@ -79,8 +81,8 @@ export const extractGoogleData = (googleUser) => {
         name: googleUser.profile.name,
         picture: googleUser.profile.picture,
         given_name: googleUser.profile.given_name,
-        family_name: googleUser.profile.family_name
-      }
+        family_name: googleUser.profile.family_name,
+      },
     };
   }
 
@@ -88,7 +90,7 @@ export const extractGoogleData = (googleUser) => {
   if (googleUser.sub || googleUser.id) {
     return {
       type: 'data',
-      data: googleUser
+      data: googleUser,
     };
   }
 
@@ -123,11 +125,9 @@ export const handleGoogleLogin = async (googleUser, userType = 'teacher') => {
       // توجيه المستخدم حسب الحالة
       if (result.data.requiresProfileCompletion) {
         // توجيه لإكمال الملف الشخصي
-        console.log('User needs to complete profile');
         return { redirect: '/complete-profile', user: result.data.user };
       } else {
         // توجيه للداشبورد
-        console.log('User logged in successfully');
         return { redirect: '/dashboard', user: result.data.user };
       }
     } else {
@@ -171,8 +171,6 @@ export const setupGoogleLogin = (buttonId, userType = 'teacher') => {
         // هنا يجب استدعاء Google Sign-In
         // const googleUser = await signInWithGoogle();
         // const result = await handleGoogleLogin(googleUser, userType);
-
-        console.log('Google login button clicked');
       } catch (error) {
         console.error('Google login error:', error);
       }
@@ -188,5 +186,5 @@ export default {
   handleGoogleLogin,
   useGoogleLogin,
   setupGoogleLogin,
-  extractGoogleData
+  extractGoogleData,
 };

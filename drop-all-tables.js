@@ -14,8 +14,6 @@ const pool = new Pool({
 async function dropAllTables() {
   const client = await pool.connect();
   try {
-    console.log('🚨 بدء حذف جميع الجداول...');
-
     await client.query('BEGIN');
 
     // تعطيل العلاقات المؤقتًا
@@ -23,14 +21,13 @@ async function dropAllTables() {
 
     // جلب أسماء الجداول
     const result = await client.query(`
-      SELECT tablename 
-      FROM pg_tables 
+      SELECT tablename
+      FROM pg_tables
       WHERE schemaname = 'public';
     `);
 
     for (const row of result.rows) {
       const tableName = row.tablename;
-      console.log(`🗑️ حذف الجدول: ${tableName}`);
       await client.query(`DROP TABLE IF EXISTS "${tableName}" CASCADE;`);
     }
 
@@ -38,7 +35,6 @@ async function dropAllTables() {
     await client.query('SET session_replication_role = origin;');
 
     await client.query('COMMIT');
-    console.log('✅ تم حذف جميع الجداول بنجاح.');
   } catch (error) {
     await client.query('ROLLBACK');
     console.error('❌ فشل حذف الجداول:', error);

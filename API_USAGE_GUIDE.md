@@ -21,6 +21,7 @@ Content-Type: application/json
 ```
 
 **الاستجابة:**
+
 ```json
 {
   "success": true,
@@ -48,18 +49,17 @@ OneSignal.getUserId().then(playerId => {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
+        Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify({
-        oneSignalPlayerId: playerId
-      })
+        oneSignalPlayerId: playerId,
+      }),
     })
-    .then(response => response.json())
-    .then(data => {
-      if (data.success) {
-        console.log('OneSignal Player ID registered successfully');
-      }
-    });
+      .then(response => response.json())
+      .then(data => {
+        if (data.success) {
+        }
+      });
   }
 });
 ```
@@ -78,16 +78,14 @@ OneSignal.getDeviceState().then(deviceState => {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
+        Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify({
-        oneSignalPlayerId: deviceState.userId
-      })
+        oneSignalPlayerId: deviceState.userId,
+      }),
     })
-    .then(response => response.json())
-    .then(data => {
-      console.log('OneSignal Player ID registered:', data);
-    });
+      .then(response => response.json())
+      .then(data => {});
   }
 });
 ```
@@ -211,6 +209,7 @@ curl -X POST http://localhost:3000/api/student/bookings \
 **السبب:** رمز المصادقة مفقود أو غير صحيح
 
 **الحل:**
+
 - تأكد من إرسال `Authorization: Bearer <token>` في الـ header
 - تأكد من صحة الـ token
 - سجل دخول جديد إذا انتهت صلاحية الـ token
@@ -220,6 +219,7 @@ curl -X POST http://localhost:3000/api/student/bookings \
 **السبب:** المستخدم لا يملك الصلاحيات المطلوبة
 
 **الحل:**
+
 - تأكد من نوع المستخدم (teacher, student, super_admin)
 - استخدم حساب له الصلاحيات المطلوبة
 
@@ -228,6 +228,7 @@ curl -X POST http://localhost:3000/api/student/bookings \
 **السبب:** المستخدمون لا يملكون OneSignal Player IDs
 
 **الحل:**
+
 - سجل OneSignal Player IDs للمستخدمين
 - تأكد من تهيئة OneSignal في Frontend
 
@@ -247,29 +248,32 @@ class NotificationService {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${this.token}`
+        Authorization: `Bearer ${this.token}`,
       },
-      body: JSON.stringify({ oneSignalPlayerId: playerId })
+      body: JSON.stringify({ oneSignalPlayerId: playerId }),
     });
-    
+
     return response.json();
   }
 
   async sendNotificationToTeachers(title, message) {
-    const response = await fetch(`${this.baseURL}/notifications/send-to-teachers`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${this.token}`
-      },
-      body: JSON.stringify({
-        title,
-        message,
-        type: 'teacher_message',
-        priority: 'high'
-      })
-    });
-    
+    const response = await fetch(
+      `${this.baseURL}/notifications/send-to-teachers`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.token}`,
+        },
+        body: JSON.stringify({
+          title,
+          message,
+          type: 'teacher_message',
+          priority: 'high',
+        }),
+      }
+    );
+
     return response.json();
   }
 }

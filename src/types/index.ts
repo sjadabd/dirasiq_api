@@ -20,9 +20,11 @@ export enum ReservationStatus {
 
 export enum BookingStatus {
   PENDING = 'pending',
+  PRE_APPROVED = 'pre_approved',
+  CONFIRMED = 'confirmed',
   APPROVED = 'approved',
   REJECTED = 'rejected',
-  CANCELLED = 'cancelled'
+  CANCELLED = 'cancelled',
 }
 
 export enum Gender {

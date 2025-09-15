@@ -19,7 +19,8 @@ CREATE TABLE IF NOT EXISTS notifications (
         'subscription_expiry',
         'new_course_available',
         'course_completion',
-        'feedback_request'
+        'feedback_request',
+        'booking_status'
     )),
     priority VARCHAR(20) NOT NULL DEFAULT 'medium' CHECK (priority IN ('low', 'medium', 'high', 'urgent')),
     status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'sent', 'delivered', 'read', 'failed')),
@@ -110,6 +111,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- حذف التريجر لو موجود قبل الإنشاء
 DROP TRIGGER IF EXISTS trigger_update_notifications_updated_at ON notifications;
 CREATE TRIGGER trigger_update_notifications_updated_at
     BEFORE UPDATE ON notifications

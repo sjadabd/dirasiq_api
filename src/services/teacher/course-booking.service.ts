@@ -183,8 +183,6 @@ export class CourseBookingService {
 
       // Send notification
       await this.notificationService.createAndSendNotification(notificationData);
-
-      console.log(`✅ New booking notification sent to teacher ${booking.teacherId} for booking ${booking.id}`);
     } catch (error) {
       console.error('❌ Error sending new booking notification:', error);
       // Don't throw error to avoid breaking the booking creation process
