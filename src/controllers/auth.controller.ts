@@ -324,24 +324,20 @@ export class AuthController {
   // Login user
   static async login(req: Request, res: Response): Promise<void> {
     try {
-      // Validate request body
       await Promise.all([
         body('email').isEmail().withMessage('البريد الإلكتروني مطلوب').run(req),
-        body('password').notEmpty().withMessage('كلمة المرور مطلوبة').run(req)
+        body('password').notEmpty().withMessage('كلمة المرور مطلوبة').run(req),
+        body('oneSignalPlayerId').optional().isString().run(req), // ✅ تحقق من Player ID
       ]);
 
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        res.status(400).json({
-          success: false,
-          message: 'فشل في التحقق من البيانات',
-          errors: errors.array().map(err => err.msg)
-        });
+        res.status(400).json({ success: false, errors: errors.array().map(e => e.msg) });
         return;
       }
 
-      const { email, password } = req.body;
-      const result = await AuthService.login({ email, password });
+      const { email, password, oneSignalPlayerId } = req.body;
+      const result = await AuthService.login({ email, password, oneSignalPlayerId });
 
       if (result.success) {
         res.status(200).json(result);
@@ -350,11 +346,7 @@ export class AuthController {
       }
     } catch (error) {
       console.error('Error in login controller:', error);
-      res.status(500).json({
-        success: false,
-        message: 'حدث خطأ في الخادم',
-        errors: ['حدث خطأ في الخادم']
-      });
+      res.status(500).json({ success: false, message: 'حدث خطأ في الخادم' });
     }
   }
 
@@ -580,6 +572,12 @@ export class AuthController {
           errors: ['Missing required Google data fields']
         });
         return;
+      }
+
+      // 👇 ضيف oneSignalPlayerId لو موجود بالـ request
+      const oneSignalPlayerId = googleData?.oneSignalPlayerId || req.body.oneSignalPlayerId;
+      if (oneSignalPlayerId) {
+        verifiedGoogleData.oneSignalPlayerId = oneSignalPlayerId;
       }
 
       const result = await AuthService.googleAuth(verifiedGoogleData, userType);

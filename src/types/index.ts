@@ -85,11 +85,13 @@ export interface Token {
   token: string;
   expiresAt: Date;
   createdAt: Date;
+  oneSignalPlayerId?: string;
 }
 
 export interface LoginRequest {
   email: string;
   password: string;
+  oneSignalPlayerId: string;
 }
 
 export interface GoogleAuthRequest {

@@ -268,7 +268,30 @@ export class UserModel {
 
   // Update user
   static async update(id: string, updateData: Partial<User>): Promise<User | null> {
-    const allowedFields = ['name', 'phone', 'address', 'bio', 'experience_years', 'status', 'student_phone', 'parent_phone', 'school_name', 'gender', 'birth_date', 'latitude', 'longitude', 'formatted_address', 'country', 'city', 'state', 'zipcode', 'street_name', 'suburb', 'location_confidence'];
+    const allowedFields = [
+      'name',
+      'phone',
+      'address',
+      'bio',
+      'experience_years',
+      'status',
+      'student_phone',
+      'parent_phone',
+      'school_name',
+      'gender',
+      'birth_date',
+      'latitude',
+      'longitude',
+      'formatted_address',
+      'country',
+      'city',
+      'state',
+      'zipcode',
+      'street_name',
+      'suburb',
+      'location_confidence'
+    ];
+
     const updates: string[] = [];
     const values: any[] = [];
     let paramCount = 1;
@@ -305,6 +328,7 @@ export class UserModel {
 
     return this.mapDatabaseUserToUser(result.rows[0]);
   }
+
 
   // Soft delete user
   static async delete(id: string): Promise<boolean> {

@@ -1,5 +1,6 @@
 import { initializeDatabase } from '@/database/init';
 import authRoutes from '@/routes/auth.routes';
+import notificationRoutes from '@/routes/notification.routes';
 import studentRoutes from '@/routes/student';
 import academicYearRoutes from '@/routes/super_admin/academic-year.routes';
 import gradeRoutes from '@/routes/super_admin/grade.routes';
@@ -8,6 +9,8 @@ import teacherRoutes from '@/routes/teacher';
 import teacherSearchRoutes from '@/routes/teacher-search.routes';
 import courseRoutes from '@/routes/teacher/course.routes';
 import subjectRoutes from '@/routes/teacher/subject.routes';
+import userOnesignalRoutes from '@/routes/user-onesignal.routes';
+import { notificationCronService } from '@/services/notification-cron.service';
 import compression from 'compression';
 import cors from 'cors';
 import dotenv from 'dotenv';
@@ -116,6 +119,8 @@ app.use('/api/grades', gradeRoutes);
 app.use('/api/courses', courseRoutes);
 app.use('/api/teacher-search', teacherSearchRoutes);
 app.use('/api/subscription-packages', subscriptionPackageRoutes);
+app.use('/api/notifications', notificationRoutes);
+app.use('/api/user', userOnesignalRoutes);
 
 // =====================================================
 // Course Enrollment System Routes
@@ -160,6 +165,10 @@ async function startServer() {
     // Initialize database
     await initializeDatabase();
     console.log('✅ Database initialized successfully');
+
+    // Start notification cron service
+    notificationCronService.start();
+    console.log('✅ Notification cron service started');
 
     // Start server
     app.listen(PORT, () => {

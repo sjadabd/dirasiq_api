@@ -2,16 +2,59 @@ import pool from '@/config/database';
 import { Token } from '@/types';
 
 export class TokenModel {
-  // Create a new token
-  static async create(userId: string, token: string, expiresAt: Date): Promise<Token> {
+  // Create a new token (مع إمكانية إضافة playerId)
+  static async create(
+    userId: string,
+    token: string,
+    expiresAt: Date,
+    oneSignalPlayerId?: string
+  ): Promise<Token> {
     const query = `
-      INSERT INTO tokens (user_id, token, expires_at)
-      VALUES ($1, $2, $3)
+      INSERT INTO tokens (user_id, token, expires_at, onesignal_player_id)
+      VALUES ($1, $2, $3, $4)
       RETURNING *
     `;
 
-    const result = await pool.query(query, [userId, token, expiresAt]);
+    const result = await pool.query(query, [userId, token, expiresAt, oneSignalPlayerId || null]);
     return this.mapDatabaseTokenToToken(result.rows[0]);
+  }
+
+  static async getPlayerIdsByUserId(userId: string): Promise<string[]> {
+    const query = `
+      SELECT DISTINCT onesignal_player_id 
+      FROM tokens 
+      WHERE user_id = $1 
+        AND onesignal_player_id IS NOT NULL
+    `;
+    const result = await pool.query(query, [userId]);
+
+    return result.rows
+      .map(r => r.onesignal_player_id)
+      .filter((id: string | null) => id && id.trim().length > 0);
+  }
+
+  // تحديث Player ID لتوكن معين
+  static async updatePlayerId(userId: string, token: string, playerId: string): Promise<boolean> {
+    const query = `
+      UPDATE tokens
+      SET onesignal_player_id = $1
+      WHERE user_id = $2 AND token = $3 AND expires_at > CURRENT_TIMESTAMP
+    `;
+    const result = await pool.query(query, [playerId, userId, token]);
+    return (result.rowCount || 0) > 0;
+  }
+
+  // Get آخر Player ID للمستخدم (من أحدث جلسة)
+  static async getPlayerId(userId: string): Promise<string | null> {
+    const query = `
+      SELECT onesignal_player_id
+      FROM tokens
+      WHERE user_id = $1 AND expires_at > CURRENT_TIMESTAMP
+      ORDER BY created_at DESC
+      LIMIT 1
+    `;
+    const result = await pool.query(query, [userId]);
+    return result.rows[0]?.onesignal_player_id || null;
   }
 
   // Find token by token string
@@ -22,7 +65,6 @@ export class TokenModel {
     `;
 
     const result = await pool.query(query, [token]);
-
     if (result.rows.length === 0) {
       return null;
     }
@@ -82,6 +124,7 @@ export class TokenModel {
       token: dbToken.token,
       expiresAt: dbToken.expires_at,
       createdAt: dbToken.created_at,
+      oneSignalPlayerId: dbToken.onesignal_player_id || null, // ✅ أضفناه هنا
     };
   }
 }

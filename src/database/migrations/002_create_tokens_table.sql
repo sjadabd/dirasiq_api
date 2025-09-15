@@ -5,14 +5,19 @@ CREATE TABLE IF NOT EXISTS tokens (
     token VARCHAR(500) NOT NULL,
     expires_at TIMESTAMP NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    onesignal_player_id VARCHAR(255), -- ✅ ضيف العمود هنا مباشرة
 
     CONSTRAINT fk_tokens_user_id FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
--- Create indexes for better performance
+-- Create indexes
 CREATE INDEX IF NOT EXISTS idx_tokens_user_id ON tokens(user_id);
 CREATE INDEX IF NOT EXISTS idx_tokens_token ON tokens(token);
 CREATE INDEX IF NOT EXISTS idx_tokens_expires_at ON tokens(expires_at);
+CREATE INDEX IF NOT EXISTS idx_tokens_onesignal_player_id ON tokens(onesignal_player_id);
+
+-- Comment
+COMMENT ON COLUMN tokens.onesignal_player_id IS 'OneSignal Player ID linked to this session/device';
 
 -- Create a function to clean expired tokens
 CREATE OR REPLACE FUNCTION clean_expired_tokens()

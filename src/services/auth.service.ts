@@ -305,8 +305,14 @@ export class AuthService {
       // Get enhanced user data
       const enhancedUser = await this.getEnhancedUserData(user);
 
-      // Generate token
+      // Generate token (JWT)
       const token = await this.generateToken(user);
+
+      // حساب وقت الانتهاء (مثلاً 7 أيام)
+      const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+
+      // ✅ خزّن التوكن والـ Player ID مع الجلسة
+      await TokenModel.create(user.id, token, expiresAt, data.oneSignalPlayerId);
 
       return {
         success: true,
@@ -317,9 +323,9 @@ export class AuthService {
             studyYear: activeAcademicYear?.year
           },
           token,
-          isProfileComplete: isProfileComplete,
+          isProfileComplete,
           requiresProfileCompletion: !isProfileComplete,
-          activeAcademicYear: activeAcademicYear
+          activeAcademicYear
         }
       };
     } catch (error) {
@@ -587,7 +593,8 @@ export class AuthService {
         await TokenModel.create(
           existingUser.id,
           token,
-          new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 days
+          new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
+          googleData.oneSignalPlayerId
         );
 
         return {
@@ -600,7 +607,7 @@ export class AuthService {
             },
             token,
             isNewUser: false,
-            isProfileComplete: isProfileComplete,
+            isProfileComplete,
             requiresProfileCompletion: !isProfileComplete,
             activeAcademicYear: activeAcademicYear
           }
@@ -663,7 +670,8 @@ export class AuthService {
       await TokenModel.create(
         newUser.id,
         token,
-        new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 days
+        new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
+        googleData.oneSignalPlayerId
       );
 
       return {
@@ -676,7 +684,7 @@ export class AuthService {
           },
           token,
           isNewUser: true,
-          isProfileComplete: false, // New user always has incomplete profile
+          isProfileComplete: false,
           requiresProfileCompletion: true,
           activeAcademicYear: activeAcademicYear
         }
@@ -796,7 +804,7 @@ export class AuthService {
           message: 'تم تحديث الملف الشخصي بنجاح',
           data: {
             user: enhancedUser,
-            isProfileComplete: isProfileComplete,
+            isProfileComplete,
             requiresProfileCompletion: !isProfileComplete,
             locationDetails: locationDetails
           }
@@ -833,7 +841,7 @@ export class AuthService {
           message: 'تم تحديث الملف الشخصي بنجاح',
           data: {
             user: enhancedUser,
-            isProfileComplete: isProfileComplete,
+            isProfileComplete,
             requiresProfileCompletion: !isProfileComplete,
             locationDetails: locationDetails
           }
