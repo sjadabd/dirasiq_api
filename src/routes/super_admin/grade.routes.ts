@@ -4,6 +4,7 @@ import { Router } from 'express';
 
 const router = Router();
 
+router.get('/all-student', GradeController.getAllActive);
 router.use(authenticateToken);
 router.get('/all', GradeController.getAllActive);
 router.get('/my-grades', GradeController.getUserGrades);

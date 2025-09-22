@@ -12,6 +12,7 @@ router.use(requireSuperAdmin);
 router.post('/', AcademicYearController.create);
 
 // Get all academic years with pagination
+router.get('/active', AcademicYearController.getActive);
 router.get('/', AcademicYearController.getAll);
 
 // Get academic year by ID

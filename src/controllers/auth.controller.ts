@@ -1,5 +1,6 @@
 import { AuthService } from '@/services/auth.service';
 import { GoogleAuthService } from '@/services/google-auth.service';
+import { AcademicYearService } from "@/services/super_admin/academic-year.service";
 import { SubscriptionPackageService } from '@/services/super_admin/subscription-package.service';
 import { TeacherSubscriptionService } from '@/services/teacher-subscription.service';
 import { Request, Response } from 'express';
@@ -188,41 +189,42 @@ export class AuthController {
   // Register student
   static async registerStudent(req: Request, res: Response): Promise<void> {
     try {
-      // Validate request body
+      // ✅ التحقق من الفاليديشن (بدون studyYear)
       await Promise.all([
-        body('name').notEmpty().withMessage('الاسم مطلوب').run(req),
-        body('email').isEmail().withMessage('البريد الإلكتروني مطلوب').run(req),
-        body('password')
+        body("name").notEmpty().withMessage("الاسم مطلوب").run(req),
+        body("email").isEmail().withMessage("البريد الإلكتروني غير صحيح").run(req),
+        body("password")
           .isLength({ min: 8 })
-          .withMessage('كلمة المرور يجب أن تكون 8 أحرف على الأقل')
+          .withMessage("كلمة المرور يجب أن تكون 8 أحرف على الأقل")
           .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/)
-          .withMessage('كلمة المرور يجب أن تحتوي على حرف كبير وحرف صغير ورقم')
+          .withMessage("كلمة المرور يجب أن تحتوي على حرف كبير وحرف صغير ورقم")
           .run(req),
-        body('studentPhone').optional().matches(/^\+?[1-9]\d{1,14}$/).withMessage('تنسيق رقم هاتف الطالب غير صحيح').run(req),
-        body('parentPhone').optional().matches(/^\+?[1-9]\d{1,14}$/).withMessage('تنسيق رقم هاتف الوالد غير صحيح').run(req),
-        body('schoolName').optional().isLength({ max: 255 }).withMessage('اسم المدرسة طويل جداً').run(req),
-        body('gender').optional().isIn(['male', 'female']).withMessage('الجنس غير صحيح').run(req),
-        body('birthDate').optional().isISO8601().withMessage('تنسيق تاريخ الميلاد غير صحيح').run(req),
-        body('gradeId').notEmpty().withMessage('معرف الصف مطلوب').isUUID().withMessage('الصف غير موجود').run(req),
-        body('studyYear').notEmpty().withMessage('السنة الدراسية مطلوبة').matches(/^[0-9]{4}-[0-9]{4}$/).withMessage('تنسيق السنة الدراسية غير صحيح').run(req),
-        body('latitude').optional().isFloat({ min: -90, max: 90 }).withMessage('خط العرض غير صحيح').run(req),
-        body('longitude').optional().isFloat({ min: -180, max: 180 }).withMessage('خط الطول غير صحيح').run(req),
-        body('formattedAddress').optional().isLength({ max: 1000 }).withMessage('العنوان طويل جداً').run(req),
-        body('country').optional().isLength({ max: 100 }).withMessage('اسم البلد طويل جداً').run(req),
-        body('city').optional().isLength({ max: 100 }).withMessage('اسم المدينة طويل جداً').run(req),
-        body('state').optional().isLength({ max: 100 }).withMessage('اسم المحافظة طويل جداً').run(req),
-        body('zipcode').optional().isLength({ max: 20 }).withMessage('الرمز البريدي طويل جداً').run(req),
-        body('streetName').optional().isLength({ max: 255 }).withMessage('اسم الشارع طويل جداً').run(req),
-        body('suburb').optional().isLength({ max: 100 }).withMessage('اسم الحي طويل جداً').run(req),
-        body('locationConfidence').optional().isFloat({ min: 0, max: 1 }).withMessage('ثقة الموقع غير صحيحة').run(req)
+        body("studentPhone")
+          .optional()
+          .isLength({ min: 10, max: 15 })
+          .withMessage("رقم هاتف الطالب يجب أن يحتوي على 10 إلى 15 رقم")
+          .run(req),
+        body("parentPhone")
+          .optional()
+          .isLength({ min: 10, max: 15 })
+          .withMessage("رقم هاتف ولي الأمر يجب أن يحتوي على 10 إلى 15 رقم")
+          .run(req),
+        body("schoolName").optional().isLength({ max: 255 }).withMessage("اسم المدرسة طويل جداً").run(req),
+        body("gender").optional().isIn(["male", "female"]).withMessage("الجنس غير صحيح").run(req),
+        body("birthDate").optional().isISO8601().withMessage("تنسيق تاريخ الميلاد غير صحيح").run(req),
+        body("gradeId").notEmpty().withMessage("معرف الصف مطلوب").isUUID().withMessage("الصف غير موجود").run(req),
+        body("latitude").optional().isFloat({ min: -90, max: 90 }).withMessage("خط العرض غير صحيح").run(req),
+        body("longitude").optional().isFloat({ min: -180, max: 180 }).withMessage("خط الطول غير صحيح").run(req),
       ]);
 
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
+        console.error("❌ Validation errors:", errors.array()); // 👈 اطبع الأخطاء
+
         res.status(400).json({
           success: false,
-          message: 'فشل في التحقق من البيانات',
-          errors: errors.array().map(err => err.msg)
+          message: "فشل في التحقق من البيانات",
+          errors: errors.array().map((err) => err.msg),
         });
         return;
       }
@@ -237,49 +239,26 @@ export class AuthController {
         gender,
         birthDate,
         gradeId,
-        studyYear,
         latitude,
         longitude,
-        formattedAddress,
-        country,
-        city,
-        state,
-        zipcode,
-        streetName,
-        suburb,
-        locationConfidence
       } = req.body;
 
-      // Validate birth date if provided
-      if (birthDate) {
-        const birthDateObj = new Date(birthDate);
-        const today = new Date();
-        let age = today.getFullYear() - birthDateObj.getFullYear();
-        const monthDiff = today.getMonth() - birthDateObj.getMonth();
-
-        if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDateObj.getDate())) {
-          age--;
-        }
-
-        if (age < 5) {
-          res.status(400).json({
-            success: false,
-            message: 'فشل في التحقق من البيانات',
-            errors: ['الطالب صغير جداً (أقل من 5 سنوات)']
-          });
-          return;
-        }
-
-        if (age > 25) {
-          res.status(400).json({
-            success: false,
-            message: 'فشل في التحقق من البيانات',
-            errors: ['الطالب كبير جداً (أكثر من 25 سنة)']
-          });
-          return;
-        }
+      // ✅ جلب السنة الدراسية المفعلة
+      const activeYearResult = await AcademicYearService.getActive();
+      if (!activeYearResult.success || !activeYearResult.data) {
+        res.status(400).json({
+          success: false,
+          message: "لا توجد سنة دراسية مفعّلة حالياً",
+        });
+        return;
       }
 
+      console.log(activeYearResult);
+
+      // 👇 خذ السنة من داخل academicYear
+      const studyYear = activeYearResult.data.academicYear.year;
+
+      // ✅ بناء بيانات الطالب
       const studentData: any = {
         name,
         email,
@@ -290,20 +269,13 @@ export class AuthController {
         gender,
         birthDate,
         gradeId,
-        studyYear
+        studyYear,
       };
 
       if (latitude) studentData.latitude = Number(latitude);
       if (longitude) studentData.longitude = Number(longitude);
-      if (formattedAddress) studentData.formattedAddress = formattedAddress;
-      if (country) studentData.country = country;
-      if (city) studentData.city = city;
-      if (state) studentData.state = state;
-      if (zipcode) studentData.zipcode = zipcode;
-      if (streetName) studentData.streetName = streetName;
-      if (suburb) studentData.suburb = suburb;
-      if (locationConfidence !== undefined) studentData.locationConfidence = Number(locationConfidence);
 
+      // حفظ الطالب
       const result = await AuthService.registerStudent(studentData);
 
       if (result.success) {
@@ -312,14 +284,15 @@ export class AuthController {
         res.status(400).json(result);
       }
     } catch (error) {
-      console.error('Error in registerStudent controller:', error);
+      console.error("Error in registerStudent controller:", error);
       res.status(500).json({
         success: false,
-        message: 'حدث خطأ في الخادم',
-        errors: ['حدث خطأ في الخادم']
+        message: "حدث خطأ في الخادم",
+        errors: ["حدث خطأ في الخادم"],
       });
     }
   }
+
 
   // Login user
   static async login(req: Request, res: Response): Promise<void> {
