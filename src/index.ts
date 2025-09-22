@@ -24,7 +24,7 @@ import path from 'path';
 dotenv.config();
 
 const app = express();
-const PORT = process.env['PORT'] || 3000;
+const PORT: number = parseInt(process.env['PORT'] || '3000', 10);
 
 // Security middleware
 app.use(helmet({
@@ -167,9 +167,9 @@ async function startServer() {
     // Start notification cron service
     notificationCronService.start();
     // Start server
-    app.listen(PORT, () => {
-      console.log(`🚀 Server is running on port ${PORT}`);
-      console.log(`🔗 Health check: http://localhost:${PORT}/health`);
+    app.listen(PORT, "0.0.0.0", () => {
+      console.log(`🚀 Server is running on http://0.0.0.0:${PORT}`);
+      console.log(`🔗 Health check: http://192.168.68.103:${PORT}/health`);
     });
   } catch (error) {
     console.error('❌ Failed to start server:', error);

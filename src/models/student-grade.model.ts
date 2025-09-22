@@ -5,10 +5,14 @@ export class StudentGradeModel {
   // Create a new student grade
   static async create(data: CreateStudentGradeRequest): Promise<StudentGrade> {
     const query = `
-      INSERT INTO student_grades (student_id, grade_id, study_year)
-      VALUES ($1, $2, $3)
-      RETURNING *
-    `;
+    INSERT INTO student_grades (student_id, grade_id, study_year)
+    VALUES ($1, $2, $3)
+    ON CONFLICT (student_id, grade_id, study_year)
+    DO UPDATE SET
+      grade_id = EXCLUDED.grade_id,  -- أو أي عمود تحب تحدّثه
+      updated_at = NOW()
+    RETURNING *
+  `;
 
     const values = [data.studentId, data.gradeId, data.studyYear];
     const result = await pool.query(query, values);

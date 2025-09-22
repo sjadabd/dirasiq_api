@@ -1,4 +1,3 @@
-import pool from '@/config/database';
 import { sendPasswordResetEmail, sendVerificationEmail } from '@/config/email';
 import { GradeModel } from '@/models/grade.model';
 import { StudentGradeModel } from '@/models/student-grade.model';
@@ -712,7 +711,19 @@ export class AuthService {
       }
 
       // Extract location data
-      const { latitude, longitude, address, formattedAddress, country, city, state, zipcode, streetName, suburb, locationConfidence } = profileData;
+      const {
+        latitude,
+        longitude,
+        address,
+        formattedAddress,
+        country,
+        city,
+        state,
+        zipcode,
+        streetName,
+        suburb,
+        locationConfidence
+      } = profileData;
 
       // Get location details from coordinates using GeocodingService
       let locationDetails = null;
@@ -722,17 +733,15 @@ export class AuthService {
           locationDetails = await geocodingService.getLocationDetails(latitude, longitude);
         } catch (error) {
           console.error('Error getting location details:', error);
-          // Continue without location details if geocoding fails
         }
       }
 
       // Prepare user update data with location information
       const updateData: any = {
         latitude: Number(latitude),
-        longitude: Number(longitude)
+        longitude: Number(longitude),
       };
 
-      // Use geocoded data if available, otherwise use provided data
       if (locationDetails) {
         updateData.formatted_address = locationDetails.formattedAddress;
         updateData.country = locationDetails.country;
@@ -742,14 +751,8 @@ export class AuthService {
         updateData.street_name = locationDetails.streetName;
         updateData.suburb = locationDetails.suburb;
         updateData.location_confidence = locationDetails.confidence;
-        // Use geocoded address as the main address if no address provided
-        if (!address) {
-          updateData.address = locationDetails.formattedAddress;
-        } else {
-          updateData.address = address;
-        }
+        updateData.address = address || locationDetails.formattedAddress;
       } else {
-        // Fallback to provided data if geocoding fails
         if (formattedAddress) updateData.formatted_address = formattedAddress;
         if (country) updateData.country = country;
         if (city) updateData.city = city;
@@ -761,79 +764,38 @@ export class AuthService {
         if (address) updateData.address = address;
       }
 
-      if (userType === 'teacher') {
-        const { name, phone, bio, experienceYears, gradeIds, studyYear, gender, birthDate } = profileData;
-
-        // Add teacher-specific data
-        updateData.name = name;
-        updateData.phone = phone;
-        updateData.bio = bio;
-        updateData.experience_years = parseInt(experienceYears);
-
-        // Add optional teacher data
-        if (gender) updateData.gender = gender;
-        if (birthDate) updateData.birth_date = birthDate;
-
-        // Update teacher profile
-        const updatedUser = await UserModel.update(userId, updateData);
-
-        // First, delete all existing teacher grades for this teacher and study year (hard delete)
-        const deleteQuery = `
-          DELETE FROM teacher_grades 
-          WHERE teacher_id = $1 AND study_year = $2
-        `;
-        await pool.query(deleteQuery, [userId, studyYear]);
-
-        // Then create new teacher grades
-        for (const gradeId of gradeIds) {
-          await TeacherGradeModel.create({
-            teacherId: userId,
-            gradeId,
-            studyYear
-          });
-        }
-
-        // Check if profile is now complete
-        const isProfileComplete = updatedUser ? this.isProfileComplete(updatedUser) : false;
-
-        // Get enhanced user data
-        const enhancedUser = updatedUser ? await this.getEnhancedUserData(updatedUser) : null;
-
-        return {
-          success: true,
-          message: 'تم تحديث الملف الشخصي بنجاح',
-          data: {
-            user: enhancedUser,
-            isProfileComplete,
-            requiresProfileCompletion: !isProfileComplete,
-            locationDetails: locationDetails
-          }
-        };
-      } else if (userType === 'student') {
-        const { name, gradeId, studyYear, studentPhone, parentPhone, schoolName, gender, birthDate } = profileData;
+      // 👇 هنا الجزء الخاص بالطالب فقط
+      if (userType === 'student') {
+        const {
+          name,
+          gradeId,
+          studyYear,
+          studentPhone,
+          parentPhone,
+          schoolName,
+          gender,
+          birthDate
+        } = profileData;
 
         // Add student-specific data
-        updateData.name = name;
-        updateData.studentPhone = studentPhone;
-        updateData.parentPhone = parentPhone;
-        updateData.schoolName = schoolName;
-        updateData.gender = gender;
-        updateData.birthDate = birthDate;
+        if (name) updateData.name = name;
+        if (studentPhone) updateData.student_phone = studentPhone;
+        if (parentPhone) updateData.parent_phone = parentPhone;
+        if (schoolName) updateData.school_name = schoolName;
+        if (gender) updateData.gender = gender;
+        if (birthDate) updateData.birth_date = birthDate;
 
         // Update student profile
         const updatedUser = await UserModel.update(userId, updateData);
 
-        // Create student grade
+        // UPSERT student grade
         await StudentGradeModel.create({
           studentId: userId,
           gradeId,
           studyYear
         });
 
-        // Check if profile is now complete
         const isProfileComplete = updatedUser ? this.isProfileComplete(updatedUser) : false;
-
-        // Get enhanced user data
         const enhancedUser = updatedUser ? await this.getEnhancedUserData(updatedUser) : null;
 
         return {
