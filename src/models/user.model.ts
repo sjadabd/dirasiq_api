@@ -16,6 +16,7 @@ export class UserModel {
       const query = `
         INSERT INTO users (
           name, email, password, user_type, status,
+          auth_provider, oauth_provider_id,
           phone, address, bio, experience_years, visitor_id, device_info,
           student_phone, parent_phone, school_name, gender, birth_date,
           latitude, longitude, formatted_address, country, city, state, zipcode, street_name, suburb, location_confidence,
@@ -24,12 +25,13 @@ export class UserModel {
           created_at, updated_at, deleted_at
         ) VALUES (
           $1, $2, $3, $4, $5,
-          $6, $7, $8, $9, $10, $11,
-          $12, $13, $14, $15, $16,
-          $17, $18, $19, $20, $21, $22, $23, $24, $25, $26,
-          $27, $28, $29,
-          $30, $31,
-          $32, $33, $34
+          $6, $7,
+          $8, $9, $10, $11, $12, $13,
+          $14, $15, $16, $17, $18,
+          $19, $20, $21, $22, $23, $24, $25, $26, $27, $28,
+          $29, $30, $31,
+          $32, $33,
+          $34, $35, $36
         ) RETURNING *;
       `;
 
@@ -39,6 +41,10 @@ export class UserModel {
         hashedPassword,
         userData.userType,
         userData.status || UserStatus.PENDING,
+
+        // Auth provider fields
+        (userData as any).authProvider || 'email',
+        (userData as any).oauthProviderId || null,
 
         // Teacher fields
         userData.userType === UserType.TEACHER ? (userData as Teacher).phone : null,
@@ -121,6 +127,14 @@ export class UserModel {
     }
 
     return this.mapDatabaseUserToUser(result.rows[0]);
+  }
+
+  // Get auth provider by email
+  static async getAuthProviderByEmail(email: string): Promise<'email' | 'google' | null> {
+    const query = 'SELECT auth_provider FROM users WHERE email = $1 AND deleted_at IS NULL';
+    const result = await pool.query(query, [email]);
+    if (result.rows.length === 0) return null;
+    return result.rows[0].auth_provider as 'email' | 'google';
   }
 
   // Find user by ID
@@ -439,6 +453,8 @@ export class UserModel {
       password: dbUser.password,
       userType: dbUser.user_type as UserType,
       status: dbUser.status as UserStatus,
+      authProvider: dbUser.auth_provider || undefined,
+      oauthProviderId: dbUser.oauth_provider_id || undefined,
       latitude: dbUser.latitude,
       longitude: dbUser.longitude,
       formattedAddress: dbUser.formatted_address,

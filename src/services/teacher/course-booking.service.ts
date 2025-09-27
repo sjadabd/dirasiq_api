@@ -53,7 +53,7 @@ export class CourseBookingService {
     page: number = 1,
     limit: number = 10,
     status?: BookingStatus
-  ): Promise<{ bookings: CourseBooking[], total: number }> {
+  ): Promise<{ bookings: CourseBookingWithDetails[], total: number }> {
     try {
       return await CourseBookingModel.findAllByStudent(studentId, studyYear, page, limit, status);
     } catch (error) {
@@ -108,7 +108,37 @@ export class CourseBookingService {
     studentId: string
   ): Promise<CourseBooking> {
     try {
-      return await CourseBookingModel.reactivateBooking(id, studentId);
+      const booking = await CourseBookingModel.reactivateBooking(id, studentId);
+
+      // 🔔 إرسال إشعار للمعلم بأن الطالب أعاد تفعيل الطلب
+      try {
+        const bookingDetails = await CourseBookingModel.findByIdWithDetails(booking.id);
+        if (bookingDetails) {
+          const { course, student } = bookingDetails;
+          await this.notificationService.createAndSendNotification({
+            title: `إعادة تفعيل حجز - ${course.courseName}`,
+            message: `قام الطالب ${student.name} بإعادة تفعيل طلب الحجز لدورة ${course.courseName}.`,
+            type: 'booking_status' as any,
+            priority: 'medium' as any,
+            recipientType: 'specific_teachers' as any,
+            recipientIds: [booking.teacherId],
+            data: {
+              bookingId: booking.id,
+              studentId: booking.studentId,
+              courseId: booking.courseId,
+              courseName: course.courseName,
+              studentName: student.name,
+              newStatus: 'pending',
+              action: 'reactivated_by_student'
+            },
+            createdBy: booking.studentId
+          });
+        }
+      } catch (notifyErr) {
+        console.error('❌ Error sending reactivation notification to teacher:', notifyErr);
+      }
+
+      return booking;
     } catch (error) {
       throw error;
     }

@@ -59,6 +59,8 @@ export interface Notification {
   createdBy: string; // ID of the user who created the notification
   createdAt: Date;
   updatedAt: Date;
+  // Per-user computed flag (not stored directly on notifications table)
+  isRead?: boolean;
 }
 
 export interface CreateNotificationData {
@@ -209,9 +211,15 @@ export class NotificationModel {
     const total = parseInt(countResult.rows[0].count);
 
     const dataResult = await pool.query(dataQuery, [...values, limit, offset]);
-    const notifications = dataResult.rows.map((row: any) =>
-      this.mapDatabaseNotificationToNotification(row)
-    );
+    const notifications = dataResult.rows.map((row: any) => {
+      const notif = this.mapDatabaseNotificationToNotification(row);
+      const userReadAt = row.user_read_at as Date | null;
+      return {
+        ...notif,
+        readAt: userReadAt || notif.readAt || undefined,
+        isRead: !!userReadAt
+      } as Notification;
+    });
 
     return {
       notifications,
@@ -295,9 +303,13 @@ export class NotificationModel {
 
     // Get notifications where user is in recipient_ids or recipient_type includes their user type
     const query = `
-      SELECT n.*, u.user_type
+      SELECT 
+        n.*,
+        u.user_type,
+        un.read_at as user_read_at
       FROM notifications n
       LEFT JOIN users u ON u.id = $1
+      LEFT JOIN user_notifications un ON un.notification_id = n.id AND un.user_id = $1
       WHERE (
         n.recipient_type = 'all' OR
         (n.recipient_type = 'teachers' AND u.user_type = 'teacher') OR
@@ -348,16 +360,16 @@ export class NotificationModel {
   }
 
   // Mark notification as read for a user
-  static async markAsRead(notificationId: string, _userId: string): Promise<boolean> {
-    // This would typically involve a separate user_notifications table
-    // For now, we'll just update the notification's read_at timestamp
+  static async markAsRead(notificationId: string, userId: string): Promise<boolean> {
+    // Upsert into user_notifications to track per-user read status
     const query = `
-      UPDATE notifications
-      SET read_at = $1, updated_at = $2
-      WHERE id = $3
+      INSERT INTO user_notifications (user_id, notification_id, read_at)
+      VALUES ($1, $2, $3)
+      ON CONFLICT (user_id, notification_id)
+      DO UPDATE SET read_at = EXCLUDED.read_at
     `;
 
-    const result = await pool.query(query, [new Date(), new Date(), notificationId]);
+    const result = await pool.query(query, [userId, notificationId, new Date()]);
     return (result.rowCount || 0) > 0;
   }
 

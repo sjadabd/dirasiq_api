@@ -43,12 +43,16 @@ CREATE TABLE IF NOT EXISTS users (
     password_reset_code VARCHAR(6),
     password_reset_expires TIMESTAMP,
 
+    -- OAuth fields
+    auth_provider VARCHAR(20) NOT NULL DEFAULT 'email',
+    oauth_provider_id VARCHAR(255),
+
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     deleted_at TIMESTAMP
 );
 
--- Create index for better performance
+-- Create indexes for better performance
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 CREATE INDEX IF NOT EXISTS idx_users_user_type ON users(user_type);
 CREATE INDEX IF NOT EXISTS idx_users_status ON users(status);
@@ -57,6 +61,8 @@ CREATE INDEX IF NOT EXISTS idx_users_student_phone ON users(student_phone);
 CREATE INDEX IF NOT EXISTS idx_users_parent_phone ON users(parent_phone);
 CREATE INDEX IF NOT EXISTS idx_users_birth_date ON users(birth_date);
 CREATE INDEX IF NOT EXISTS idx_users_location ON users(latitude, longitude);
+CREATE INDEX IF NOT EXISTS idx_users_auth_provider ON users(auth_provider);
+CREATE INDEX IF NOT EXISTS idx_users_oauth_provider_id ON users(oauth_provider_id);
 
 -- Create trigger to update updated_at timestamp
 CREATE OR REPLACE FUNCTION update_updated_at_column()
@@ -73,13 +79,7 @@ CREATE TRIGGER update_users_updated_at
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
 
--- Note: This migration includes all location fields for Iraq
--- - latitude/longitude: إحداثيات GPS
--- - formatted_address: العنوان المنسق الكامل
--- - country: الدولة (افتراضي: العراق)
--- - city: المدينة (e.g., بغداد, البصرة, أربيل)
--- - state: المحافظة (e.g., بغداد, البصرة, نينوى)
--- - zipcode: الرمز البريدي
--- - street_name: اسم الشارع
--- - suburb: الناحية/الحي (e.g., الكرخ, الرصافة, الأعظمية)
--- - location_confidence: مستوى دقة الموقع (0.00 - 1.00)
+-- Note:
+-- - This migration includes location fields (Iraq specific)
+-- - Added OAuth provider fields for future integrations (e.g., Google, Facebook)
+-- - Default auth_provider = 'email'

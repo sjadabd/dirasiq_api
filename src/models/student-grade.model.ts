@@ -150,6 +150,21 @@ export class StudentGradeModel {
     };
   }
 
+  // Find students by grade and study year (active, not deleted)
+  static async findByGradeAndStudyYear(gradeId: string, studyYear: string | number): Promise<StudentGrade[]> {
+    const query = `
+      SELECT * FROM student_grades
+      WHERE grade_id = $1
+        AND study_year = $2
+        AND is_active = true
+        AND deleted_at IS NULL
+      ORDER BY created_at DESC
+    `;
+
+    const result = await pool.query(query, [gradeId, studyYear]);
+    return result.rows.map((row: any) => this.mapDatabaseStudentGradeToStudentGrade(row));
+  }
+
   // Map database student grade to StudentGrade interface
   private static mapDatabaseStudentGradeToStudentGrade(dbStudentGrade: any): StudentGrade {
     return {

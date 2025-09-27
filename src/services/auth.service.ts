@@ -3,6 +3,8 @@ import { GradeModel } from '@/models/grade.model';
 import { StudentGradeModel } from '@/models/student-grade.model';
 import { TeacherGradeModel } from '@/models/teacher-grade.model';
 import { TokenModel } from '@/models/token.model';
+import { SubscriptionPackageModel } from '@/models/subscription-package.model';
+import { TeacherSubscriptionModel } from '@/models/teacher-subscription.model';
 import { UserModel } from '@/models/user.model';
 import { GeocodingService } from '@/services/geocoding.service';
 import { AcademicYearService } from '@/services/super_admin/academic-year.service';
@@ -114,6 +116,27 @@ export class AuthService {
       }
 
       const teacher = await UserModel.create(teacherData);
+
+      // ✅ إنشاء اشتراك مجاني تلقائيًا للمعلم الجديد (مثلاً 20 طالب لمدة 30 يومًا حسب جدول الباقات)
+      try {
+        const freePackage = await SubscriptionPackageModel.getFreePackage();
+        if (freePackage) {
+          const startDate = new Date();
+          const endDate = new Date(startDate);
+          endDate.setDate(endDate.getDate() + Number(freePackage.durationDays || 30));
+
+          await TeacherSubscriptionModel.create({
+            teacherId: teacher.id,
+            subscriptionPackageId: freePackage.id,
+            startDate,
+            endDate
+          });
+        } else {
+          console.warn('No free subscription package found. Skipping auto-subscription for teacher.');
+        }
+      } catch (subErr) {
+        console.error('Failed to auto-create free subscription for teacher:', subErr);
+      }
 
       // Create teacher grade relationships
       if (data.gradeIds && data.gradeIds.length > 0 && data.studyYear) {
@@ -281,6 +304,14 @@ export class AuthService {
           success: false,
           message: 'الحساب غير مفعل',
           errors: ['الحساب غير مفعل، يرجى التحقق من بريدك الإلكتروني أو التواصل مع الدعم']
+        };
+      }
+
+      if (user.authProvider === 'google') {
+        return {
+          success: false,
+          message: 'قمت بانشاء الحساب باستخدام google الرجاء تسجيل الدخول بنفس الطريقة',
+          errors: ['قمت بانشاء الحساب باستخدام google الرجاء تسجيل الدخول بنفس الطريقة']
         };
       }
 
@@ -558,6 +589,14 @@ export class AuthService {
       const existingUser = await UserModel.findByEmail(email);
 
       if (existingUser) {
+        if (existingUser.authProvider !== 'google') {
+          return {
+            success: false,
+            message: 'قمت بانشاء الحساب باستخدام البريد وكلمة المرور الرجاء تسجيل الدخول بنفس الطريقة',
+            errors: ['قمت بانشاء الحساب باستخدام البريد وكلمة المرور الرجاء تسجيل الدخول بنفس الطريقة']
+          };
+        }
+
         // User exists, check if user type matches
         if (existingUser.userType !== (userType === 'teacher' ? UserType.TEACHER : UserType.STUDENT)) {
           return {
@@ -620,32 +659,63 @@ export class AuthService {
       let newUser: User;
 
       if (userType === 'teacher') {
-        // Create teacher with minimal data
         newUser = await UserModel.create({
           name,
           email,
           password: hashedPassword,
           userType: UserType.TEACHER,
           status: UserStatus.ACTIVE,
-          phone: '', // Will be filled later
-          address: '', // Will be filled later
-          bio: '', // Will be filled later
-          experienceYears: 0, // Will be filled later
+
+          // ✅ بيانات مزود الخدمة
+          authProvider: 'google',
+          oauthProviderId: sub,
+
+          // باقي الحقول
+          phone: '',
+          address: '',
+          bio: '',
+          experienceYears: 0,
           deviceInfo: 'Google OAuth'
         });
+
+        // ✅ إنشاء اشتراك مجاني تلقائيًا للمعلم الجديد عبر Google
+        try {
+          const freePackage = await SubscriptionPackageModel.getFreePackage();
+          if (freePackage) {
+            const startDate = new Date();
+            const endDate = new Date(startDate);
+            endDate.setDate(endDate.getDate() + Number(freePackage.durationDays || 30));
+
+            await TeacherSubscriptionModel.create({
+              teacherId: newUser.id,
+              subscriptionPackageId: freePackage.id,
+              startDate,
+              endDate
+            });
+          } else {
+            console.warn('No free subscription package found (Google). Skipping auto-subscription.');
+          }
+        } catch (subErr) {
+          console.error('Failed to auto-create free subscription for Google teacher:', subErr);
+        }
       } else {
-        // Create student with minimal data
         newUser = await UserModel.create({
           name,
           email,
           password: hashedPassword,
           userType: UserType.STUDENT,
           status: UserStatus.ACTIVE,
-          studentPhone: '', // Will be filled later
-          parentPhone: '', // Will be filled later
-          schoolName: '' // Will be filled later
+
+          // ✅ بيانات مزود الخدمة
+          authProvider: 'google',
+          oauthProviderId: sub,
+
+          studentPhone: '',
+          parentPhone: '',
+          schoolName: ''
         });
       }
+
 
       // Get active academic year
       const academicYearResponse = await AcademicYearService.getActive();
@@ -762,6 +832,58 @@ export class AuthService {
         if (suburb) updateData.suburb = suburb;
         if (locationConfidence !== undefined) updateData.location_confidence = Number(locationConfidence);
         if (address) updateData.address = address;
+      }
+
+      // 👇 هنا الجزء الخاص بالمعلم
+      if (userType === 'teacher') {
+        const {
+          name,
+          phone,
+          address,
+          bio,
+          experienceYears,
+          gradeIds,
+          studyYear,
+          gender,
+          birthDate
+        } = profileData;
+
+        if (name) updateData.name = name;
+        if (phone) updateData.phone = phone;
+        if (address) updateData.address = address;
+        if (bio) updateData.bio = bio;
+        if (experienceYears !== undefined && experienceYears !== null) {
+          const exp = Number(experienceYears);
+          if (!Number.isNaN(exp)) updateData.experience_years = exp;
+        }
+        if (gender) updateData.gender = gender;
+        if (birthDate) updateData.birth_date = birthDate;
+
+        // Update teacher profile
+        const updatedUser = await UserModel.update(userId, updateData);
+
+        // Create/replace teacher grade relationships if provided
+        if (Array.isArray(gradeIds) && gradeIds.length > 0 && studyYear) {
+          try {
+            await TeacherGradeModel.createMany(userId, gradeIds, studyYear);
+          } catch (error) {
+            console.error('Error creating teacher grade relationships (completeProfile):', error);
+          }
+        }
+
+        const isProfileComplete = updatedUser ? this.isProfileComplete(updatedUser) : false;
+        const enhancedUser = updatedUser ? await this.getEnhancedUserData(updatedUser) : null;
+
+        return {
+          success: true,
+          message: 'تم تحديث الملف الشخصي بنجاح',
+          data: {
+            user: enhancedUser,
+            isProfileComplete,
+            requiresProfileCompletion: !isProfileComplete,
+            locationDetails: locationDetails
+          }
+        };
       }
 
       // 👇 هنا الجزء الخاص بالطالب فقط
@@ -896,7 +1018,73 @@ export class AuthService {
       }
     }
 
-    // For non-teachers, return basic data with location
+    // If user is a student, add student-specific data (current study year grades)
+    if (user.userType === 'student') {
+      try {
+        // Get active academic year
+        const academicYearResponse = await AcademicYearService.getActive();
+        const activeAcademicYear = academicYearResponse.success ? academicYearResponse.data?.academicYear : null;
+
+        // Fetch student grades
+        const studentGrades = await StudentGradeModel.findByStudentId(user.id);
+        const filteredGrades = activeAcademicYear
+          ? studentGrades.filter(sg => sg.studyYear === activeAcademicYear.year)
+          : studentGrades;
+
+        // Include grade details
+        const gradesWithDetails = await Promise.all(
+          filteredGrades.map(async (sg) => {
+            const grade = await GradeModel.findById(sg.gradeId);
+            return {
+              id: sg.id,
+              gradeId: sg.gradeId,
+              gradeName: grade?.name || 'Unknown Grade',
+              studyYear: sg.studyYear,
+              createdAt: sg.createdAt
+            };
+          })
+        );
+
+        return {
+          ...sanitizedUser,
+          studentGrades: gradesWithDetails,
+          location: {
+            latitude: (user as any).latitude,
+            longitude: (user as any).longitude,
+            address: (user as any).address,
+            formattedAddress: (user as any).formattedAddress,
+            country: (user as any).country,
+            city: (user as any).city,
+            state: (user as any).state,
+            zipcode: (user as any).zipcode,
+            streetName: (user as any).streetName,
+            suburb: (user as any).suburb,
+            locationConfidence: (user as any).locationConfidence
+          }
+        };
+      } catch (error) {
+        console.error('Error getting enhanced student data:', error);
+        return {
+          ...sanitizedUser,
+          studentGrades: [],
+          location: {
+            latitude: (user as any).latitude,
+            longitude: (user as any).longitude,
+            address: (user as any).address,
+            formattedAddress: (user as any).formattedAddress,
+            country: (user as any).country,
+            city: (user as any).city,
+            state: (user as any).state,
+            zipcode: (user as any).zipcode,
+            streetName: (user as any).streetName,
+            suburb: (user as any).suburb,
+            locationConfidence: (user as any).locationConfidence
+          }
+        };
+      }
+    }
+
+    // For others, return basic data with location
     return {
       ...sanitizedUser,
       location: {
@@ -914,4 +1102,42 @@ export class AuthService {
       }
     };
   }
+
+  static async updateProfile(userId: string, userType: string, profileData: any): Promise<any> {
+    try {
+      const user = await UserModel.findById(userId);
+      if (!user) {
+        return { success: false, message: 'المستخدم غير موجود', errors: ['المستخدم غير موجود'] };
+      }
+
+      // ✅ تحديد الحقول المسموح بها حسب الدور
+      let allowedFields: string[];
+      if (userType === 'teacher') {
+        allowedFields = ['name', 'phone', 'bio', 'experience_years', 'latitude', 'longitude', 'address', 'formatted_address', 'country', 'city', 'state', 'zipcode', 'street_name', 'suburb', 'location_confidence'];
+      } else if (userType === 'student') {
+        allowedFields = ['name', 'student_phone', 'parent_phone', 'school_name', 'gender', 'birth_date', 'address'];
+      } else {
+        return { success: false, message: 'نوع المستخدم غير مدعوم', errors: ['نوع المستخدم غير مدعوم'] };
+      }
+
+      // ✅ فلترة البيانات حسب الدور
+      const filteredData: Record<string, any> = {};
+      for (const [key, value] of Object.entries(profileData)) {
+        if (allowedFields.includes(key)) {
+          filteredData[key] = value;
+        }
+      }
+
+      const updatedUser = await UserModel.update(userId, filteredData);
+      if (!updatedUser) {
+        return { success: false, message: 'فشل في تحديث بيانات المستخدم', errors: ['فشل في تحديث بيانات المستخدم'] };
+      }
+
+      return { success: true, message: 'تم تحديث البيانات بنجاح', data: { user: updatedUser } };
+    } catch (error) {
+      console.error('Error in updateProfile service:', error);
+      return { success: false, message: 'حدث خطأ في الخادم', errors: ['حدث خطأ في الخادم'] };
+    }
+  }
+
 }

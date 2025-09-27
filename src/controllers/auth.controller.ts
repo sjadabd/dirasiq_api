@@ -253,8 +253,6 @@ export class AuthController {
         return;
       }
 
-      console.log(activeYearResult);
-
       // 👇 خذ السنة من داخل academicYear
       const studyYear = activeYearResult.data.academicYear.year;
 
@@ -474,6 +472,63 @@ export class AuthController {
     }
   }
 
+  // Reset password
+  static async resetPassword(req: Request, res: Response): Promise<void> {
+    try {
+      // Validate request body
+      await Promise.all([
+        body('email').isEmail().withMessage('البريد الإلكتروني مطلوب').run(req),
+        body('code').optional().isLength({ min: 6, max: 6 }).withMessage('رمز إعادة التعيين يجب أن يكون 6 أرقام').run(req),
+        body('resetToken').optional().isLength({ min: 6, max: 6 }).withMessage('رمز إعادة التعيين يجب أن يكون 6 أرقام').run(req),
+        body('newPassword')
+          .isLength({ min: 8 })
+          .withMessage('كلمة المرور يجب أن تكون 8 أحرف على الأقل')
+          .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/)
+          .withMessage('كلمة المرور يجب أن تحتوي على حرف كبير وحرف صغير ورقم')
+          .run(req)
+      ]);
+
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        res.status(400).json({
+          success: false,
+          message: 'فشل في التحقق من البيانات',
+          errors: errors.array().map(err => err.msg)
+        });
+        return;
+      }
+
+      const { email, code, resetToken, newPassword } = req.body;
+
+      // Use either 'code' or 'resetToken', with 'code' taking precedence
+      const resetCode = code || resetToken;
+
+      if (!resetCode) {
+        res.status(400).json({
+          success: false,
+          message: 'فشل في التحقق من البيانات',
+          errors: ['رمز إعادة التعيين مطلوب']
+        });
+        return;
+      }
+
+      const result = await AuthService.resetPassword(email, resetCode, newPassword);
+
+      if (result.success) {
+        res.status(200).json(result);
+      } else {
+        res.status(400).json(result);
+      }
+    } catch (error) {
+      console.error('Error in resetPassword controller:', error);
+      res.status(500).json({
+        success: false,
+        message: 'حدث خطأ في الخادم',
+        errors: ['حدث خطأ في الخادم']
+      });
+    }
+  }
+
   // Google OAuth authentication
   static async googleAuth(req: Request, res: Response): Promise<void> {
     try {
@@ -661,21 +716,42 @@ export class AuthController {
     }
   }
 
-  // Reset password
-  static async resetPassword(req: Request, res: Response): Promise<void> {
+  static async updateProfile(req: Request, res: Response): Promise<void> {
     try {
-      // Validate request body
-      await Promise.all([
-        body('email').isEmail().withMessage('البريد الإلكتروني مطلوب').run(req),
-        body('code').optional().isLength({ min: 6, max: 6 }).withMessage('رمز إعادة التعيين يجب أن يكون 6 أرقام').run(req),
-        body('resetToken').optional().isLength({ min: 6, max: 6 }).withMessage('رمز إعادة التعيين يجب أن يكون 6 أرقام').run(req),
-        body('newPassword')
-          .isLength({ min: 8 })
-          .withMessage('كلمة المرور يجب أن تكون 8 أحرف على الأقل')
-          .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/)
-          .withMessage('كلمة المرور يجب أن تحتوي على حرف كبير وحرف صغير ورقم')
-          .run(req)
-      ]);
+      const userId = req.user?.id;
+      if (!userId) {
+        res.status(401).json({ error: 'Unauthorized' });
+        return;
+      }
+
+      const userType = req.user?.userType;
+      if (!userType) {
+        res.status(401).json({ error: 'User type not found' });
+        return;
+      }
+
+      // ✅ Validation حسب نوع المستخدم
+      if (userType === 'teacher') {
+        await Promise.all([
+          body('name').notEmpty().withMessage('الاسم مطلوب').run(req),
+          body('phone').notEmpty().withMessage('رقم الهاتف مطلوب').run(req),
+          body('bio').notEmpty().withMessage('النبذة الشخصية مطلوبة').run(req),
+          body('experienceYears').isInt({ min: 0 }).withMessage('سنوات الخبرة مطلوبة').run(req),
+          body('gradeIds').isArray({ min: 1 }).withMessage('معرف الصف مطلوب').run(req),
+          body('gradeIds.*').isUUID().withMessage('الصف غير موجود').run(req),
+          body('studyYear').notEmpty().matches(/^[0-9]{4}-[0-9]{4}$/).withMessage('تنسيق السنة الدراسية غير صحيح').run(req),
+          // باقي التحقق الخاص بالموقع...
+        ]);
+      } else if (userType === 'student') {
+        await Promise.all([
+          body('name').notEmpty().withMessage('الاسم مطلوب').run(req),
+          body('studentPhone').notEmpty().withMessage('رقم الطالب مطلوب').run(req),
+          body('parentPhone').notEmpty().withMessage('رقم ولي الأمر مطلوب').run(req),
+          body('schoolName').notEmpty().withMessage('اسم المدرسة مطلوب').run(req),
+          body('gender').isIn(['male', 'female']).withMessage('الجنس غير صحيح').run(req),
+          body('birthDate').isISO8601().withMessage('تاريخ الميلاد غير صحيح').run(req),
+        ]);
+      }
 
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
@@ -687,21 +763,8 @@ export class AuthController {
         return;
       }
 
-      const { email, code, resetToken, newPassword } = req.body;
-
-      // Use either 'code' or 'resetToken', with 'code' taking precedence
-      const resetCode = code || resetToken;
-
-      if (!resetCode) {
-        res.status(400).json({
-          success: false,
-          message: 'فشل في التحقق من البيانات',
-          errors: ['رمز إعادة التعيين مطلوب']
-        });
-        return;
-      }
-
-      const result = await AuthService.resetPassword(email, resetCode, newPassword);
+      // ✅ استدعاء الخدمة
+      const result = await AuthService.updateProfile(userId, userType, req.body);
 
       if (result.success) {
         res.status(200).json(result);
@@ -709,7 +772,7 @@ export class AuthController {
         res.status(400).json(result);
       }
     } catch (error) {
-      console.error('Error in resetPassword controller:', error);
+      console.error('Error in updateProfile controller:', error);
       res.status(500).json({
         success: false,
         message: 'حدث خطأ في الخادم',
@@ -717,4 +780,5 @@ export class AuthController {
       });
     }
   }
+
 }

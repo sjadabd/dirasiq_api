@@ -1,4 +1,5 @@
 import { CourseModel } from '@/models/course.model';
+import pool from '@/config/database';
 import { StudentGradeModel } from '@/models/student-grade.model';
 import { UserModel } from '@/models/user.model';
 import { ApiResponse, StudentGrade } from '@/types';
@@ -103,6 +104,7 @@ export class StudentService {
 
   // Get suggested courses for student based on grade and location
   static async getSuggestedCoursesForStudent(
+    studentId: string,
     studentGrades: StudentGrade[],
     studentLocation: { latitude: number; longitude: number },
     maxDistance: number = 5,
@@ -131,11 +133,39 @@ export class StudentService {
         };
       }
 
+      // 🧠 اجلب حالة الحجز لكل كورس مقترح لهذا الطالب
+      const courseIds: string[] = courses.map((c: any) => c.id);
+      let bookingsByCourse: Record<string, { status: string; id: string }> = {};
+      if (courseIds.length > 0) {
+        const bookingQuery = `
+          SELECT DISTINCT ON (course_id) id, course_id, status
+          FROM course_bookings
+          WHERE student_id = $1
+            AND course_id = ANY($2)
+            AND is_deleted = false
+          ORDER BY course_id, created_at DESC
+        `;
+        const bookingResult = await pool.query(bookingQuery, [studentId, courseIds]);
+        for (const row of bookingResult.rows) {
+          bookingsByCourse[row.course_id] = { status: row.status, id: row.id };
+        }
+      }
+
+      // 🚫 أخفِ الدورات التي تمت الموافقة النهائية عليها للطالب
+      const filtered = courses.filter((c: any) => bookingsByCourse[c.id]?.status !== 'approved');
+
+      // ➕ أضف حالة الحجز للدورات الأخرى لعرض زر التسجيل أو الحالة
+      const enriched = filtered.map((c: any) => ({
+        ...c,
+        bookingStatus: bookingsByCourse[c.id]?.status || null,
+        bookingId: bookingsByCourse[c.id]?.id || null
+      }));
+
       return {
         success: true,
         message: 'تم العثور على الدورات',
-        data: { courses },
-        count: courses.length
+        data: { courses: enriched },
+        count: enriched.length
       };
     } catch (error) {
       console.error('Error getting suggested courses for student:', error);
@@ -182,8 +212,30 @@ export class StudentService {
         );
       }
 
+      // Check student's latest booking status for this course
+      const bookingQuery = `
+        SELECT id, status
+        FROM course_bookings
+        WHERE student_id = $1 AND course_id = $2 AND is_deleted = false
+        ORDER BY created_at DESC
+        LIMIT 1
+      `;
+      const bookingRes = await pool.query(bookingQuery, [studentId, courseId]);
+      const latestBooking = bookingRes.rows[0] as { id: string; status: string } | undefined;
+
+      // If approved, hide the course from the student (treat as not found)
+      if (latestBooking && latestBooking.status === 'approved') {
+        return {
+          success: false,
+          message: 'الدورة غير متاحة',
+          errors: ['الدورة غير متاحة']
+        };
+      }
+
       const courseWithDetails = {
         ...course,
+        bookingStatus: latestBooking?.status || null,
+        bookingId: latestBooking?.id || null,
         teacher: {
           id: teacher.id,
           name: teacher.name,

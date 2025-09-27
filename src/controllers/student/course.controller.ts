@@ -47,6 +47,7 @@ export class StudentCourseController {
 
       // Get courses based on student's grade and location
       const result = await StudentService.getSuggestedCoursesForStudent(
+        studentId,
         studentGrades,
         studentLocation,
         Number(maxDistance),

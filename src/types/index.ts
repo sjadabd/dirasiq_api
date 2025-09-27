@@ -39,6 +39,9 @@ export interface BaseUser {
   password: string;
   userType: UserType;
   status: UserStatus;
+  // Auth provider tracking
+  authProvider?: 'email' | 'google';
+  oauthProviderId?: string;
   latitude?: number;
   longitude?: number;
   formattedAddress?: string;
@@ -866,9 +869,14 @@ export interface BulkInvoiceCreationRequest {
   notes?: string;
   installments?: {
     installmentNumber: number;
-    installmentAmount: number;
     dueDate: string;
-  }[];
+    notes?: string;
+    installments?: {
+      installmentNumber: number;
+      installmentAmount: number;
+      dueDate: string;
+    }[];
+  }
 }
 
 export interface BulkInvoiceCreationResponse {
@@ -877,3 +885,37 @@ export interface BulkInvoiceCreationResponse {
   errors: string[];
 }
 
+// News platform type
+export enum NewsType {
+  WEB = 'web',
+  MOBILE = 'mobile',
+  WEB_AND_MOBILE = 'web_and_mobile'
+}
+
+export interface News {
+  id: string;
+  title: string;
+  imageUrl?: string;
+  details: string;
+  newsType: NewsType;
+  isActive: boolean;
+  publishedAt: Date;
+  createdAt: Date;
+  updatedAt: Date;
+  deletedAt?: Date;
+}
+
+export interface CreateNewsRequest {
+  title: string;
+  imageUrl?: string;
+  details: string;
+  newsType?: NewsType; // default WEB_AND_MOBILE if not provided
+}
+
+export interface UpdateNewsRequest {
+  title?: string;
+  imageUrl?: string;
+  details?: string;
+  newsType?: NewsType;
+  isActive?: boolean;
+}

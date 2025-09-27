@@ -1,7 +1,9 @@
 import { CourseModel } from '@/models/course.model';
 import { GradeModel } from '@/models/grade.model';
+import { NotificationPriority, NotificationType, RecipientType } from '@/models/notification.model';
 import { SubjectModel } from '@/models/subject.model';
 import { UserModel } from '@/models/user.model';
+import { NotificationService } from '@/services/notification.service';
 import { ApiResponse, CreateCourseRequest, UpdateCourseRequest } from '@/types';
 import { ImageService } from '@/utils/image.service';
 
@@ -9,7 +11,7 @@ export class CourseService {
   // Create new course
   static async create(teacherId: string, data: CreateCourseRequest): Promise<ApiResponse> {
     try {
-      // Validate teacher exists and is a teacher
+      // ✅ تحقق من المعلم
       const teacher = await UserModel.findById(teacherId);
       if (!teacher || teacher.userType !== 'teacher') {
         return {
@@ -19,7 +21,7 @@ export class CourseService {
         };
       }
 
-      // Validate study year format
+      // ✅ تحقق من صيغة السنة الدراسية
       const yearPattern = /^\d{4}-\d{4}$/;
       if (!yearPattern.test(data.study_year)) {
         return {
@@ -29,7 +31,7 @@ export class CourseService {
         };
       }
 
-      // Validate grade exists
+      // ✅ تحقق من الصف
       const grade = await GradeModel.findById(data.grade_id);
       if (!grade) {
         return {
@@ -39,7 +41,7 @@ export class CourseService {
         };
       }
 
-      // Validate subject exists and belongs to teacher
+      // ✅ تحقق من المادة
       const subject = await SubjectModel.findByIdAndTeacher(data.subject_id, teacherId);
       if (!subject) {
         return {
@@ -49,7 +51,7 @@ export class CourseService {
         };
       }
 
-      // Validate dates
+      // ✅ تحقق من التواريخ
       const startDate = new Date(data.start_date);
       const endDate = new Date(data.end_date);
       const currentDate = new Date();
@@ -70,7 +72,7 @@ export class CourseService {
         };
       }
 
-      // Validate price
+      // ✅ تحقق من السعر
       if (data.price < 0) {
         return {
           success: false,
@@ -79,7 +81,7 @@ export class CourseService {
         };
       }
 
-      // Validate seats count
+      // ✅ تحقق من المقاعد
       if (data.seats_count <= 0) {
         return {
           success: false,
@@ -88,7 +90,7 @@ export class CourseService {
         };
       }
 
-      // Check if course already exists for this teacher with same name, year, grade, and subject
+      // ✅ تحقق من وجود دورة مشابهة
       const existingCourse = await CourseModel.courseExistsForTeacher(
         teacherId,
         data.study_year,
@@ -104,7 +106,7 @@ export class CourseService {
         };
       }
 
-      // Process images if provided
+      // ✅ معالجة الصور
       let processedImages: string[] = [];
       if (data.course_images && data.course_images.length > 0) {
         try {
@@ -118,9 +120,54 @@ export class CourseService {
         }
       }
 
-      // Create course with processed images
+      // ✅ إنشاء الكورس
       const courseData = { ...data, course_images: processedImages };
       const course = await CourseModel.create(teacherId, courseData);
+
+      // ⬇️ إرسال إشعار للطلاب بنفس الصف والسنة مع كل تفاصيل الدورة
+      try {
+        const notificationService = new NotificationService({
+          appId: process.env['ONESIGNAL_APP_ID'] || '',
+          restApiKey: process.env['ONESIGNAL_REST_API_KEY'] || ''
+        });
+
+        await notificationService.createAndSendNotification({
+          title: '📢 دورة جديدة متاحة',
+          message: `تمت إضافة دورة جديدة: ${course.course_name}`,
+          type: NotificationType.NEW_COURSE_AVAILABLE,
+          priority: NotificationPriority.HIGH,
+          recipientType: RecipientType.STUDENTS,
+          data: {
+            // مفاتيح الفلترة
+            courseId: course.id,
+            gradeId: course.grade_id,
+            studyYear: course.study_year,
+            // كل بيانات الدورة لإظهار تفاصيل مباشرة في التطبيق
+            course: {
+              id: course.id,
+              study_year: course.study_year,
+              grade_id: course.grade_id,
+              grade_name: grade.name,
+              subject_id: course.subject_id,
+              subject_name: subject.name,
+              course_name: course.course_name,
+              course_images: course.course_images,
+              description: course.description,
+              start_date: course.start_date,
+              end_date: course.end_date,
+              price: course.price,
+              seats_count: course.seats_count,
+              teacher: {
+                id: teacherId,
+                name: teacher.name
+              }
+            }
+          },
+          createdBy: teacherId
+        });
+      } catch (notifyErr) {
+        console.error('فشل إرسال الإشعار:', notifyErr);
+      }
 
       return {
         success: true,

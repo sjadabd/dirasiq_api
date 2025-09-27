@@ -87,40 +87,48 @@ export class CourseBookingModel {
     return result.rows[0] ? this.mapDatabaseBookingWithDetails(result.rows[0]) : null;
   }
 
-  // Get all bookings for a student
+  // Get all bookings for a student (with details)
   static async findAllByStudent(
     studentId: string,
     studyYear: string,
     page: number = 1,
     limit: number = 10,
     status?: BookingStatus
-  ): Promise<{ bookings: CourseBooking[], total: number }> {
-    let whereClause = 'WHERE student_id = $1 AND study_year = $2 AND is_deleted = false';
+  ): Promise<{ bookings: CourseBookingWithDetails[], total: number }> {
+    let whereClause = 'WHERE cb.student_id = $1 AND cb.study_year = $2 AND cb.is_deleted = false';
     let params: any[] = [studentId, studyYear];
     let paramIndex = 3;
 
     if (status) {
-      whereClause += ` AND status = $${paramIndex}`;
+      whereClause += ` AND cb.status = $${paramIndex}`;
       params.push(status);
       paramIndex++;
     }
 
-    const countQuery = `SELECT COUNT(*) FROM course_bookings ${whereClause}`;
+    const countQuery = `SELECT COUNT(*) FROM course_bookings cb ${whereClause}`;
     const countResult = await pool.query(countQuery, params);
     const total = parseInt(countResult.rows[0].count);
 
     const offset = (page - 1) * limit;
     const query = `
-      SELECT * FROM course_bookings
+      SELECT
+        cb.*,
+        s.id as student_id, s.name as student_name, s.email as student_email,
+        c.id as course_id, c.course_name, c.course_images, c.description, c.start_date, c.end_date, c.price, c.seats_count,
+        t.id as teacher_id, t.name as teacher_name, t.email as teacher_email
+      FROM course_bookings cb
+      JOIN users s ON cb.student_id = s.id
+      JOIN courses c ON cb.course_id = c.id
+      JOIN users t ON cb.teacher_id = t.id
       ${whereClause}
-      ORDER BY created_at DESC
+      ORDER BY cb.created_at DESC
       LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
     `;
 
     params.push(limit, offset);
     const result = await pool.query(query, params);
 
-    const bookings = result.rows.map(row => this.mapDatabaseBookingToBooking(row));
+    const bookings = result.rows.map(row => this.mapDatabaseBookingWithDetails(row));
 
     return { bookings, total };
   }
@@ -509,7 +517,7 @@ export class CourseBookingModel {
 
       // First, let's check if the booking exists and get basic info
       const checkQuery = `
-        SELECT id, status, student_id, course_id, cancelled_by, cancelled_at, cancellation_reason
+        SELECT id, status, student_id, course_id, teacher_id, cancelled_by, cancelled_at, cancellation_reason
         FROM course_bookings
         WHERE id = $1 AND is_deleted = false
       `;
@@ -567,11 +575,8 @@ export class CourseBookingModel {
         // Instead of throwing error, we'll reactivate with a note
       }
 
-      // التحقق من السعة قبل إعادة التفعيل
-      const capacityCheck = await TeacherSubscriptionModel.canAddStudent(booking.teacher_id);
-      if (!capacityCheck.canAdd) {
-        throw new Error(capacityCheck.message || 'لا يمكن إعادة تفعيل الحجز - الباقة ممتلئة');
-      }
+      // تمت إزالة التحقق من السعة عند إعادة التفعيل
+      // سيتم التحقق من السعة فقط عند موافقة المعلم على الحجز (updateStatus)
 
       // Reactivate the booking
       const reactivateQuery = `

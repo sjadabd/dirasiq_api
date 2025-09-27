@@ -6,6 +6,7 @@ import {
   RecipientType,
 } from '@/models/notification.model';
 import { TokenModel } from '@/models/token.model';
+import { StudentGradeModel } from '@/models/student-grade.model';
 import { UserModel } from '@/models/user.model';
 import { UserType } from '@/types';
 import { Client } from 'onesignal-node';
@@ -56,6 +57,11 @@ export class NotificationService {
       return false;
     }
 
+    // Log before sending
+    console.info(
+      `🚀 Sending notification to ${validPlayerIds.length} device(s): title="${options.title}"`
+    );
+
     const notification: any = {
       app_id: this.config.appId,
       include_player_ids: validPlayerIds,
@@ -70,6 +76,11 @@ export class NotificationService {
     if (options.imageUrl) notification.large_icon = options.imageUrl;
     if (options.collapseId) notification.collapse_id = options.collapseId;
     const response = await this.oneSignal.createNotification(notification);
+
+    // Log OneSignal response
+    console.info(
+      `📬 OneSignal response: status=${response.statusCode}, body=${typeof response.body === 'string' ? response.body : JSON.stringify(response.body)}`
+    );
 
     if (response.statusCode === 200) {
       return true;
@@ -112,12 +123,18 @@ export class NotificationService {
         allPlayerIds.push(...(playerIds || []));
       }
 
-      if (allPlayerIds.length === 0) {
+      const uniquePlayerIds = Array.from(new Set(allPlayerIds));
+
+      console.info(
+        `🎯 Targeting specific users: users=${userIds.length}, resolvedDevices=${uniquePlayerIds.length}`
+      );
+
+      if (uniquePlayerIds.length === 0) {
         console.warn('⚠️ No valid player IDs found for users:', userIds);
         return false;
       }
 
-      return await this.sendToPlayers(allPlayerIds, options);
+      return await this.sendToPlayers(uniquePlayerIds, options);
     } catch (error) {
       console.error('❌ Error sending to specific users:', error);
       return false;
@@ -184,17 +201,40 @@ export class NotificationService {
 
       switch (notificationData.recipientType) {
         case RecipientType.ALL:
+          console.info('📣 createAndSendNotification: RecipientType=ALL');
           success = await this.sendToAll(sendOptions);
           break;
         case RecipientType.TEACHERS:
+          console.info('👩‍🏫 createAndSendNotification: RecipientType=TEACHERS');
           success = await this.sendToUserTypes([UserType.TEACHER], sendOptions);
           break;
         case RecipientType.STUDENTS:
-          success = await this.sendToUserTypes([UserType.STUDENT], sendOptions);
+          // 👇 تحقق إذا فيه gradeId + studyYear
+          if (notificationData.data?.['gradeId'] && notificationData.data?.['studyYear']) {
+            console.info(
+              `🎓 createAndSendNotification: RecipientType=STUDENTS with filter gradeId=${notificationData.data['gradeId']} studyYear=${notificationData.data['studyYear']}`
+            );
+            const studentGrades = await StudentGradeModel.findByGradeAndStudyYear(
+              String(notificationData.data['gradeId']),
+              notificationData.data['studyYear'] as any
+            );
+            const studentIds = studentGrades.map((sg) => sg.studentId);
+            console.info(`👥 Filtered students count: ${studentIds.length}`);
+            if (studentIds.length > 0) {
+              success = await this.sendToSpecificUsers(studentIds, sendOptions);
+            }
+          } else {
+            // إذا ما في فلترة → كل الطلاب
+            console.info('🎓 createAndSendNotification: RecipientType=STUDENTS (no filter)');
+            success = await this.sendToUserTypes([UserType.STUDENT], sendOptions);
+          }
           break;
         case RecipientType.SPECIFIC_TEACHERS:
         case RecipientType.SPECIFIC_STUDENTS:
           if (notificationData.recipientIds?.length) {
+            console.info(
+              `📌 createAndSendNotification: RecipientType=SPECIFIC, recipients=${notificationData.recipientIds.length}`
+            );
             success = await this.sendToSpecificUsers(notificationData.recipientIds, sendOptions);
           }
           break;
@@ -204,6 +244,10 @@ export class NotificationService {
         notification.id,
         success ? NotificationStatus.SENT : NotificationStatus.FAILED,
         success ? { sentAt: new Date() } : {}
+      );
+
+      console.info(
+        `✅ Notification ${success ? 'SENT' : 'FAILED'}: id=${notification.id}, title="${notificationData.title}"`
       );
 
       return notification;

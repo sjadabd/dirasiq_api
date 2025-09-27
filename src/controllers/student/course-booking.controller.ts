@@ -1,5 +1,5 @@
 import { CourseBookingService } from '@/services/teacher/course-booking.service';
-import { CreateCourseBookingRequest } from '@/types';
+import { CreateCourseBookingRequest, CourseBookingWithDetails } from '@/types';
 import { Request, Response } from 'express';
 
 export class StudentCourseBookingController {
@@ -92,37 +92,27 @@ export class StudentCourseBookingController {
 
       const result = await CourseBookingService.getStudentBookings(studentId, studyYear, page, limit, status);
 
-      // Enhance response with reactivation information
-      const enhancedBookings = result.bookings.map(booking => {
-        const enhancedBooking: any = { ...booking };
+      // Return only the requested fields
+      const enhancedBookings = (result.bookings as CourseBookingWithDetails[]).map((booking) => ({
+        id: booking.id,
+        studyYear: booking.studyYear,
+        status: booking.status,
+        bookingDate: booking.bookingDate,
+        approvedAt: booking.approvedAt,
+        rejectedAt: booking.rejectedAt,
+        cancelledAt: booking.cancelledAt,
+        rejectionReason: booking.rejectionReason,
+        cancellationReason: booking.cancellationReason,
+        studentMessage: booking.studentMessage,
+        teacherResponse: booking.teacherResponse,
+        reactivatedAt: booking.reactivatedAt,
+        student_name: booking.student?.name,
+        courseName: booking.course?.courseName,
+        courseImages: booking.course?.courseImages,
+        teacher_name: booking.teacher?.name,
+        price: booking.course?.price
+      }));
 
-        // Add reactivation info for cancelled bookings
-        if (booking.status === 'cancelled') {
-          enhancedBooking.canReactivate = booking.cancelledBy === 'student';
-          enhancedBooking.cancelledBy = booking.cancelledBy;
-          enhancedBooking.cancellationReason = booking.cancellationReason;
-          enhancedBooking.cancelledAt = booking.cancelledAt;
-
-          if (enhancedBooking.canReactivate) {
-            // Check if course is still available for reactivation
-            enhancedBooking.reactivationMessage = 'يمكن إعادة تفعيل الحجز';
-            enhancedBooking.reactivationEndpoint = `/api/student/bookings/${booking.id}/reactivate`;
-            enhancedBooking.reactivationNote = 'ملاحظة إعادة التفعيل';
-            enhancedBooking.reactivationSafe = 'إعادة التفعيل آمنة';
-          } else {
-            enhancedBooking.reactivationMessage = 'لا يمكن إعادة تفعيل الحجز - المعلم ألغى الدورة';
-          }
-        }
-
-        // Add info for reactivated bookings
-        if (booking.status === 'pending' && booking.reactivatedAt) {
-          enhancedBooking.isReactivated = true;
-          enhancedBooking.reactivatedAt = booking.reactivatedAt;
-          enhancedBooking.reactivationNote = 'تم إعادة تفعيل الحجز';
-        }
-
-        return enhancedBooking;
-      });
 
       res.status(200).json({
         success: true,
@@ -167,8 +157,8 @@ export class StudentCourseBookingController {
         });
         return;
       }
-
-      const booking = await CourseBookingService.getBookingById(id);
+      // Get booking with details (course and teacher info)
+      const booking = await CourseBookingService.getBookingByIdWithDetails(id);
 
       if (!booking) {
         res.status(404).json({
@@ -346,6 +336,30 @@ export class StudentCourseBookingController {
           success: false,
           message: 'الدورة غير موجودة',
           errors: ['الدورة غير موجودة']
+        });
+      } else if (error.message === 'لا يوجد اشتراك فعال للمعلم') {
+        // لا يوجد اشتراك فعّال → استجابة واضحة للمستخدم
+        res.status(400).json({
+          success: false,
+          message: 'لا يوجد اشتراك فعال للمعلم',
+          errors: ['لا يوجد اشتراك فعال للمعلم'],
+          suggestion: 'يرجى انتظار تفعيل اشتراك المعلم أو التواصل معه لتفعيل باقته'
+        });
+      } else if (error.message === 'انتهت صلاحية الاشتراك') {
+        // الاشتراك منتهي الصلاحية
+        res.status(400).json({
+          success: false,
+          message: 'انتهت صلاحية اشتراك المعلم',
+          errors: ['انتهت صلاحية الاشتراك'],
+          suggestion: 'يرجى انتظار تجديد اشتراك المعلم'
+        });
+      } else if (error.message === 'الباقة ممتلئة. لا يمكنك قبول طلاب إضافيين') {
+        // السعة ممتلئة
+        res.status(400).json({
+          success: false,
+          message: 'لا يمكن إعادة التفعيل لأن باقة المعلم ممتلئة',
+          errors: ['الباقة ممتلئة. لا يمكنك قبول طلاب إضافيين'],
+          suggestion: 'يرجى انتظار توفر مقعد أو التواصل مع المعلم لترقية الباقة'
         });
       } else if (error.message === 'Course has already ended') {
         res.status(400).json({
