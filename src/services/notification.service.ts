@@ -5,8 +5,8 @@ import {
   NotificationType,
   RecipientType,
 } from '@/models/notification.model';
-import { TokenModel } from '@/models/token.model';
 import { StudentGradeModel } from '@/models/student-grade.model';
+import { TokenModel } from '@/models/token.model';
 import { UserModel } from '@/models/user.model';
 import { UserType } from '@/types';
 import { Client } from 'onesignal-node';

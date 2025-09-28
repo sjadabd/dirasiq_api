@@ -298,15 +298,18 @@ export class NotificationModel {
     userId: string,
     page: number = 1,
     limit: number = 10
-  ): Promise<{ notifications: Notification[]; total: number; totalPages: number }> {
+  ): Promise<{ notifications: any[]; total: number; totalPages: number }> {
     const offset = (page - 1) * limit;
 
-    // Get notifications where user is in recipient_ids or recipient_type includes their user type
     const query = `
-      SELECT 
+      SELECT
         n.*,
         u.user_type,
-        un.read_at as user_read_at
+        un.read_at AS user_read_at,
+        CASE
+          WHEN un.read_at IS NOT NULL THEN true
+          ELSE false
+        END AS is_read
       FROM notifications n
       LEFT JOIN users u ON u.id = $1
       LEFT JOIN user_notifications un ON un.notification_id = n.id AND un.user_id = $1
@@ -321,7 +324,7 @@ export class NotificationModel {
           SELECT jsonb_array_elements_text(n.recipient_ids::jsonb)::uuid
         ))
       )
-      AND n.status IN ('sent', 'delivered')
+      AND n.status IN ('sent', 'delivered', 'read')
       ORDER BY n.created_at DESC
       LIMIT $2 OFFSET $3
     `;
@@ -341,36 +344,61 @@ export class NotificationModel {
           SELECT jsonb_array_elements_text(n.recipient_ids::jsonb)::uuid
         ))
       )
-      AND n.status IN ('sent', 'delivered')
+      AND n.status IN ('sent', 'delivered', 'read')
     `;
 
     const countResult = await pool.query(countQuery, [userId]);
     const total = parseInt(countResult.rows[0].count);
 
     const dataResult = await pool.query(query, [userId, limit, offset]);
-    const notifications = dataResult.rows.map((row: any) =>
-      this.mapDatabaseNotificationToNotification(row)
-    );
+
+    // رجع الإشعارات مع فلاغ is_read
+    const notifications = dataResult.rows.map((row: any) => ({
+      ...row,
+      is_read: row.is_read,
+    }));
 
     return {
       notifications,
       total,
-      totalPages: Math.ceil(total / limit)
+      totalPages: Math.ceil(total / limit),
     };
   }
 
+
   // Mark notification as read for a user
   static async markAsRead(notificationId: string, userId: string): Promise<boolean> {
-    // Upsert into user_notifications to track per-user read status
-    const query = `
+    const checkQuery = `SELECT id, status, read_at FROM notifications WHERE id = $1`;
+    const checkResult = await pool.query(checkQuery, [notificationId]);
+    if (checkResult.rowCount === 0) {
+      return false;
+    }
+
+    const now = new Date();
+
+    // Upsert في جدول user_notifications
+    const queryUser = `
       INSERT INTO user_notifications (user_id, notification_id, read_at)
       VALUES ($1, $2, $3)
       ON CONFLICT (user_id, notification_id)
-      DO UPDATE SET read_at = EXCLUDED.read_at
+      DO UPDATE SET read_at = CASE
+        WHEN user_notifications.read_at IS NULL THEN EXCLUDED.read_at
+        ELSE user_notifications.read_at
+      END
     `;
+    await pool.query(queryUser, [userId, notificationId, now]);
 
-    const result = await pool.query(query, [userId, notificationId, new Date()]);
-    return (result.rowCount || 0) > 0;
+    // تحديث notifications.status + read_at فقط أول مرة
+    const queryNotif = `
+      UPDATE notifications
+      SET status = 'read',
+          read_at = COALESCE(read_at, $2),
+          updated_at = NOW()
+      WHERE id = $1
+    `;
+    await pool.query(queryNotif, [notificationId, now]);
+
+    return true;
   }
 
   // Delete notification
