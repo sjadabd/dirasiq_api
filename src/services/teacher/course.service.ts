@@ -81,6 +81,33 @@ export class CourseService {
         };
       }
 
+      // ✅ تحقق من بيانات الحجز (العربون)
+      const hasReservation = data.has_reservation === true;
+      const reservationAmount = data.reservation_amount ?? null;
+      if (hasReservation) {
+        if (reservationAmount === null || reservationAmount === undefined) {
+          return {
+            success: false,
+            message: 'يجب تحديد مبلغ العربون عند تفعيل خاصية الحجز',
+            errors: ['مطلوب مبلغ العربون']
+          };
+        }
+        if (reservationAmount <= 0) {
+          return {
+            success: false,
+            message: 'مبلغ العربون يجب أن يكون أكبر من صفر',
+            errors: ['مبلغ العربون غير صحيح']
+          };
+        }
+        if (reservationAmount > data.price) {
+          return {
+            success: false,
+            message: 'مبلغ العربون لا يمكن أن يتجاوز سعر الكورس',
+            errors: ['مبلغ العربون أكبر من السعر']
+          };
+        }
+      }
+
       // ✅ تحقق من المقاعد
       if (data.seats_count <= 0) {
         return {
@@ -121,7 +148,12 @@ export class CourseService {
       }
 
       // ✅ إنشاء الكورس
-      const courseData = { ...data, course_images: processedImages };
+      const courseData = {
+        ...data,
+        course_images: processedImages,
+        has_reservation: hasReservation,
+        reservation_amount: hasReservation ? reservationAmount : null
+      };
       const course = await CourseModel.create(teacherId, courseData);
 
       // ⬇️ إرسال إشعار للطلاب بنفس الصف والسنة مع كل تفاصيل الدورة
@@ -157,6 +189,8 @@ export class CourseService {
               end_date: course.end_date,
               price: course.price,
               seats_count: course.seats_count,
+              has_reservation: course.has_reservation,
+              reservation_amount: course.reservation_amount,
               teacher: {
                 id: teacherId,
                 name: teacher.name
@@ -240,7 +274,19 @@ export class CourseService {
       return {
         success: true,
         message: 'تمت العملية بنجاح',
-        data: { course }
+        data: {
+          course: {
+            ...course,
+            grade: {
+              id: course.grade_id,
+              name: (course as any).grade_name
+            },
+            subject: {
+              id: course.subject_id,
+              name: (course as any).subject_name
+            }
+          }
+        }
       };
     } catch (error) {
       console.error('Error getting course:', error);
@@ -366,6 +412,55 @@ export class CourseService {
         };
       }
 
+      // Validate reservation fields on update
+      // Determine effective price to validate against
+      const effectivePrice = data.price !== undefined ? data.price : existingCourse.price;
+      if (data.has_reservation !== undefined) {
+        if (data.has_reservation === true) {
+          const resAmount = data.reservation_amount !== undefined ? data.reservation_amount : existingCourse.reservation_amount;
+          if (resAmount === null || resAmount === undefined) {
+            return {
+              success: false,
+              message: 'يجب تحديد مبلغ العربون عند تفعيل خاصية الحجز',
+              errors: ['مطلوب مبلغ العربون']
+            };
+          }
+          if (resAmount <= 0) {
+            return {
+              success: false,
+              message: 'مبلغ العربون يجب أن يكون أكبر من صفر',
+              errors: ['مبلغ العربون غير صحيح']
+            };
+          }
+          if (resAmount > effectivePrice) {
+            return {
+              success: false,
+              message: 'مبلغ العربون لا يمكن أن يتجاوز سعر الكورس',
+              errors: ['مبلغ العربون أكبر من السعر']
+            };
+          }
+        }
+      }
+
+      if (data.reservation_amount !== undefined) {
+        if (data.reservation_amount !== null) {
+          if (data.reservation_amount <= 0) {
+            return {
+              success: false,
+              message: 'مبلغ العربون يجب أن يكون أكبر من صفر',
+              errors: ['مبلغ العربون غير صحيح']
+            };
+          }
+          if (data.reservation_amount > effectivePrice) {
+            return {
+              success: false,
+              message: 'مبلغ العربون لا يمكن أن يتجاوز سعر الكورس',
+              errors: ['مبلغ العربون أكبر من السعر']
+            };
+          }
+        }
+      }
+
       // Validate seats count if provided
       if (data.seats_count !== undefined && data.seats_count <= 0) {
         return {
@@ -413,7 +508,12 @@ export class CourseService {
       }
 
       // Update course with processed images
-      const updateData = { ...data, course_images: processedImages };
+      const updateData = {
+        ...data,
+        course_images: processedImages,
+        // If has_reservation explicitly set to false, ensure reservation_amount becomes null
+        ...(data.has_reservation === false ? { reservation_amount: null } : {})
+      } as UpdateCourseRequest;
       const course = await CourseModel.update(id, teacherId, updateData);
 
       if (!course) {

@@ -15,37 +15,32 @@ CREATE TABLE IF NOT EXISTS courses (
     end_date DATE NOT NULL,
     price DECIMAL(10,2) NOT NULL CHECK (price >= 0),
     seats_count INTEGER NOT NULL CHECK (seats_count > 0),
+
+    -- 🆕 Reservation fields
+    has_reservation BOOLEAN NOT NULL DEFAULT false,
+    reservation_amount DECIMAL(10,2),
+
     is_deleted BOOLEAN DEFAULT false,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- Create index on teacher_id for faster lookups
+-- Create indexes for performance
 CREATE INDEX IF NOT EXISTS idx_courses_teacher_id ON courses(teacher_id);
-
--- Create index on grade_id for faster lookups
 CREATE INDEX IF NOT EXISTS idx_courses_grade_id ON courses(grade_id);
-
--- Create index on subject_id for faster lookups
 CREATE INDEX IF NOT EXISTS idx_courses_subject_id ON courses(subject_id);
-
--- Create index on study_year for faster filtering
 CREATE INDEX IF NOT EXISTS idx_courses_study_year ON courses(study_year);
-
--- Create index on course_name for faster searches
 CREATE INDEX IF NOT EXISTS idx_courses_course_name ON courses(course_name);
-
--- Create index on is_deleted for soft delete filtering
 CREATE INDEX IF NOT EXISTS idx_courses_is_deleted ON courses(is_deleted);
 
--- Create trigger to update updated_at timestamp
+-- Trigger to auto-update updated_at
 DROP TRIGGER IF EXISTS update_courses_updated_at ON courses;
 CREATE TRIGGER update_courses_updated_at
     BEFORE UPDATE ON courses
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
 
--- Add constraint to ensure end_date is after start_date
+-- Constraint: end_date must be after start_date
 DO $$
 BEGIN
     IF NOT EXISTS (
@@ -56,8 +51,7 @@ BEGIN
     END IF;
 END $$;
 
--- Add unique constraint to prevent duplicate courses for the same teacher with same name, year, grade, and subject
--- This allows teachers to create courses with same name for different grades/subjects
+-- Constraint: unique courses per teacher/year/name/grade/subject
 DO $$
 BEGIN
     IF NOT EXISTS (
@@ -69,6 +63,20 @@ BEGIN
     END IF;
 END $$;
 
--- Add comment explaining the new constraint
 COMMENT ON CONSTRAINT unique_course_per_teacher_year_grade_subject ON courses IS
 'Ensures unique courses per teacher, year, name, grade, and subject. Allows same course name for different grades/subjects.';
+
+-- Constraint: reservation rules
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'chk_courses_reservation_amount'
+    ) THEN
+        ALTER TABLE courses ADD CONSTRAINT chk_courses_reservation_amount
+        CHECK (
+            (has_reservation = false AND reservation_amount IS NULL)
+            OR
+            (has_reservation = true AND reservation_amount IS NOT NULL AND reservation_amount > 0 AND reservation_amount <= price)
+        );
+    END IF;
+END $$;

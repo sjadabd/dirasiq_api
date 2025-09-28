@@ -1,6 +1,8 @@
 import { CourseModel } from '@/models/course.model';
 import pool from '@/config/database';
 import { StudentGradeModel } from '@/models/student-grade.model';
+import { GradeModel } from '@/models/grade.model';
+import { SubjectModel } from '@/models/subject.model';
 import { UserModel } from '@/models/user.model';
 import { ApiResponse, StudentGrade } from '@/types';
 
@@ -232,10 +234,18 @@ export class StudentService {
         };
       }
 
+      // Fetch grade and subject details
+      const [grade, subject] = await Promise.all([
+        GradeModel.findById(course.grade_id),
+        SubjectModel.findById(course.subject_id)
+      ]);
+
       const courseWithDetails = {
         ...course,
         bookingStatus: latestBooking?.status || null,
         bookingId: latestBooking?.id || null,
+        grade: grade ? { id: grade.id, name: grade.name } : { id: course.grade_id, name: undefined },
+        subject: subject ? { id: subject.id, name: subject.name } : { id: course.subject_id, name: undefined },
         teacher: {
           id: teacher.id,
           name: teacher.name,

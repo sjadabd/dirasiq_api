@@ -7,9 +7,10 @@ export class CourseModel {
     const query = `
       INSERT INTO courses (
         teacher_id, study_year, grade_id, subject_id, course_name,
-        course_images, description, start_date, end_date, price, seats_count
+        course_images, description, start_date, end_date, price, seats_count,
+        has_reservation, reservation_amount
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
       RETURNING *
     `;
     const values = [
@@ -23,7 +24,9 @@ export class CourseModel {
       data.start_date,
       data.end_date,
       data.price,
-      data.seats_count
+      data.seats_count,
+      data.has_reservation ?? false,
+      data.reservation_amount ?? null
     ];
     const result = await pool.query(query, values);
     return result.rows[0];
@@ -187,6 +190,18 @@ export class CourseModel {
     if (data.seats_count !== undefined) {
       fields.push(`seats_count = $${paramIndex}`);
       values.push(data.seats_count);
+      paramIndex++;
+    }
+
+    if (data.has_reservation !== undefined) {
+      fields.push(`has_reservation = $${paramIndex}`);
+      values.push(data.has_reservation);
+      paramIndex++;
+    }
+
+    if (data.reservation_amount !== undefined) {
+      fields.push(`reservation_amount = $${paramIndex}`);
+      values.push(data.reservation_amount);
       paramIndex++;
     }
 

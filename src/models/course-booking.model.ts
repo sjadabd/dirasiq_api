@@ -75,6 +75,7 @@ export class CourseBookingModel {
         cb.*,
         s.id as student_id, s.name as student_name, s.email as student_email,
         c.id as course_id, c.course_name, c.course_images, c.description, c.start_date, c.end_date, c.price, c.seats_count,
+        c.has_reservation, c.reservation_amount,
         t.id as teacher_id, t.name as teacher_name, t.email as teacher_email
       FROM course_bookings cb
       JOIN users s ON cb.student_id = s.id
@@ -695,7 +696,9 @@ export class CourseBookingModel {
         startDate: row.start_date,
         endDate: row.end_date,
         price: row.price,
-        seatsCount: row.seats_count
+        seatsCount: row.seats_count,
+        hasReservation: row.has_reservation,
+        reservationAmount: row.reservation_amount
       },
       teacher: {
         id: row.teacher_id,

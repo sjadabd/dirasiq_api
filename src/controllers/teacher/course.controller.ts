@@ -17,7 +17,9 @@ export class CourseController {
         body('price').isFloat({ min: 0 }).withMessage('السعر غير صحيح').run(req),
         body('seats_count').isInt({ min: 1 }).withMessage('عدد المقاعد غير صحيح').run(req),
         body('course_images').optional().isArray().withMessage('Course images must be an array').run(req),
-        body('description').optional().isString().withMessage('Description must be a string').run(req)
+        body('description').optional().isString().withMessage('Description must be a string').run(req),
+        body('has_reservation').optional().isBoolean().toBoolean().withMessage('has_reservation يجب أن يكون قيمة منطقية').run(req),
+        body('reservation_amount').optional({ nullable: true }).isFloat({ gt: 0 }).toFloat().withMessage('مبلغ العربون يجب أن يكون رقمًا أكبر من صفر').run(req)
       ]);
 
       const errors = validationResult(req);
@@ -198,7 +200,9 @@ export class CourseController {
         body('price').optional().isFloat({ min: 0 }).withMessage('السعر غير صحيح').run(req),
         body('seats_count').optional().isInt({ min: 1 }).withMessage('عدد المقاعد غير صحيح').run(req),
         body('course_images').optional().isArray().withMessage('Course images must be an array').run(req),
-        body('description').optional().isString().withMessage('Description must be a string').run(req)
+        body('description').optional().isString().withMessage('Description must be a string').run(req),
+        body('has_reservation').optional().isBoolean().toBoolean().withMessage('has_reservation يجب أن يكون قيمة منطقية').run(req),
+        body('reservation_amount').optional({ nullable: true }).isFloat({ gt: 0 }).toFloat().withMessage('مبلغ العربون يجب أن يكون رقمًا أكبر من صفر').run(req)
       ]);
 
       const errors = validationResult(req);

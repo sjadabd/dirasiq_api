@@ -393,6 +393,8 @@ export interface Course {
   end_date: string;
   price: number;
   seats_count: number;
+  has_reservation: boolean;
+  reservation_amount?: number | null;
   is_deleted: boolean;
   created_at: Date;
   updated_at: Date;
@@ -409,6 +411,8 @@ export interface CreateCourseRequest {
   end_date: string;
   price: number;
   seats_count: number;
+  has_reservation?: boolean;
+  reservation_amount?: number | null; // required if has_reservation is true
 }
 
 export interface UpdateCourseRequest {
@@ -422,6 +426,8 @@ export interface UpdateCourseRequest {
   end_date?: string;
   price?: number;
   seats_count?: number;
+  has_reservation?: boolean;
+  reservation_amount?: number | null;
 }
 
 export interface TeacherSubscription {
@@ -506,6 +512,8 @@ export interface CourseBookingWithDetails extends CourseBooking {
     endDate: Date;
     price: number;
     seatsCount: number;
+    hasReservation?: boolean;
+    reservationAmount?: number | null;
   };
   teacher: {
     id: string;
