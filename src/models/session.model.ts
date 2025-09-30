@@ -104,24 +104,111 @@ export class SessionModel {
     return r.rows.map((row: any) => String(row.student_id));
   }
 
-  static async getTeacherSessions(teacherId: string, page = 1, limit = 20): Promise<{ sessions: any[]; total: number; }>{
+  static async listAttendeesDetailed(sessionId: string): Promise<Array<{ student_id: string; student_name: string; grade_id: string | null; grade_name: string | null; study_year: string | null }>> {
+    const q = `
+      SELECT
+        sa.student_id::text,
+        u.name AS student_name,
+        sg.grade_id::text,
+        g.name AS grade_name,
+        sg.study_year::text
+      FROM session_attendees sa
+      JOIN users u
+        ON u.id = sa.student_id
+       AND u.user_type = 'student'
+       AND u.deleted_at IS NULL
+      LEFT JOIN LATERAL (
+        SELECT sg.grade_id, sg.study_year, sg.updated_at
+        FROM student_grades sg
+        WHERE sg.student_id = sa.student_id
+          AND sg.is_active = true
+          AND sg.deleted_at IS NULL
+        ORDER BY sg.updated_at DESC
+        LIMIT 1
+      ) sg ON true
+      LEFT JOIN grades g ON g.id = sg.grade_id
+      WHERE sa.session_id = $1
+      ORDER BY u.name ASC
+    `;
+    const r = await pool.query(q, [sessionId]);
+    return r.rows.map((row: any) => ({
+      student_id: String(row.student_id),
+      student_name: String(row.student_name),
+      grade_id: row.grade_id ? String(row.grade_id) : null,
+      grade_name: row.grade_name ? String(row.grade_name) : null,
+      study_year: row.study_year ? String(row.study_year) : null,
+    }));
+  }
+
+  static async getTeacherSessions(
+    teacherId: string,
+    page = 1,
+    limit = 20,
+    filters?: { weekday?: number | null; courseId?: string | null }
+  ): Promise<{ sessions: any[]; total: number; }>{
     const offset = (page - 1) * limit;
-    const countQ = `SELECT COUNT(*) FROM sessions WHERE teacher_id = $1 AND is_deleted = false`;
+
+    // Build dynamic filters for count query
+    const countConds: string[] = ['teacher_id = $1', 'is_deleted = false'];
+    const countParams: any[] = [teacherId];
+    let pIndex = 2;
+    if (filters && filters.weekday !== undefined && filters.weekday !== null) {
+      countConds.push(`weekday = $${pIndex}`);
+      countParams.push(filters.weekday);
+      pIndex++;
+    }
+    if (filters && filters.courseId) {
+      countConds.push(`course_id = $${pIndex}`);
+      countParams.push(filters.courseId);
+      pIndex++;
+    }
+    const countQ = `SELECT COUNT(*) FROM sessions WHERE ${countConds.join(' AND ')}`;
+
+    // Build dynamic filters for list query (with alias s.)
+    const listConds: string[] = ['s.teacher_id = $1', 's.is_deleted = false'];
+    const listParams: any[] = [teacherId];
+    let lIndex = 2;
+    if (filters && filters.weekday !== undefined && filters.weekday !== null) {
+      listConds.push(`s.weekday = $${lIndex}`);
+      listParams.push(filters.weekday);
+      lIndex++;
+    }
+    if (filters && filters.courseId) {
+      listConds.push(`s.course_id = $${lIndex}`);
+      listParams.push(filters.courseId);
+      lIndex++;
+    }
+
     const listQ = `
-      SELECT s.*, c.course_name
+      SELECT 
+        s.*,
+        c.course_name,
+        c.study_year,
+        c.grade_id,
+        c.subject_id,
+        g.name AS grade_name,
+        sub.name AS subject_name,
+        (
+          SELECT COUNT(*)::int
+          FROM session_attendees sa
+          WHERE sa.session_id = s.id
+        ) AS attendees_count
       FROM sessions s
       JOIN courses c ON c.id = s.course_id
-      WHERE s.teacher_id = $1 AND s.is_deleted = false
+      LEFT JOIN grades g ON g.id = c.grade_id
+      LEFT JOIN subjects sub ON sub.id = c.subject_id
+      WHERE ${listConds.join(' AND ')}
       ORDER BY s.weekday, s.start_time
-      LIMIT $2 OFFSET $3
+      LIMIT $${lIndex} OFFSET $${lIndex + 1}
     `;
-    const total = parseInt((await pool.query(countQ, [teacherId])).rows[0].count);
-    const sessions = (await pool.query(listQ, [teacherId, limit, offset])).rows;
+
+    const total = parseInt((await pool.query(countQ, countParams)).rows[0].count);
+    const sessions = (await pool.query(listQ, [...listParams, limit, offset])).rows;
     return { sessions, total };
   }
 
   static async getStudentWeeklySchedule(studentId: string, weekStartISO: string): Promise<any[]> {
-    // Fetch sessions where the student is an attendee OR has a confirmed booking in the course
+    // Strict: Fetch sessions only where the student is an explicit attendee
     const query = `
       SELECT s.*, c.course_name, u.name as teacher_name
       FROM sessions s
@@ -129,18 +216,9 @@ export class SessionModel {
       JOIN users u ON u.id = s.teacher_id
       WHERE s.is_deleted = false
         AND s.state IN ('draft','proposed','conflict','confirmed','negotiating')
-        AND (
-          EXISTS (
-            SELECT 1 FROM session_attendees sa
-            WHERE sa.session_id = s.id AND sa.student_id = $1
-          )
-          OR EXISTS (
-            SELECT 1 FROM course_bookings cb
-            WHERE cb.course_id = s.course_id
-              AND cb.student_id = $1
-              AND cb.status = 'confirmed'
-              AND cb.is_deleted = false
-          )
+        AND EXISTS (
+          SELECT 1 FROM session_attendees sa
+          WHERE sa.session_id = s.id AND sa.student_id = $1
         )
     `;
 

@@ -9,4 +9,7 @@ router.use(authenticateToken, requireStudent);
 // POST /api/student/attendance/check-in
 router.post('/check-in', StudentAttendanceController.checkIn);
 
+// GET /api/student/attendance/by-course/:courseId
+router.get('/by-course/:courseId', StudentAttendanceController.getMyAttendanceByCourse);
+
 export default router;

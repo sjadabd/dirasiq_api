@@ -4,6 +4,19 @@ import { NotificationService } from '@/services/notification.service';
 import { Request, Response } from 'express';
 
 export class StudentAttendanceController {
+  // Helpers: format time to 12-hour with Arabic AM/PM
+  private static to12hFromISO(iso?: string | null): string | null {
+    if (!iso) return null;
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return null;
+    let h = d.getHours();
+    const m = d.getMinutes();
+    const am = h < 12;
+    h = h % 12;
+    if (h === 0) h = 12;
+    const mm = m.toString().padStart(2, '0');
+    return `${h}:${mm} ${am ? 'صباحاً' : 'مساءً'}`;
+  }
   // POST /api/student/attendance/check-in
   // body: { teacherId: string }
   static async checkIn(req: Request, res: Response): Promise<void> {
@@ -70,9 +83,10 @@ export class StudentAttendanceController {
         };
 
         // Notify student that check-in succeeded
+        const t12 = StudentAttendanceController.to12hFromISO(record.checkin_at) || '';
         void notifService.createAndSendNotification({
           title: 'تأكيد الحضور',
-          message: 'تم تسجيل حضورك بنجاح للدرس الحالي',
+          message: `تم تسجيل حضورك بنجاح للدرس الحالي في الساعة ${t12}`.trim(),
           type: NotificationType.COURSE_UPDATE,
           priority: NotificationPriority.HIGH,
           recipientType: RecipientType.SPECIFIC_STUDENTS,
@@ -81,10 +95,10 @@ export class StudentAttendanceController {
           createdBy: String(me.id),
         });
 
-        // Notify teacher that a student has checked in (include student name if available)
+        // Notify teacher that a student has checked in (include student name and time)
         void notifService.createAndSendNotification({
           title: 'حضور طالب',
-          message: `تم تسجيل حضور الطالب ${me.name ? String(me.name) : ''} إلى الدرس الحالي`.trim(),
+          message: `تم تسجيل حضور الطالب ${me.name ? String(me.name) : ''} إلى الدرس الحالي في الساعة ${t12}`.trim(),
           type: NotificationType.COURSE_UPDATE,
           priority: NotificationPriority.HIGH,
           recipientType: RecipientType.SPECIFIC_TEACHERS,
@@ -101,6 +115,35 @@ export class StudentAttendanceController {
 
       console.error('Attendance check-in error:', error);
       res.status(500).json({ success: false, message: 'خطأ داخلي في الخادم', errors: ['تعذر تسجيل الحضور'] });
+    }
+  }
+
+  // GET /api/student/attendance/by-course/:courseId
+  // GET /api/student/attendance/by-course/:courseId
+  static async getMyAttendanceByCourse(req: Request<{ courseId: string }>, res: Response): Promise<void> {
+    try {
+      const me = req.user;
+      if (!me) {
+        res.status(401).json({ success: false, message: 'غير مصادق', errors: ['المستخدم غير مصادق عليه'] });
+        return;
+      }
+
+      const courseId = req.params['courseId'];
+      if (!courseId) {
+        res.status(400).json({ success: false, message: 'بيانات ناقصة', errors: ['courseId مطلوب'] });
+        return;
+      }
+
+      let data = await AttendanceModel.getStudentAttendanceByCourse(me.id, courseId);
+      // add 12h formatted check-in time for display
+      data = data.map((it: any) => ({
+        ...it,
+        checkin_at_12h: StudentAttendanceController.to12hFromISO(it.checkin_at),
+      }));
+      res.status(200).json({ success: true, message: 'تم جلب سجل الحضور', data });
+    } catch (error) {
+      console.error('Error getting attendance by course:', error);
+      res.status(500).json({ success: false, message: 'خطأ داخلي في الخادم', errors: ['حدث خطأ في الخادم'] });
     }
   }
 }

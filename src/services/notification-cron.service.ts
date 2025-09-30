@@ -2,12 +2,14 @@ import cron from 'node-cron';
 import { NotificationService } from './notification.service';
 import { CourseReminderService } from './course-reminder.service';
 import { SessionEndReminderService } from './session-end-reminder.service';
+import { SessionStartReminderService } from './session-start-reminder.service';
 
 export class NotificationCronService {
   private notificationService: NotificationService;
   private isRunning: boolean = false;
   private courseReminderService: CourseReminderService;
   private sessionEndReminderService: SessionEndReminderService;
+  private sessionStartReminderService: SessionStartReminderService;
 
   constructor() {
     const oneSignalConfig = {
@@ -18,6 +20,7 @@ export class NotificationCronService {
     this.notificationService = new NotificationService(oneSignalConfig);
     this.courseReminderService = new CourseReminderService();
     this.sessionEndReminderService = new SessionEndReminderService(this.notificationService);
+    this.sessionStartReminderService = new SessionStartReminderService(this.notificationService);
   }
 
   /**
@@ -32,6 +35,8 @@ export class NotificationCronService {
     cron.schedule('* * * * *', async () => {
       try {
         await this.notificationService.processPendingNotifications();
+        // Send 5-minute-before-start reminders for sessions starting soon
+        await this.sessionStartReminderService.sendFiveMinuteBeforeStartReminders();
         // Also send 3-minute-before-end reminders for sessions ending soon
         await this.sessionEndReminderService.sendThreeMinuteBeforeEndReminders();
       } catch (error) {

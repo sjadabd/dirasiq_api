@@ -16,14 +16,14 @@ export enum NotificationType {
   SUBSCRIPTION_EXPIRY = 'subscription_expiry',
   NEW_COURSE_AVAILABLE = 'new_course_available',
   COURSE_COMPLETION = 'course_completion',
-  FEEDBACK_REQUEST = 'feedback_request'
+  FEEDBACK_REQUEST = 'feedback_request',
 }
 
 export enum NotificationPriority {
   LOW = 'low',
   MEDIUM = 'medium',
   HIGH = 'high',
-  URGENT = 'urgent'
+  URGENT = 'urgent',
 }
 
 export enum NotificationStatus {
@@ -31,7 +31,7 @@ export enum NotificationStatus {
   SENT = 'sent',
   DELIVERED = 'delivered',
   READ = 'read',
-  FAILED = 'failed'
+  FAILED = 'failed',
 }
 
 export enum RecipientType {
@@ -40,7 +40,7 @@ export enum RecipientType {
   STUDENTS = 'students',
   SPECIFIC_TEACHERS = 'specific_teachers',
   SPECIFIC_STUDENTS = 'specific_students',
-  PARENTS = 'parents'
+  PARENTS = 'parents',
 }
 
 export interface Notification {
@@ -89,7 +89,9 @@ export interface NotificationFilters {
 
 export class NotificationModel {
   // Create a new notification
-  static async create(notificationData: CreateNotificationData): Promise<Notification> {
+  static async create(
+    notificationData: CreateNotificationData
+  ): Promise<Notification> {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
@@ -111,24 +113,102 @@ export class NotificationModel {
         notificationData.priority || NotificationPriority.MEDIUM,
         NotificationStatus.PENDING,
         notificationData.recipientType,
-        notificationData.recipientIds ? JSON.stringify(notificationData.recipientIds) : null,
+        notificationData.recipientIds
+          ? JSON.stringify(notificationData.recipientIds)
+          : null,
         notificationData.data ? JSON.stringify(notificationData.data) : null,
         notificationData.scheduledAt || new Date(),
         notificationData.createdBy,
         new Date(),
-        new Date()
+        new Date(),
       ];
 
       const result = await client.query(query, values);
       await client.query('COMMIT');
       return this.mapDatabaseNotificationToNotification(result.rows[0]);
-
     } catch (error) {
       await client.query('ROLLBACK');
       throw error;
     } finally {
       client.release();
     }
+
+    // Get notifications visible to a specific user with extra filters (search/type/course)
+  }
+  static async getUserNotificationsWithFilters(
+    userId: string,
+    options: {
+      page?: number;
+      limit?: number;
+      q?: string | null;
+      type?: NotificationType | null;
+      courseId?: string | null;
+    }
+  ): Promise<{ notifications: any[]; total: number; totalPages: number }> {
+    const page = options.page && options.page > 0 ? options.page : 1;
+    const limit = options.limit && options.limit > 0 ? options.limit : 10;
+    const offset = (page - 1) * limit;
+
+    // Base visibility where clause (same as getUserNotifications)
+    let where = `(
+      n.recipient_type = 'all' OR
+      (n.recipient_type = 'teachers' AND u.user_type = 'teacher') OR
+      (n.recipient_type = 'students' AND u.user_type = 'student') OR
+      (n.recipient_type = 'specific_teachers' AND u.user_type = 'teacher' AND $1 = ANY(SELECT jsonb_array_elements_text(n.recipient_ids::jsonb)::uuid)) OR
+      (n.recipient_type = 'specific_students' AND u.user_type = 'student' AND $1 = ANY(SELECT jsonb_array_elements_text(n.recipient_ids::jsonb)::uuid))
+    )
+    AND n.status IN ('sent', 'delivered', 'read')`;
+
+    const values: any[] = [userId];
+    let param = 2;
+
+    if (options.type) {
+      where += ` AND n.type = $${param}`;
+      values.push(options.type);
+      param++;
+    }
+    if (options.courseId) {
+      where += ` AND (n.data->>'courseId') = $${param}`;
+      values.push(String(options.courseId));
+      param++;
+    }
+    if (options.q && options.q.trim() !== '') {
+      where += ` AND (n.title ILIKE $${param} OR n.message ILIKE $${param})`;
+      values.push(`%${options.q.trim()}%`);
+      param++;
+    }
+
+    const countQuery = `
+      SELECT COUNT(*)
+      FROM notifications n
+      LEFT JOIN users u ON u.id = $1
+      WHERE ${where}
+    `;
+    const dataQuery = `
+      SELECT n.*, u.user_type, un.read_at AS user_read_at,
+        CASE WHEN un.read_at IS NOT NULL THEN true ELSE false END AS is_read
+      FROM notifications n
+      LEFT JOIN users u ON u.id = $1
+      LEFT JOIN user_notifications un ON un.notification_id = n.id AND un.user_id = $1
+      WHERE ${where}
+      ORDER BY n.created_at DESC
+      LIMIT $${param} OFFSET $${param + 1}
+    `;
+
+    const countRes = await pool.query(countQuery, values);
+    const total = parseInt(countRes.rows[0].count);
+    const dataRes = await pool.query(dataQuery, [...values, limit, offset]);
+
+    const notifications = dataRes.rows.map((row: any) => ({
+      ...row,
+      is_read: !!row.is_read,
+    }));
+
+    return {
+      notifications,
+      total,
+      totalPages: Math.ceil(total / limit),
+    };
   }
 
   // Get notification by ID
@@ -217,14 +297,14 @@ export class NotificationModel {
       return {
         ...notif,
         readAt: userReadAt || notif.readAt || undefined,
-        isRead: !!userReadAt
+        isRead: !!userReadAt,
       } as Notification;
     });
 
     return {
       notifications,
       total,
-      totalPages: Math.ceil(total / limit)
+      totalPages: Math.ceil(total / limit),
     };
   }
 
@@ -271,7 +351,6 @@ export class NotificationModel {
       }
 
       return this.mapDatabaseNotificationToNotification(result.rows[0]);
-
     } catch (error) {
       await client.query('ROLLBACK');
       throw error;
@@ -289,8 +368,13 @@ export class NotificationModel {
       ORDER BY priority DESC, created_at ASC
     `;
 
-    const result = await pool.query(query, [NotificationStatus.PENDING, new Date()]);
-    return result.rows.map((row: any) => this.mapDatabaseNotificationToNotification(row));
+    const result = await pool.query(query, [
+      NotificationStatus.PENDING,
+      new Date(),
+    ]);
+    return result.rows.map((row: any) =>
+      this.mapDatabaseNotificationToNotification(row)
+    );
   }
 
   // Get notifications for a specific user
@@ -365,9 +449,11 @@ export class NotificationModel {
     };
   }
 
-
   // Mark notification as read for a user
-  static async markAsRead(notificationId: string, userId: string): Promise<boolean> {
+  static async markAsRead(
+    notificationId: string,
+    userId: string
+  ): Promise<boolean> {
     const checkQuery = `SELECT id, status, read_at FROM notifications WHERE id = $1`;
     const checkResult = await pool.query(checkQuery, [notificationId]);
     if (checkResult.rowCount === 0) {
@@ -408,7 +494,6 @@ export class NotificationModel {
     return (result.rowCount || 0) > 0;
   }
 
-
   // Get notification statistics
   static async getStatistics(): Promise<{
     total: number;
@@ -435,12 +520,13 @@ export class NotificationModel {
       GROUP BY priority
     `;
 
-    const [totalResult, statusResult, typeResult, priorityResult] = await Promise.all([
-      pool.query(totalQuery),
-      pool.query(statusQuery),
-      pool.query(typeQuery),
-      pool.query(priorityQuery)
-    ]);
+    const [totalResult, statusResult, typeResult, priorityResult] =
+      await Promise.all([
+        pool.query(totalQuery),
+        pool.query(statusQuery),
+        pool.query(typeQuery),
+        pool.query(priorityQuery),
+      ]);
 
     const total = parseInt(totalResult.rows[0].count);
 
@@ -465,12 +551,14 @@ export class NotificationModel {
       pending: statusCounts.pending || 0,
       failed: statusCounts.failed || 0,
       byType: typeCounts,
-      byPriority: priorityCounts
+      byPriority: priorityCounts,
     };
   }
 
   // Map database notification to Notification interface
-  private static mapDatabaseNotificationToNotification(dbNotification: any): Notification {
+  private static mapDatabaseNotificationToNotification(
+    dbNotification: any
+  ): Notification {
     return {
       id: dbNotification.id,
       title: dbNotification.title,
@@ -486,7 +574,7 @@ export class NotificationModel {
       readAt: dbNotification.read_at,
       createdBy: dbNotification.created_by,
       createdAt: dbNotification.created_at,
-      updatedAt: dbNotification.updated_at
+      updatedAt: dbNotification.updated_at,
     };
   }
 }

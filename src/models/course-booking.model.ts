@@ -798,4 +798,41 @@ export class CourseBookingModel {
     const r = await pool.query(q, [courseId]);
     return r.rows.map((row: any) => String(row.student_id));
   }
+
+  // Get confirmed students with details (name, grade) for a course (teacher view)
+  static async getConfirmedStudentsDetailedByCourse(courseId: string): Promise<Array<{ student_id: string; student_name: string; grade_id: string | null; grade_name: string | null; study_year: string | null }>> {
+    const q = `
+      SELECT
+        cb.student_id::text,
+        u.name AS student_name,
+        sg.grade_id::text,
+        g.name AS grade_name,
+        sg.study_year::text
+      FROM course_bookings cb
+      JOIN users u
+        ON u.id = cb.student_id
+       AND u.user_type = 'student'
+       AND u.deleted_at IS NULL
+      LEFT JOIN LATERAL (
+        SELECT sg.grade_id, sg.study_year, sg.updated_at
+        FROM student_grades sg
+        WHERE sg.student_id = cb.student_id
+          AND sg.is_active = true
+          AND sg.deleted_at IS NULL
+        ORDER BY sg.updated_at DESC
+        LIMIT 1
+      ) sg ON true
+      LEFT JOIN grades g ON g.id = sg.grade_id
+      WHERE cb.course_id = $1 AND cb.status = 'confirmed' AND cb.is_deleted = false
+      ORDER BY u.name ASC
+    `;
+    const r = await pool.query(q, [courseId]);
+    return r.rows.map((row: any) => ({
+      student_id: String(row.student_id),
+      student_name: String(row.student_name),
+      grade_id: row.grade_id ? String(row.grade_id) : null,
+      grade_name: row.grade_name ? String(row.grade_name) : null,
+      study_year: row.study_year ? String(row.study_year) : null,
+    }));
+  }
 }

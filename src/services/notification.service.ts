@@ -181,16 +181,63 @@ export class NotificationService {
     createdBy: string;
   }): Promise<Notification | null> {
     try {
+      // Resolve sender metadata from createdBy
+      let senderName = 'النظام';
+      let senderType: 'system' | 'admin' | 'teacher' | 'student' | 'user' = 'system';
+      let senderId: string | null = null;
+      try {
+        const user = await UserModel.findById(String(notificationData.createdBy));
+        if (user) {
+          senderId = String(user.id);
+          const displayName = (user as any)?.name || '';
+          switch (user.userType) {
+            case UserType.SUPER_ADMIN:
+              senderType = 'admin';
+              senderName = displayName || 'الإدارة';
+              break;
+            case UserType.TEACHER:
+              senderType = 'teacher';
+              senderName = displayName || 'المعلم';
+              break;
+            case UserType.STUDENT:
+              senderType = 'student';
+              senderName = displayName || 'الطالب';
+              break;
+            default:
+              senderType = 'user';
+              senderName = displayName || 'مستخدم';
+          }
+        } else {
+          // Non-user creator → treat as system
+          senderType = 'system';
+          senderName = 'النظام';
+        }
+      } catch {
+        // On any lookup failure, fallback to system
+        senderType = 'system';
+        senderName = 'النظام';
+      }
+
+      const enrichedData = {
+        ...notificationData.data,
+        sender: {
+          id: senderId || String(notificationData.createdBy || ''),
+          type: senderType,
+          name: senderName,
+        },
+      };
+
       const notification = await NotificationModel.create({
         ...notificationData,
         priority: notificationData.priority as any,
+        data: enrichedData,
       });
 
       const sendOptions: SendNotificationOptions = {
         title: notificationData.title,
-        message: notificationData.message,
+        message: `من ${senderName}: ${notificationData.message}`,
         data: {
-          ...notificationData.data,
+          ...enrichedData,
           notificationId: notification.id,
           type: notificationData.type,
         },
