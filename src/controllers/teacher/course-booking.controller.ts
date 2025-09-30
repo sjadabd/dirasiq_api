@@ -17,6 +17,48 @@ export class TeacherCourseBookingController {
     this.notificationService = new NotificationService(oneSignalConfig);
   }
 
+  // Get remaining students capacity for current teacher
+  static async getRemainingStudents(req: Request, res: Response): Promise<void> {
+    try {
+      const teacherId = req.user?.id;
+      if (!teacherId) {
+        res.status(401).json({ error: 'Unauthorized' });
+        return;
+      }
+
+      const check = await TeacherSubscriptionModel.canAddStudent(teacherId);
+      const remaining = Math.max((check.maxStudents || 0) - (check.currentStudents || 0), 0);
+
+      if (!check.canAdd && check.maxStudents === 0) {
+        res.status(200).json({
+          success: true,
+          message: check.message || 'لا يوجد اشتراك فعال للمعلم',
+          data: {
+            currentStudents: check.currentStudents,
+            maxStudents: check.maxStudents,
+            remaining,
+            canAdd: false
+          }
+        });
+        return;
+      }
+
+      res.status(200).json({
+        success: true,
+        message: 'تم جلب سعة الاشتراك بنجاح',
+        data: {
+          currentStudents: check.currentStudents,
+          maxStudents: check.maxStudents,
+          remaining,
+          canAdd: check.canAdd
+        }
+      });
+    } catch (error) {
+      console.error('Error getting remaining students:', error);
+      res.status(500).json({ success: false, message: 'خطأ داخلي في الخادم' });
+    }
+  }
+
   // Get all bookings for the current teacher
   static async getMyBookings(req: Request, res: Response): Promise<void> {
     try {
@@ -174,7 +216,7 @@ export class TeacherCourseBookingController {
         return;
       }
 
-      const { teacherResponse } = req.body;
+      const { teacherResponse, reservationPaid } = req.body;
 
       // تحقق من أن الحجز في حالة موافقة أولية قبل التأكيد
       const currentBooking = await CourseBookingService.getBookingByIdWithDetails(id);
@@ -190,9 +232,10 @@ export class TeacherCourseBookingController {
         return;
       }
 
-      const data: UpdateCourseBookingRequest = {
+      const data: UpdateCourseBookingRequest & { reservationPaid?: boolean } = {
         status: BookingStatus.CONFIRMED,
         teacherResponse,
+        reservationPaid,
       };
 
       const booking = await CourseBookingService.updateBookingStatus(id, teacherId, data);
@@ -209,57 +252,6 @@ export class TeacherCourseBookingController {
     }
   }
 
-  // Approve a booking
-  static async approveBooking(req: Request, res: Response): Promise<void> {
-    try {
-      const teacherId = req.user?.id;
-      if (!teacherId) {
-        res.status(401).json({ error: 'Unauthorized' });
-        return;
-      }
-
-      const { id } = req.params;
-      if (!id) {
-        res.status(400).json({
-          success: false,
-          message: 'معرف الحجز مطلوب',
-          errors: ['معرف الحجز مطلوب']
-        });
-        return;
-      }
-
-      const { teacherResponse } = req.body;
-
-      const data: UpdateCourseBookingRequest = {
-        status: BookingStatus.APPROVED,
-        teacherResponse
-      };
-
-      const booking = await CourseBookingService.updateBookingStatus(id, teacherId, data);
-      await TeacherCourseBookingController.sendBookingStatusNotification(booking);
-
-      res.status(200).json({
-        success: true,
-        message: 'تم اعتماد الحجز',
-        data: booking
-      });
-    } catch (error: any) {
-      if (error.message === 'Booking not found or access denied') {
-        res.status(404).json({
-          success: false,
-          message: 'الحجز غير موجود',
-          errors: ['الوصول مرفوض']
-        });
-      } else {
-        console.error('Error approving booking:', error);
-        res.status(500).json({
-          success: false,
-          message: 'خطأ داخلي في الخادم',
-          errors: ['حدث خطأ في الخادم']
-        });
-      }
-    }
-  }
 
   // Reject a booking
   static async rejectBooking(req: Request, res: Response): Promise<void> {
@@ -479,16 +471,7 @@ export class TeacherCourseBookingController {
         return;
       }
 
-      // Check capacity before reactivating
-      const capacityCheck = await TeacherSubscriptionModel.canAddStudent(teacherId);
-      if (!capacityCheck.canAdd) {
-        res.status(400).json({
-          success: false,
-          message: capacityCheck.message || 'لا يمكن إعادة تفعيل الحجز - الباقة ممتلئة',
-          errors: [capacityCheck.message || 'لا يمكن إعادة تفعيل الحجز - الباقة ممتلئة']
-        });
-        return;
-      }
+      // تمت إزالة التحقق من السعة عند إعادة التفعيل. سيتم التحقق عند التأكيد.
 
       const data: UpdateCourseBookingRequest = {
         status: BookingStatus.PRE_APPROVED,

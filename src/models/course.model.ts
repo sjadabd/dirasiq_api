@@ -32,6 +32,23 @@ export class CourseModel {
     return result.rows[0];
   }
 
+  // Get only id and course_name for a teacher in a specific study year
+  static async findNamesByTeacherAndYear(
+    teacherId: string,
+    studyYear: string
+  ): Promise<Array<{ id: string; course_name: string }>> {
+    const query = `
+      SELECT id, course_name
+      FROM courses
+      WHERE teacher_id = $1
+        AND study_year = $2
+        AND is_deleted = false
+      ORDER BY course_name ASC
+    `;
+    const r = await pool.query(query, [teacherId, studyYear]);
+    return r.rows as Array<{ id: string; course_name: string }>;
+  }
+
   // Get course by ID
   static async findById(id: string): Promise<Course | null> {
     const query = 'SELECT * FROM courses WHERE id = $1 AND is_deleted = false';

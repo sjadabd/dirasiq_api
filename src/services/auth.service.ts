@@ -19,6 +19,7 @@ import {
   UserType
 } from '@/types';
 import bcrypt from 'bcryptjs';
+import { QrService } from '@/services/qr.service';
 import jwt from 'jsonwebtoken';
 
 export class AuthService {
@@ -335,6 +336,15 @@ export class AuthService {
       // Get enhanced user data
       const enhancedUser = await this.getEnhancedUserData(user);
 
+      // Ensure teacher QR exists (once) for teachers
+      try {
+        if (user.userType === UserType.TEACHER) {
+          await QrService.ensureTeacherQr(user.id);
+        }
+      } catch (e) {
+        console.error('Auto-ensure teacher QR on login failed:', e);
+      }
+
       // Generate token (JWT)
       const token = await this.generateToken(user);
 
@@ -406,6 +416,16 @@ export class AuthService {
           message: 'فشل في التحقق من البريد الإلكتروني',
           errors: ['انتهت صلاحية الرمز']
         };
+      }
+
+      // If teacher, ensure QR exists now that account is active
+      try {
+        const u = await UserModel.findByEmail(email);
+        if (u && u.userType === UserType.TEACHER) {
+          await QrService.ensureTeacherQr(u.id);
+        }
+      } catch (e) {
+        console.error('Auto-ensure teacher QR on verifyEmail failed:', e);
       }
 
       return {
@@ -616,6 +636,15 @@ export class AuthService {
         // Get enhanced user data
         const enhancedUser = await this.getEnhancedUserData(existingUser);
 
+        // Ensure teacher QR exists (once)
+        try {
+          if (existingUser.userType === UserType.TEACHER) {
+            await QrService.ensureTeacherQr(existingUser.id);
+          }
+        } catch (e) {
+          console.error('Auto-ensure teacher QR (google existing user) failed:', e);
+        }
+
         // Generate JWT token for existing user
         const token = jwt.sign(
           {
@@ -697,6 +726,13 @@ export class AuthService {
           }
         } catch (subErr) {
           console.error('Failed to auto-create free subscription for Google teacher:', subErr);
+        }
+
+        // ✅ توليد QR للمعلم الجديد عبر Google
+        try {
+          await QrService.ensureTeacherQr(newUser.id);
+        } catch (e) {
+          console.error('Auto-ensure teacher QR (google new teacher) failed:', e);
         }
       } else {
         newUser = await UserModel.create({

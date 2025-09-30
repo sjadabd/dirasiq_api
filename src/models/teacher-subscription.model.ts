@@ -237,7 +237,7 @@ export class TeacherSubscriptionModel {
         SELECT COUNT(*)
         FROM course_bookings cb
         WHERE cb.teacher_id = teacher_subscriptions.teacher_id
-        AND cb.status = 'approved'
+        AND cb.status = 'confirmed'
         AND cb.is_deleted = false
         AND cb.created_at >= teacher_subscriptions.start_date
         AND cb.created_at <= teacher_subscriptions.end_date

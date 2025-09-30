@@ -94,7 +94,8 @@ export class CourseBookingModel {
     studyYear: string,
     page: number = 1,
     limit: number = 10,
-    status?: BookingStatus
+    status?: BookingStatus,
+    excludeStatus?: BookingStatus
   ): Promise<{ bookings: CourseBookingWithDetails[], total: number }> {
     let whereClause = 'WHERE cb.student_id = $1 AND cb.study_year = $2 AND cb.is_deleted = false';
     let params: any[] = [studentId, studyYear];
@@ -103,6 +104,10 @@ export class CourseBookingModel {
     if (status) {
       whereClause += ` AND cb.status = $${paramIndex}`;
       params.push(status);
+      paramIndex++;
+    } else if (excludeStatus) {
+      whereClause += ` AND cb.status <> $${paramIndex}`;
+      params.push(excludeStatus);
       paramIndex++;
     }
 
@@ -164,7 +169,7 @@ export class CourseBookingModel {
       SELECT
         cb.*,
         s.id as student_id, s.name as student_name, s.email as student_email,
-        c.id as course_id, c.course_name, c.course_images, c.description, c.start_date, c.end_date, c.price, c.seats_count,
+        c.id as course_id, c.has_reservation, c.reservation_amount, c.course_name, c.course_images, c.description, c.start_date, c.end_date, c.price, c.seats_count,
         t.id as teacher_id, t.name as teacher_name, t.email as teacher_email
       FROM course_bookings cb
       JOIN users s ON cb.student_id = s.id
@@ -195,7 +200,7 @@ export class CourseBookingModel {
 
       // Verify the booking belongs to the teacher and get current status
       const verifyQuery = `
-        SELECT id, status, teacher_id, student_id
+        SELECT id, status, teacher_id, student_id, course_id
         FROM course_bookings
         WHERE id = $1 AND teacher_id = $2 AND is_deleted = false
       `;
@@ -213,17 +218,15 @@ export class CourseBookingModel {
         throw new Error('Student ID not found in booking');
       }
 
-      // منع التلاعب: منع تغيير status إلى approved إذا كان بالفعل approved
-      if (data.status === BookingStatus.APPROVED) {
-        if (currentStatus === BookingStatus.APPROVED) {
-          throw new Error('الحجز معتمد بالفعل');
+      // منع التلاعب: منع تأكيد الحجز إذا كان مؤكداً بالفعل + التحقق من السعة عند التأكيد
+      if (data.status === BookingStatus.CONFIRMED) {
+        if (currentStatus === BookingStatus.CONFIRMED) {
+          throw new Error('الحجز مؤكد بالفعل');
         }
-        // ملاحظة: تم إزالة منع قبول الحجوزات المرفوضة لصالح مسار إعادة التفعيل
-
-        // التحقق من السعة قبل القبول
+        // التحقق من السعة قبل التأكيد
         const capacityCheck = await TeacherSubscriptionModel.canAddStudent(teacherId);
         if (!capacityCheck.canAdd) {
-          throw new Error(capacityCheck.message || 'لا يمكن قبول الحجز');
+          throw new Error(capacityCheck.message || 'لا يمكن تأكيد الحجز');
         }
       }
 
@@ -250,6 +253,8 @@ export class CourseBookingModel {
           updateFields.push(`rejected_at = $${paramIndex}`);
           values.push(new Date());
           paramIndex++;
+          // تخزين من قام بالرفض (teacher) في هذا المسار
+          updateFields.push(`rejected_by = 'teacher'`);
         } else if (data.status === BookingStatus.CANCELLED) {
           updateFields.push(`cancelled_at = $${paramIndex}`);
           values.push(new Date());
@@ -295,9 +300,9 @@ export class CourseBookingModel {
 
       const result = await client.query(query, values);
 
-      // تحديث عدد الطلاب الحاليين في الاشتراك وتسجيل الاستخدام
-      if (data.status === BookingStatus.APPROVED && currentStatus !== BookingStatus.APPROVED) {
-        // قبول حجز جديد - زيادة العدد
+      // تحديث عدد الطلاب الحاليين في الاشتراك وتسجيل الاستخدام (الآن على حالة confirmed)
+      if (data.status === BookingStatus.CONFIRMED && currentStatus !== BookingStatus.CONFIRMED) {
+        // تأكيد حجز جديد - زيادة العدد
         const capacityCheck = await TeacherSubscriptionModel.canAddStudent(teacherId);
         await TeacherSubscriptionModel.incrementCurrentStudents(teacherId);
 
@@ -314,8 +319,8 @@ export class CourseBookingModel {
           'teacher',
           data.teacherResponse
         );
-      } else if (data.status === BookingStatus.REJECTED && currentStatus === BookingStatus.APPROVED) {
-        // رفض حجز كان معتمدًا - تقليل العدد
+      } else if (data.status === BookingStatus.REJECTED && currentStatus === BookingStatus.CONFIRMED) {
+        // رفض حجز كان مؤكداً - تقليل العدد
         const capacityCheck = await TeacherSubscriptionModel.canAddStudent(teacherId);
         await TeacherSubscriptionModel.decrementCurrentStudents(teacherId);
 
@@ -332,8 +337,8 @@ export class CourseBookingModel {
           'teacher',
           data.rejectionReason
         );
-      } else if (data.status === BookingStatus.CANCELLED && currentStatus === BookingStatus.APPROVED) {
-        // إلغاء حجز كان معتمدًا - تقليل العدد
+      } else if (data.status === BookingStatus.CANCELLED && currentStatus === BookingStatus.CONFIRMED) {
+        // إلغاء حجز كان مؤكداً - تقليل العدد
         const capacityCheck = await TeacherSubscriptionModel.canAddStudent(teacherId);
         await TeacherSubscriptionModel.decrementCurrentStudents(teacherId);
 
@@ -367,6 +372,34 @@ export class CourseBookingModel {
           'teacher',
           data.rejectionReason
         );
+      }
+
+      if (data.status === BookingStatus.CONFIRMED && currentStatus === BookingStatus.PRE_APPROVED) {
+        const courseQ = `SELECT reservation_amount, has_reservation FROM courses WHERE id = $1`;
+        const courseR = await client.query(courseQ, [currentBooking.course_id]);
+
+        const course = courseR.rows[0];
+        if (course && course.has_reservation && course.reservation_amount > 0) {
+          // الحالة من المعلم
+          const paymentStatus = data.reservationPaid === true ? 'paid' : 'pending';
+
+          const insertPaymentQ = `
+            INSERT INTO reservation_payments (booking_id, student_id, teacher_id, course_id, amount, status, paid_at)
+            VALUES ($1, $2, $3, $4, $5, $6::varchar, CASE WHEN $6::varchar = 'paid' THEN CURRENT_TIMESTAMP ELSE NULL END)
+            ON CONFLICT (booking_id) DO UPDATE SET
+              status = EXCLUDED.status,
+              paid_at = CASE WHEN EXCLUDED.status = 'paid' THEN CURRENT_TIMESTAMP ELSE NULL END,
+              updated_at = CURRENT_TIMESTAMP
+          `;
+          await client.query(insertPaymentQ, [
+            id,
+            currentBooking.student_id,
+            teacherId,
+            currentBooking.course_id,
+            course.reservation_amount,
+            paymentStatus,
+          ]);
+        }
       }
 
       await client.query('COMMIT');
@@ -414,8 +447,8 @@ export class CourseBookingModel {
 
       const result = await client.query(query, [BookingStatus.CANCELLED, new Date(), reason, id, studentId]);
 
-      // تحديث عدد الطلاب الحاليين إذا كان الحجز معتمدًا وتسجيل الاستخدام
-      if (currentStatus === BookingStatus.APPROVED) {
+      // تحديث عدد الطلاب الحاليين إذا كان الحجز مؤكداً وتسجيل الاستخدام
+      if (currentStatus === BookingStatus.CONFIRMED) {
         const capacityCheck = await TeacherSubscriptionModel.canAddStudent(teacherId);
         await TeacherSubscriptionModel.decrementCurrentStudents(teacherId);
 
@@ -477,8 +510,8 @@ export class CourseBookingModel {
 
       const result = await client.query(query, [BookingStatus.CANCELLED, new Date(), reason, id, teacherId]);
 
-      // تحديث عدد الطلاب الحاليين إذا كان الحجز معتمدًا وتسجيل الاستخدام
-      if (currentStatus === BookingStatus.APPROVED) {
+      // تحديث عدد الطلاب الحاليين إذا كان الحجز مؤكداً وتسجيل الاستخدام
+      if (currentStatus === BookingStatus.CONFIRMED) {
         const capacityCheck = await TeacherSubscriptionModel.canAddStudent(teacherId);
         await TeacherSubscriptionModel.decrementCurrentStudents(teacherId);
 
@@ -653,6 +686,7 @@ export class CourseBookingModel {
       cancellationReason: row.cancellation_reason,
       studentMessage: row.student_message,
       teacherResponse: row.teacher_response,
+      rejectedBy: row.rejected_by || undefined,
       isDeleted: row.is_deleted,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
@@ -678,6 +712,7 @@ export class CourseBookingModel {
       cancellationReason: row.cancellation_reason,
       studentMessage: row.student_message,
       teacherResponse: row.teacher_response,
+      rejectedBy: row.rejected_by || undefined,
       isDeleted: row.is_deleted,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
@@ -751,5 +786,16 @@ export class CourseBookingModel {
       // لا نريد أن يفشل تسجيل الاستخدام العملية الرئيسية
       console.error('Error logging booking usage:', error);
     }
+  }
+
+  // Get confirmed students for a course (by course_id)
+  static async getConfirmedStudentIdsByCourse(courseId: string): Promise<string[]> {
+    const q = `
+      SELECT student_id
+      FROM course_bookings
+      WHERE course_id = $1 AND status = 'confirmed' AND is_deleted = false
+    `;
+    const r = await pool.query(q, [courseId]);
+    return r.rows.map((row: any) => String(row.student_id));
   }
 }

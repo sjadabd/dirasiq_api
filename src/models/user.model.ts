@@ -303,7 +303,8 @@ export class UserModel {
       'zipcode',
       'street_name',
       'suburb',
-      'location_confidence'
+      'location_confidence',
+      'teacher_qr_image_path'
     ];
 
     const updates: string[] = [];

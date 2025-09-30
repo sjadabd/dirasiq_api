@@ -153,8 +153,8 @@ export class StudentService {
         }
       }
 
-      // 🚫 أخفِ الدورات التي تمت الموافقة النهائية عليها للطالب
-      const filtered = courses.filter((c: any) => bookingsByCourse[c.id]?.status !== 'approved');
+      // 🚫 أخفِ الدورات التي اشترك بها الطالب بالفعل (الحجز المؤكد يعتبر اشتراكًا)
+      const filtered = courses.filter((c: any) => bookingsByCourse[c.id]?.status !== 'confirmed');
 
       // ➕ أضف حالة الحجز للدورات الأخرى لعرض زر التسجيل أو الحالة
       const enriched = filtered.map((c: any) => ({
@@ -225,14 +225,7 @@ export class StudentService {
       const bookingRes = await pool.query(bookingQuery, [studentId, courseId]);
       const latestBooking = bookingRes.rows[0] as { id: string; status: string } | undefined;
 
-      // If approved, hide the course from the student (treat as not found)
-      if (latestBooking && latestBooking.status === 'approved') {
-        return {
-          success: false,
-          message: 'الدورة غير متاحة',
-          errors: ['الدورة غير متاحة']
-        };
-      }
+      // إذا كان الحجز مؤكدًا، لا نمنع عرض التفاصيل، فقط نُشير إلى أن الطالب مشترك
 
       // Fetch grade and subject details
       const [grade, subject] = await Promise.all([
@@ -244,6 +237,7 @@ export class StudentService {
         ...course,
         bookingStatus: latestBooking?.status || null,
         bookingId: latestBooking?.id || null,
+        isSubscribed: latestBooking?.status === 'confirmed',
         grade: grade ? { id: grade.id, name: grade.name } : { id: course.grade_id, name: undefined },
         subject: subject ? { id: subject.id, name: subject.name } : { id: course.subject_id, name: undefined },
         teacher: {

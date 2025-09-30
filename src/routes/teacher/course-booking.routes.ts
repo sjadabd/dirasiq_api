@@ -7,10 +7,16 @@ const router = Router();
 // Apply authentication middleware to all routes
 router.use(authenticateToken);
 
+// Get remaining students capacity (static path should come before ':id')
+router.get('/subscription/remaining-students', TeacherCourseBookingController.getRemainingStudents);
+
+// Get pending booking statistics (place before ':id')
+router.get('/stats/summary', TeacherCourseBookingController.getBookingStats);
+
 // Get all bookings for the current teacher
 router.get('/', TeacherCourseBookingController.getMyBookings);
 
-// Get a specific booking by ID with details
+// Get a specific booking by ID with details (dynamic route should come after static ones)
 router.get('/:id', TeacherCourseBookingController.getBookingById);
 
 // Pre-approve a booking (موافقة أولية)
@@ -18,9 +24,6 @@ router.patch('/:id/pre-approve', TeacherCourseBookingController.preApproveBookin
 
 // Confirm a booking (تأكيد الحجز)
 router.patch('/:id/confirm', TeacherCourseBookingController.confirmBooking);
-
-// Approve a booking
-router.patch('/:id/approve', TeacherCourseBookingController.approveBooking);
 
 // Reject a booking
 router.patch('/:id/reject', TeacherCourseBookingController.rejectBooking);
@@ -34,7 +37,6 @@ router.delete('/:id', TeacherCourseBookingController.deleteBooking);
 // Reactivate a rejected booking
 router.patch('/:id/reactivate', TeacherCourseBookingController.reactivateBooking);
 
-// Get booking statistics
-router.get('/stats/summary', TeacherCourseBookingController.getBookingStats);
+// (moved static routes above)
 
 export default router;

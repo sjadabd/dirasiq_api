@@ -478,6 +478,8 @@ export interface CourseBooking {
   cancellationReason?: string;
   studentMessage?: string;
   teacherResponse?: string;
+  // Indicates who rejected the booking
+  rejectedBy?: 'student' | 'teacher';
   isDeleted: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -495,6 +497,8 @@ export interface UpdateCourseBookingRequest {
   rejectionReason?: string;
   cancellationReason?: string;
   teacherResponse?: string;
+  // For confirmation flow: whether reservation deposit has been paid
+  reservationPaid?: boolean;
 }
 
 export interface CourseBookingWithDetails extends CourseBooking {
@@ -891,6 +895,44 @@ export interface BulkInvoiceCreationResponse {
   success: boolean;
   createdInvoices: InvoiceResponse[];
   errors: string[];
+}
+
+// =====================================================
+// Reservation Payments (Booking Deposit) Types
+// =====================================================
+
+export type ReservationPaymentStatus = 'pending' | 'paid';
+
+export interface ReservationPayment {
+  id: string;
+  bookingId: string;
+  studentId: string;
+  teacherId: string;
+  courseId: string;
+  amount: number;
+  status: ReservationPaymentStatus;
+  paidAt?: Date;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface TeacherReservationPaymentsReportItem {
+  bookingId: string;
+  studentId: string;
+  studentName: string;
+  courseId: string;
+  courseName: string;
+  amount: number;
+  status: ReservationPaymentStatus;
+  paidAt?: Date;
+}
+
+export interface TeacherReservationPaymentsReportResponse {
+  teacherId: string;
+  studyYear: string;
+  totalPaid: number;
+  totalPending: number;
+  items: TeacherReservationPaymentsReportItem[];
 }
 
 // News platform type

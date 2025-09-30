@@ -4,6 +4,26 @@ import { body, param, query, validationResult } from 'express-validator';
 
 export class CourseController {
   // Create new course
+
+  // GET /api/teacher/courses/names
+  // Returns only id and name for teacher's courses in the active academic year (no pagination)
+  static async listNamesForActiveYear(req: Request, res: Response): Promise<void> {
+    try {
+      const teacherId = (req as any).user?.id;
+      if (!teacherId) {
+        res.status(401).json({ success: false, message: 'التحقق مطلوب', errors: ['التحقق مطلوب'] });
+        return;
+      }
+
+      const result = await CourseService.listNamesForActiveYear(teacherId);
+      res.status(result.success ? 200 : 400).json(result);
+    } catch (error) {
+      console.error('Error in listNamesForActiveYear controller:', error);
+      res.status(500).json({ success: false, message: 'خطأ داخلي في الخادم', errors: ['حدث خطأ في الخادم'] });
+    }
+  }
+
+  // Create new course
   static async create(req: Request, res: Response): Promise<void> {
     try {
       // Validate request body

@@ -11,6 +11,7 @@ router.use(requireTeacher);
 // Course routes
 router.post('/', CourseController.create);
 router.get('/', CourseController.getAll);
+router.get('/names', CourseController.listNamesForActiveYear);
 router.get('/deleted-not-expired', CourseController.getDeletedNotExpired);
 router.get('/:id', CourseController.getById);
 router.put('/:id', CourseController.update);

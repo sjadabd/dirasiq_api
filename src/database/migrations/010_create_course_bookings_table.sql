@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS course_bookings (
     status VARCHAR(20) NOT NULL DEFAULT 'pending'
         CHECK (status IN ('pending', 'pre_approved', 'confirmed', 'approved', 'rejected', 'cancelled')),
     cancelled_by VARCHAR(10) CHECK (cancelled_by IN ('student', 'teacher')),
+    rejected_by VARCHAR(20) CHECK (rejected_by IN ('teacher', 'student')), -- 🆕 العمود الجديد
     reactivated_at TIMESTAMP WITH TIME ZONE,
 
     -- Dates
@@ -53,9 +54,10 @@ COMMENT ON COLUMN course_bookings.status IS
 - rejected: مرفوض
 - cancelled: ملغي';
 
--- Add comments to other fields
+-- Comments for other fields
 COMMENT ON COLUMN course_bookings.study_year IS 'Academic year for the course (format: YYYY-YYYY)';
 COMMENT ON COLUMN course_bookings.cancelled_by IS 'Indicates who cancelled the booking: student or teacher';
+COMMENT ON COLUMN course_bookings.rejected_by IS 'Indicates who rejected the booking: teacher or student'; -- 🆕 التعليق
 COMMENT ON COLUMN course_bookings.reactivated_at IS 'Timestamp when a cancelled booking was reactivated by student';
 
 -- Indexes
@@ -67,6 +69,7 @@ CREATE INDEX IF NOT EXISTS idx_course_bookings_status ON course_bookings(status)
 CREATE INDEX IF NOT EXISTS idx_course_bookings_booking_date ON course_bookings(booking_date);
 CREATE INDEX IF NOT EXISTS idx_course_bookings_is_deleted ON course_bookings(is_deleted);
 CREATE INDEX IF NOT EXISTS idx_course_bookings_cancelled_by ON course_bookings(cancelled_by);
+CREATE INDEX IF NOT EXISTS idx_course_bookings_rejected_by ON course_bookings(rejected_by); -- 🆕 اندكس جديد
 CREATE INDEX IF NOT EXISTS idx_course_bookings_reactivated_at ON course_bookings(reactivated_at);
 
 -- Trigger to auto-update updated_at

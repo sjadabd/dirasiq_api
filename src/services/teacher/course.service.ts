@@ -6,6 +6,7 @@ import { UserModel } from '@/models/user.model';
 import { NotificationService } from '@/services/notification.service';
 import { ApiResponse, CreateCourseRequest, UpdateCourseRequest } from '@/types';
 import { ImageService } from '@/utils/image.service';
+import { AcademicYearService } from '../super_admin/academic-year.service';
 
 export class CourseService {
   // Create new course
@@ -217,7 +218,30 @@ export class CourseService {
       };
     }
   }
+  static async listNamesForActiveYear(teacherId: string): Promise<ApiResponse> {
+    try {
+      const teacher = await UserModel.findById(teacherId);
+      if (!teacher || teacher.userType !== 'teacher') {
+        return { success: false, message: 'المعلم غير موجود', errors: ['المعلم غير موجود'] };
+      }
 
+      const active = await AcademicYearService.getActive();
+      const studyYear = active.success ? active.data?.academicYear?.year : undefined;
+      if (!studyYear) {
+        return { success: false, message: 'لا توجد سنة دراسية مفعلة', errors: ['لا توجد سنة دراسية مفعلة'] };
+      }
+
+      const rows = await CourseModel.findNamesByTeacherAndYear(teacherId, studyYear);
+      return {
+        success: true,
+        message: 'تم جلب أسماء الدورات بنجاح',
+        data: rows.map(r => ({ id: r.id, name: r.course_name }))
+      };
+    } catch (error) {
+      console.error('Error listing course names:', error);
+      return { success: false, message: 'فشلت العملية', errors: ['خطأ داخلي في الخادم'] };
+    }
+  }
   // Get all courses for a teacher with pagination and filters
   static async getAllByTeacher(
     teacherId: string,

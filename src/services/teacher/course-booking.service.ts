@@ -52,10 +52,11 @@ export class CourseBookingService {
     studyYear: string,
     page: number = 1,
     limit: number = 10,
-    status?: BookingStatus
+    status?: BookingStatus,
+    excludeStatus?: BookingStatus
   ): Promise<{ bookings: CourseBookingWithDetails[], total: number }> {
     try {
-      return await CourseBookingModel.findAllByStudent(studentId, studyYear, page, limit, status);
+      return await CourseBookingModel.findAllByStudent(studentId, studyYear, page, limit, status, excludeStatus);
     } catch (error) {
       throw error;
     }

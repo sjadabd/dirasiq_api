@@ -1,9 +1,13 @@
 import cron from 'node-cron';
 import { NotificationService } from './notification.service';
+import { CourseReminderService } from './course-reminder.service';
+import { SessionEndReminderService } from './session-end-reminder.service';
 
 export class NotificationCronService {
   private notificationService: NotificationService;
   private isRunning: boolean = false;
+  private courseReminderService: CourseReminderService;
+  private sessionEndReminderService: SessionEndReminderService;
 
   constructor() {
     const oneSignalConfig = {
@@ -12,6 +16,8 @@ export class NotificationCronService {
     };
 
     this.notificationService = new NotificationService(oneSignalConfig);
+    this.courseReminderService = new CourseReminderService();
+    this.sessionEndReminderService = new SessionEndReminderService(this.notificationService);
   }
 
   /**
@@ -26,10 +32,21 @@ export class NotificationCronService {
     cron.schedule('* * * * *', async () => {
       try {
         await this.notificationService.processPendingNotifications();
+        // Also send 3-minute-before-end reminders for sessions ending soon
+        await this.sessionEndReminderService.sendThreeMinuteBeforeEndReminders();
       } catch (error) {
         console.error('❌ Error processing pending notifications:', error);
       }
     });
+
+    // Daily at 09:00 Asia/Baghdad time: send course start reminders (3, 2, 1 days before)
+    cron.schedule('0 9 * * *', async () => {
+      try {
+        await this.courseReminderService.sendReminders();
+      } catch (error) {
+        console.error('❌ Error sending course start reminders:', error);
+      }
+    }, { timezone: 'Asia/Baghdad' });
 
     this.isRunning = true;
   }

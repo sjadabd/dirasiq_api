@@ -47,10 +47,21 @@ CREATE TABLE IF NOT EXISTS users (
     auth_provider VARCHAR(20) NOT NULL DEFAULT 'email',
     oauth_provider_id VARCHAR(255),
 
+    -- Teacher QR code path (new field)
+    teacher_qr_image_path TEXT,
+
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     deleted_at TIMESTAMP
 );
+
+-- Add column teacher_qr_image_path if table already exists
+ALTER TABLE users
+ADD COLUMN IF NOT EXISTS teacher_qr_image_path TEXT;
+
+-- Comment for teacher_qr_image_path
+COMMENT ON COLUMN users.teacher_qr_image_path IS
+'Stores the PNG path for the teacher''s reusable attendance QR (e.g., public/uploads/courses/<course_id>/qr.png or a teacher-level path).';
 
 -- Create indexes for better performance
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
@@ -64,7 +75,7 @@ CREATE INDEX IF NOT EXISTS idx_users_location ON users(latitude, longitude);
 CREATE INDEX IF NOT EXISTS idx_users_auth_provider ON users(auth_provider);
 CREATE INDEX IF NOT EXISTS idx_users_oauth_provider_id ON users(oauth_provider_id);
 
--- Create trigger to update updated_at timestamp
+-- Create trigger to auto-update updated_at timestamp
 CREATE OR REPLACE FUNCTION update_updated_at_column()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -79,7 +90,7 @@ CREATE TRIGGER update_users_updated_at
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
 
--- Note:
--- - This migration includes location fields (Iraq specific)
--- - Added OAuth provider fields for future integrations (e.g., Google, Facebook)
--- - Default auth_provider = 'email'
+-- Notes:
+-- - Includes teacher_qr_image_path for reusable QR attendance codes
+-- - Safe to run multiple times (idempotent)
+-- - Includes location, OAuth, and verification fields
