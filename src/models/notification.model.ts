@@ -1,4 +1,5 @@
 import pool from '@/config/database';
+import { AcademicYearModel } from '@/models/academic-year.model';
 
 export enum NotificationType {
   HOMEWORK_REMINDER = 'homework_reminder',
@@ -53,6 +54,7 @@ export interface Notification {
   recipientType: RecipientType;
   recipientIds?: string[]; // Array of user IDs for specific recipients
   data?: Record<string, any>; // Additional data for the notification
+  studyYear?: string; // persisted study year column
   scheduledAt?: Date;
   sentAt?: Date;
   readAt?: Date;
@@ -99,10 +101,10 @@ export class NotificationModel {
       const query = `
         INSERT INTO notifications (
           title, message, type, priority, status, recipient_type,
-          recipient_ids, data, scheduled_at, created_by, created_at, updated_at
+          recipient_ids, data, study_year, scheduled_at, created_by, created_at, updated_at
         ) VALUES (
           $1, $2, $3, $4, $5, $6,
-          $7, $8, $9, $10, $11, $12
+          $7, $8, $9, $10, $11, $12, $13
         ) RETURNING *;
       `;
 
@@ -117,6 +119,8 @@ export class NotificationModel {
           ? JSON.stringify(notificationData.recipientIds)
           : null,
         notificationData.data ? JSON.stringify(notificationData.data) : null,
+        // study_year persisted from data.studyYear if present
+        (notificationData.data as any)?.studyYear || null,
         notificationData.scheduledAt || new Date(),
         notificationData.createdBy,
         new Date(),
@@ -143,8 +147,10 @@ export class NotificationModel {
       q?: string | null;
       type?: NotificationType | null;
       courseId?: string | null;
+      subType?: string | null;
     }
   ): Promise<{ notifications: any[]; total: number; totalPages: number }> {
+    const activeYear = await AcademicYearModel.getActive();
     const page = options.page && options.page > 0 ? options.page : 1;
     const limit = options.limit && options.limit > 0 ? options.limit : 10;
     const offset = (page - 1) * limit;
@@ -172,6 +178,16 @@ export class NotificationModel {
       values.push(String(options.courseId));
       param++;
     }
+    if (activeYear?.year) {
+      where += ` AND n.study_year = $${param}`;
+      values.push(String(activeYear.year));
+      param++;
+    }
+    if (options.subType) {
+      where += ` AND (n.data->>'subType') = $${param}`;
+      values.push(String(options.subType));
+      param++;
+    }
     if (options.q && options.q.trim() !== '') {
       where += ` AND (n.title ILIKE $${param} OR n.message ILIKE $${param})`;
       values.push(`%${options.q.trim()}%`);
@@ -182,7 +198,7 @@ export class NotificationModel {
       SELECT COUNT(*)
       FROM notifications n
       LEFT JOIN users u ON u.id = $1
-      WHERE ${where}
+      WHERE ${where} AND n.deleted_at IS NULL
     `;
     const dataQuery = `
       SELECT n.*, u.user_type, un.read_at AS user_read_at,
@@ -190,7 +206,7 @@ export class NotificationModel {
       FROM notifications n
       LEFT JOIN users u ON u.id = $1
       LEFT JOIN user_notifications un ON un.notification_id = n.id AND un.user_id = $1
-      WHERE ${where}
+      WHERE ${where} AND n.deleted_at IS NULL
       ORDER BY n.created_at DESC
       LIMIT $${param} OFFSET $${param + 1}
     `;
@@ -213,7 +229,7 @@ export class NotificationModel {
 
   // Get notification by ID
   static async findById(id: string): Promise<Notification | null> {
-    const query = 'SELECT * FROM notifications WHERE id = $1';
+    const query = 'SELECT * FROM notifications WHERE id = $1 AND deleted_at IS NULL';
     const result = await pool.query(query, [id]);
 
     if (result.rows.length === 0) {
@@ -232,6 +248,7 @@ export class NotificationModel {
     const page = filters.page || 1;
     const limit = filters.limit || 10;
     const offset = (page - 1) * limit;
+    const activeYear = await AcademicYearModel.getActive();
 
     let whereClause = 'WHERE 1=1';
     const values: any[] = [];
@@ -279,10 +296,16 @@ export class NotificationModel {
       paramCount++;
     }
 
-    const countQuery = `SELECT COUNT(*) FROM notifications ${whereClause}`;
+    if (activeYear?.year) {
+      whereClause += ` AND study_year = $${paramCount}`;
+      values.push(String(activeYear.year));
+      paramCount++;
+    }
+
+    const countQuery = `SELECT COUNT(*) FROM notifications ${whereClause} AND deleted_at IS NULL`;
     const dataQuery = `
       SELECT * FROM notifications
-      ${whereClause}
+      ${whereClause} AND deleted_at IS NULL
       ORDER BY created_at DESC
       LIMIT $${paramCount} OFFSET $${paramCount + 1}
     `;
@@ -363,7 +386,7 @@ export class NotificationModel {
   static async getPendingNotifications(): Promise<Notification[]> {
     const query = `
       SELECT * FROM notifications
-      WHERE status = $1
+      WHERE status = $1 AND deleted_at IS NULL
         AND scheduled_at <= $2
       ORDER BY priority DESC, created_at ASC
     `;
@@ -384,6 +407,7 @@ export class NotificationModel {
     limit: number = 10
   ): Promise<{ notifications: any[]; total: number; totalPages: number }> {
     const offset = (page - 1) * limit;
+    const activeYear = await AcademicYearModel.getActive();
 
     const query = `
       SELECT
@@ -409,6 +433,7 @@ export class NotificationModel {
         ))
       )
       AND n.status IN ('sent', 'delivered', 'read')
+      ${activeYear?.year ? `AND n.study_year = $4` : ''}
       ORDER BY n.created_at DESC
       LIMIT $2 OFFSET $3
     `;
@@ -429,12 +454,16 @@ export class NotificationModel {
         ))
       )
       AND n.status IN ('sent', 'delivered', 'read')
+      ${activeYear?.year ? `AND n.study_year = $2` : ''}
     `;
 
-    const countResult = await pool.query(countQuery, [userId]);
+    const countParams = activeYear?.year ? [userId, activeYear.year] : [userId];
+    const dataParams = activeYear?.year ? [userId, limit, offset, activeYear.year] : [userId, limit, offset];
+
+    const countResult = await pool.query(countQuery, countParams);
     const total = parseInt(countResult.rows[0].count);
 
-    const dataResult = await pool.query(query, [userId, limit, offset]);
+    const dataResult = await pool.query(query, dataParams);
 
     // رجع الإشعارات مع فلاغ is_read
     const notifications = dataResult.rows.map((row: any) => ({
@@ -569,6 +598,7 @@ export class NotificationModel {
       recipientType: dbNotification.recipient_type as RecipientType,
       recipientIds: dbNotification.recipient_ids || undefined,
       data: dbNotification.data || undefined,
+      studyYear: dbNotification.study_year || undefined,
       scheduledAt: dbNotification.scheduled_at,
       sentAt: dbNotification.sent_at,
       readAt: dbNotification.read_at,

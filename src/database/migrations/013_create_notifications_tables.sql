@@ -1,3 +1,5 @@
+BEGIN;
+
 -- Create notifications table
 CREATE TABLE IF NOT EXISTS notifications (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -34,15 +36,18 @@ CREATE TABLE IF NOT EXISTS notifications (
     )),
     recipient_ids JSONB, -- Array of user IDs for specific recipients
     data JSONB,          -- Additional data for the notification
+    study_year VARCHAR(50), -- added via migration 015
     scheduled_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     sent_at TIMESTAMP WITH TIME ZONE,
     read_at TIMESTAMP WITH TIME ZONE,
     created_by UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    deleted_at TIMESTAMPTZ NULL, -- soft delete
+    deleted_by UUID NULL         -- soft delete
 );
 
--- Create indexes
+-- Indexes for notifications
 CREATE INDEX IF NOT EXISTS idx_notifications_type ON notifications(type);
 CREATE INDEX IF NOT EXISTS idx_notifications_status ON notifications(status);
 CREATE INDEX IF NOT EXISTS idx_notifications_priority ON notifications(priority);
@@ -51,6 +56,13 @@ CREATE INDEX IF NOT EXISTS idx_notifications_created_by ON notifications(created
 CREATE INDEX IF NOT EXISTS idx_notifications_scheduled_at ON notifications(scheduled_at);
 CREATE INDEX IF NOT EXISTS idx_notifications_created_at ON notifications(created_at);
 CREATE INDEX IF NOT EXISTS idx_notifications_recipient_ids ON notifications USING GIN (recipient_ids);
+CREATE INDEX IF NOT EXISTS idx_notifications_study_year ON notifications(study_year);
+CREATE INDEX IF NOT EXISTS idx_notifications_not_deleted ON notifications (deleted_at) WHERE deleted_at IS NULL;
+
+-- Backfill study_year from JSON data if present
+UPDATE notifications
+SET study_year = COALESCE(study_year, data->>'studyYear')
+WHERE study_year IS NULL;
 
 -- Create user_notifications table to track read status per user
 CREATE TABLE IF NOT EXISTS user_notifications (
@@ -62,7 +74,7 @@ CREATE TABLE IF NOT EXISTS user_notifications (
     UNIQUE(user_id, notification_id)
 );
 
--- Create indexes for user_notifications
+-- Indexes for user_notifications
 CREATE INDEX IF NOT EXISTS idx_user_notifications_user_id ON user_notifications(user_id);
 CREATE INDEX IF NOT EXISTS idx_user_notifications_notification_id ON user_notifications(notification_id);
 CREATE INDEX IF NOT EXISTS idx_user_notifications_read_at ON user_notifications(read_at);
@@ -82,7 +94,7 @@ CREATE TABLE IF NOT EXISTS notification_templates (
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
 );
 
--- Create indexes for notification_templates
+-- Indexes for notification_templates
 CREATE INDEX IF NOT EXISTS idx_notification_templates_type ON notification_templates(type);
 CREATE INDEX IF NOT EXISTS idx_notification_templates_is_active ON notification_templates(is_active);
 CREATE INDEX IF NOT EXISTS idx_notification_templates_created_by ON notification_templates(created_by);
@@ -111,7 +123,6 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- حذف التريجر لو موجود قبل الإنشاء
 DROP TRIGGER IF EXISTS trigger_update_notifications_updated_at ON notifications;
 CREATE TRIGGER trigger_update_notifications_updated_at
     BEFORE UPDATE ON notifications
@@ -123,3 +134,5 @@ CREATE TRIGGER trigger_update_notification_templates_updated_at
     BEFORE UPDATE ON notification_templates
     FOR EACH ROW
     EXECUTE FUNCTION update_notifications_updated_at();
+
+COMMIT;

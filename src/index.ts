@@ -12,6 +12,7 @@ import courseRoutes from '@/routes/teacher/course.routes';
 import subjectRoutes from '@/routes/teacher/subject.routes';
 import userOnesignalRoutes from '@/routes/user-onesignal.routes';
 import { notificationCronService } from '@/services/notification-cron.service';
+import { NotificationService } from '@/services/notification.service';
 import compression from 'compression';
 import cors from 'cors';
 import dotenv from 'dotenv';
@@ -80,6 +81,17 @@ if (process.env['NODE_ENV'] === 'development') {
   app.use(morgan('combined'));
 }
 
+// Initialize and attach NotificationService (OneSignal)
+try {
+  const oneSignalAppId = process.env['ONESIGNAL_APP_ID'] || process.env['ONESIGNAL_APP_ID_WEB'] || '';
+  const oneSignalRestApiKey = process.env['ONESIGNAL_REST_API_KEY'] || '';
+  const notificationService = new NotificationService({ appId: oneSignalAppId, restApiKey: oneSignalRestApiKey });
+  app.set('notificationService', notificationService);
+  console.log('✅ NotificationService initialized');
+} catch (e) {
+  console.warn('⚠️ NotificationService not initialized:', e);
+}
+
 // Health check endpoint
 app.get('/health', (_req, res) => {
   res.status(200).json({
@@ -98,12 +110,28 @@ app.use('/public', cors({
   allowedHeaders: ['Content-Type']
 }), express.static(path.join(__dirname, '../public')));
 
+// Normalize duplicate slashes in /uploads URLs to avoid 404 like /uploads//notifications//...
+app.use((req, _res, next) => {
+  if (req.url.startsWith('/uploads/')) {
+    // Collapse multiple slashes to a single slash
+    const normalized = req.url.replace(/\\+/g, '/').replace(/\/+\/+/g, '/').replace(/\/{2,}/g, '/');
+    if (normalized !== req.url) {
+      req.url = normalized;
+    }
+  }
+  next();
+});
+
 app.use('/uploads', cors({
   origin: true,
   credentials: false,
   methods: ['GET'],
   allowedHeaders: ['Content-Type']
-}), (_req, res, next) => {
+}), (req, res, next) => {
+  // Normalize duplicate slashes in the subpath (after /uploads)
+  if (req.url && /\/{2,}/.test(req.url)) {
+    req.url = req.url.replace(/\/{2,}/g, '/');
+  }
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Methods', 'GET');
   res.header('Access-Control-Allow-Headers', 'Content-Type');

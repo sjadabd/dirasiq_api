@@ -2,6 +2,8 @@ import { NotificationModel, NotificationPriority, NotificationType, RecipientTyp
 import { NotificationService } from '@/services/notification.service';
 import { Request, Response } from 'express';
 import { body, param, query, validationResult } from 'express-validator';
+import path from 'path';
+import { saveBase64File, saveMultipleBase64Images } from '../utils/file.util';
 
 export class NotificationController {
   private notificationService: NotificationService;
@@ -31,7 +33,7 @@ export class NotificationController {
         return;
       }
 
-      const { title, message, type, priority, data, url, imageUrl } = req.body;
+      const { title, message, type, priority, data, url, imageUrl, attachments } = req.body;
       const createdBy = (req as any).user?.id;
 
       if (!createdBy) {
@@ -42,6 +44,30 @@ export class NotificationController {
         return;
       }
 
+      // Save attachments if provided
+      let enrichedData: Record<string, any> = { ...(data || {}) };
+      if (attachments?.pdfBase64 || (Array.isArray(attachments?.imagesBase64) && attachments.imagesBase64.length)) {
+        const baseDir = path.join(__dirname, '../../public/uploads/notifications');
+        const toRelative = (p: string) => {
+          const u = p.replace(/\\/g, '/');
+          const i = u.lastIndexOf('/public/');
+          if (i !== -1) return u.substring(i + '/public/'.length);
+          const j = u.indexOf('uploads/');
+          return j !== -1 ? u.substring(j) : u;
+        };
+        if (attachments?.pdfBase64) {
+          const pdfPath = await saveBase64File(attachments.pdfBase64, baseDir, 'attachment.pdf');
+          enrichedData['attachments'] = { ...((enrichedData as any)['attachments'] || {}), pdfUrl: toRelative(pdfPath) };
+        }
+        if (Array.isArray(attachments?.imagesBase64) && attachments.imagesBase64.length > 0) {
+          const imagePaths = await saveMultipleBase64Images(attachments.imagesBase64, baseDir);
+          enrichedData['attachments'] = {
+            ...((enrichedData as any)['attachments'] || {}),
+            imageUrls: imagePaths.map(toRelative),
+          };
+        }
+      }
+
       const notification = await this.notificationService.createAndSendNotification({
         title,
         message,
@@ -49,7 +75,7 @@ export class NotificationController {
         priority: priority || NotificationPriority.MEDIUM,
         recipientType: RecipientType.ALL,
         data: {
-          ...data,
+          ...enrichedData,
           url,
           imageUrl
         },
@@ -92,7 +118,7 @@ export class NotificationController {
         return;
       }
 
-      const { title, message, type, priority, data, url, imageUrl } = req.body;
+      const { title, message, type, priority, data, url, imageUrl, attachments } = req.body;
       const createdBy = (req as any).user?.id;
 
       if (!createdBy) {
@@ -103,6 +129,30 @@ export class NotificationController {
         return;
       }
 
+      // Save attachments if provided
+      let enrichedData: Record<string, any> = { ...(data || {}) };
+      if (attachments?.pdfBase64 || (Array.isArray(attachments?.imagesBase64) && attachments.imagesBase64.length)) {
+        const baseDir = path.join(__dirname, '../../public/uploads/notifications');
+        const toRelative = (p: string) => {
+          const u = p.replace(/\\/g, '/');
+          const i = u.lastIndexOf('/public/');
+          if (i !== -1) return u.substring(i + '/public/'.length);
+          const j = u.indexOf('uploads/');
+          return j !== -1 ? u.substring(j) : u;
+        };
+        if (attachments?.pdfBase64) {
+          const pdfPath = await saveBase64File(attachments.pdfBase64, baseDir, 'attachment.pdf');
+          enrichedData['attachments'] = { ...((enrichedData as any)['attachments'] || {}), pdfUrl: toRelative(pdfPath) };
+        }
+        if (Array.isArray(attachments?.imagesBase64) && attachments.imagesBase64.length > 0) {
+          const imagePaths = await saveMultipleBase64Images(attachments.imagesBase64, baseDir);
+          enrichedData['attachments'] = {
+            ...((enrichedData as any)['attachments'] || {}),
+            imageUrls: imagePaths.map(toRelative),
+          };
+        }
+      }
+
       const notification = await this.notificationService.createAndSendNotification({
         title,
         message,
@@ -110,7 +160,7 @@ export class NotificationController {
         priority: priority || NotificationPriority.MEDIUM,
         recipientType: RecipientType.TEACHERS,
         data: {
-          ...data,
+          ...enrichedData,
           url,
           imageUrl
         },
@@ -153,7 +203,7 @@ export class NotificationController {
         return;
       }
 
-      const { title, message, type, priority, data, url, imageUrl } = req.body;
+      const { title, message, type, priority, data, url, imageUrl, attachments } = req.body;
       const createdBy = (req as any).user?.id;
 
       if (!createdBy) {
@@ -164,6 +214,30 @@ export class NotificationController {
         return;
       }
 
+      // Save attachments if provided
+      let enrichedData: Record<string, any> = { ...(data || {}) };
+      if (attachments?.pdfBase64 || (Array.isArray(attachments?.imagesBase64) && attachments.imagesBase64.length)) {
+        const baseDir = path.join(__dirname, '../../public/uploads/notifications');
+        const toRelative = (p: string) => {
+          const u = p.replace(/\\/g, '/');
+          const i = u.lastIndexOf('/public/');
+          if (i !== -1) return u.substring(i + '/public/'.length);
+          const j = u.indexOf('uploads/');
+          return j !== -1 ? u.substring(j) : u;
+        };
+        if (attachments?.pdfBase64) {
+          const pdfPath = await saveBase64File(attachments.pdfBase64, baseDir, 'attachment.pdf');
+          enrichedData['attachments'] = { ...((enrichedData as any)['attachments'] || {}), pdfUrl: toRelative(pdfPath) };
+        }
+        if (Array.isArray(attachments?.imagesBase64) && attachments.imagesBase64.length > 0) {
+          const imagePaths = await saveMultipleBase64Images(attachments.imagesBase64, baseDir);
+          enrichedData['attachments'] = {
+            ...((enrichedData as any)['attachments'] || {}),
+            imageUrls: imagePaths.map(toRelative),
+          };
+        }
+      }
+
       const notification = await this.notificationService.createAndSendNotification({
         title,
         message,
@@ -171,7 +245,7 @@ export class NotificationController {
         priority: priority || NotificationPriority.MEDIUM,
         recipientType: RecipientType.STUDENTS,
         data: {
-          ...data,
+          ...enrichedData,
           url,
           imageUrl
         },
@@ -214,7 +288,7 @@ export class NotificationController {
         return;
       }
 
-      const { title, message, type, priority, recipientIds, recipientType, data, url, imageUrl } = req.body;
+      const { title, message, type, priority, recipientIds, recipientType, data, url, imageUrl, attachments } = req.body;
       const createdBy = (req as any).user?.id;
 
       if (!createdBy) {
@@ -233,6 +307,30 @@ export class NotificationController {
         return;
       }
 
+      // Save attachments if provided
+      let enrichedData: Record<string, any> = { ...(data || {}) };
+      if (attachments?.pdfBase64 || (Array.isArray(attachments?.imagesBase64) && attachments.imagesBase64.length)) {
+        const baseDir = path.join(__dirname, '../../public/uploads/notifications');
+        const toRelative = (p: string) => {
+          const u = p.replace(/\\/g, '/');
+          const i = u.lastIndexOf('/public/');
+          if (i !== -1) return u.substring(i + '/public/'.length);
+          const j = u.indexOf('uploads/');
+          return j !== -1 ? u.substring(j) : u;
+        };
+        if (attachments?.pdfBase64) {
+          const pdfPath = await saveBase64File(attachments.pdfBase64, baseDir, 'attachment.pdf');
+          enrichedData['attachments'] = { ...((enrichedData as any)['attachments'] || {}), pdfUrl: toRelative(pdfPath) };
+        }
+        if (Array.isArray(attachments?.imagesBase64) && attachments.imagesBase64.length > 0) {
+          const imagePaths = await saveMultipleBase64Images(attachments.imagesBase64, baseDir);
+          enrichedData['attachments'] = {
+            ...((enrichedData as any)['attachments'] || {}),
+            imageUrls: imagePaths.map(toRelative),
+          };
+        }
+      }
+
       const notification = await this.notificationService.createAndSendNotification({
         title,
         message,
@@ -241,7 +339,7 @@ export class NotificationController {
         recipientType: recipientType || RecipientType.SPECIFIC_TEACHERS,
         recipientIds,
         data: {
-          ...data,
+          ...enrichedData,
           url,
           imageUrl
         },
@@ -417,7 +515,7 @@ export class NotificationController {
   getUserNotifications = async (req: Request, res: Response): Promise<void> => {
     try {
       const userId = (req as any).user?.id;
-      const { page = 1, limit = 10 } = req.query;
+      const { page = 1, limit = 10, q, type, courseId, subType } = req.query as any;
 
       if (!userId) {
         res.status(401).json({
@@ -427,15 +525,55 @@ export class NotificationController {
         return;
       }
 
-      const result = await this.notificationService.getUserNotifications(
-        userId,
-        parseInt(page as string),
-        parseInt(limit as string)
-      );
+      const parsedType = type && Object.values(NotificationType).includes(type as NotificationType)
+        ? (type as NotificationType)
+        : null;
+
+      const result = await this.notificationService.getUserNotifications(userId, parseInt(page as string), parseInt(limit as string), {
+        q: q ? String(q) : null,
+        type: parsedType,
+        courseId: courseId ? String(courseId) : null,
+        subType: subType ? String(subType) : null,
+      });
+
+      // Normalize attachments and links to absolute URLs for client display
+      const toAbsolute = (p?: string | null) => {
+        if (!p) return p;
+        const path = p.startsWith('/') ? p : `/${p}`;
+        return `${req.protocol}://${req.get('host')}${path}`;
+      };
+      const isAbsoluteUrl = (u?: string) => !!u && /^(https?:)?\/\//i.test(u);
+
+      const notifications = (result.notifications || result.data || []).map((n: any) => {
+        const data = n.data || {};
+        const attachments = data.attachments || {};
+        const pdfUrl = attachments.pdfUrl ? toAbsolute(attachments.pdfUrl) : undefined;
+        const imageUrls = Array.isArray(attachments.imageUrls)
+          ? attachments.imageUrls.map((u: string) => toAbsolute(u))
+          : undefined;
+        const link = data.link && !isAbsoluteUrl(data.link) ? toAbsolute(String(data.link)) : data.link;
+        return {
+          ...n,
+          data: {
+            ...data,
+            ...(link ? { link } : {}),
+            attachments: {
+              ...attachments,
+              ...(pdfUrl ? { pdfUrl } : {}),
+              ...(imageUrls ? { imageUrls } : {}),
+            },
+          },
+        };
+      });
+
+      const modified = {
+        ...result,
+        notifications,
+      };
 
       res.status(200).json({
         success: true,
-        data: result
+        data: modified
       });
     } catch (error) {
       console.error('Error in getUserNotifications:', error);

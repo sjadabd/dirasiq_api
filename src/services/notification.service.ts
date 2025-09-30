@@ -5,6 +5,7 @@ import {
   NotificationType,
   RecipientType,
 } from '@/models/notification.model';
+import { AcademicYearModel } from '@/models/academic-year.model';
 import { StudentGradeModel } from '@/models/student-grade.model';
 import { TokenModel } from '@/models/token.model';
 import { UserModel } from '@/models/user.model';
@@ -218,8 +219,11 @@ export class NotificationService {
         senderName = 'النظام';
       }
 
+      // Ensure studyYear is attached to data from active academic year if not provided
+      const activeYear = await AcademicYearModel.getActive();
       const enrichedData = {
         ...notificationData.data,
+        ...(activeYear && { studyYear: (notificationData.data?.['studyYear'] as any) || activeYear.year }),
         sender: {
           id: senderId || String(notificationData.createdBy || ''),
           type: senderType,
@@ -457,7 +461,22 @@ export class NotificationService {
     return await NotificationModel.getStatistics();
   }
 
-  async getUserNotifications(userId: string, page = 1, limit = 10): Promise<any> {
+  async getUserNotifications(
+    userId: string,
+    page = 1,
+    limit = 10,
+    options?: { q?: string | null; type?: NotificationType | null; courseId?: string | null; subType?: string | null }
+  ): Promise<any> {
+    if (options && (options.q || options.type || options.courseId || options.subType)) {
+      return await NotificationModel.getUserNotificationsWithFilters(userId, {
+        page,
+        limit,
+        q: options.q ?? null,
+        type: options.type ?? null,
+        courseId: options.courseId ?? null,
+        subType: options.subType ?? null,
+      });
+    }
     return await NotificationModel.getUserNotifications(userId, page, limit);
   }
 

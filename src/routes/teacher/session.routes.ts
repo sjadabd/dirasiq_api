@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { authenticateToken, requireTeacher } from '@/middleware/auth.middleware';
 import { TeacherSessionController } from '@/controllers/teacher/session.controller';
+import { TeacherRosterController } from '@/controllers/teacher/roster.controller';
 
 const router = Router();
 
@@ -8,6 +9,7 @@ router.use(authenticateToken, requireTeacher);
 
 router.post('/', TeacherSessionController.createSession);
 router.get('/', TeacherSessionController.listMySessions);
+router.get('/names', TeacherRosterController.listSessionNames);
 router.get('/courses/:courseId/confirmed-students', TeacherSessionController.getConfirmedStudentsByCourse);
 router.get('/:id/attendees', TeacherSessionController.listAttendees);
 router.post('/:id/attendees', TeacherSessionController.addAttendees);

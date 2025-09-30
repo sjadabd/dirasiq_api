@@ -10,4 +10,10 @@ router.use(authenticateToken, requireTeacher);
 // query: page, limit, q, type, courseId
 router.get('/', TeacherNotificationController.listMyNotifications);
 
+// POST /api/teacher/notifications
+router.post('/', TeacherNotificationController.createNotification);
+
+// DELETE /api/teacher/notifications/:id (soft delete)
+router.delete('/:id', TeacherNotificationController.deleteNotification);
+
 export default router;
