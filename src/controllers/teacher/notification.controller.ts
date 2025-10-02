@@ -247,8 +247,8 @@ export class TeacherNotificationController {
         teacherId: String(me.id),
       };
 
-      // Save under public/uploads so it can be served at /uploads
-      const baseDir = path.join(__dirname, '../../public/uploads/notifications/temp');
+      // Save under project-root public/uploads/notification so it can be served at /uploads/notification
+      const baseDir = path.resolve(__dirname, '..', '..', '..', 'public', 'uploads', 'notification');
       const toRelative = (p: string) => {
         const u = p.replace(/\\/g, '/');
         const i = u.lastIndexOf('/public/');

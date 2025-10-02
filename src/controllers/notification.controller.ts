@@ -47,7 +47,7 @@ export class NotificationController {
       // Save attachments if provided
       let enrichedData: Record<string, any> = { ...(data || {}) };
       if (attachments?.pdfBase64 || (Array.isArray(attachments?.imagesBase64) && attachments.imagesBase64.length)) {
-        const baseDir = path.join(__dirname, '../../public/uploads/notifications');
+        const baseDir = path.resolve(__dirname, '..', '..', 'public', 'uploads', 'notification');
         const toRelative = (p: string) => {
           const u = p.replace(/\\/g, '/');
           const i = u.lastIndexOf('/public/');

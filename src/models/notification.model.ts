@@ -523,6 +523,17 @@ export class NotificationModel {
     return (result.rowCount || 0) > 0;
   }
 
+  // Soft-delete notifications by assignmentId stored in data JSON
+  static async softDeleteByAssignmentId(assignmentId: string): Promise<number> {
+    const query = `
+      UPDATE notifications
+      SET deleted_at = NOW(), updated_at = NOW()
+      WHERE (data->>'assignmentId') = $1 AND deleted_at IS NULL
+    `;
+    const result = await pool.query(query, [assignmentId]);
+    return result.rowCount || 0;
+  }
+
   // Get notification statistics
   static async getStatistics(): Promise<{
     total: number;
