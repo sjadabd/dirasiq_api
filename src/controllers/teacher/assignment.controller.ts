@@ -1,10 +1,11 @@
-import { AssignmentModel } from '@/models/assignment.model';
+import { AssignmentModel, SubmissionType } from '@/models/assignment.model';
 import { UserModel } from '@/models/user.model';
 import { NotificationModel } from '@/models/notification.model';
 import { AssignmentService } from '@/services/assignment.service';
 import { NotificationService } from '@/services/notification.service';
 import { saveBase64File } from '@/utils/file.util';
 import { Request, Response } from 'express';
+import pool from '@/config/database';
 import fs from 'fs';
 import path from 'path';
 import { AcademicYearModel } from '../../models/academic-year.model';
@@ -12,6 +13,91 @@ import { AcademicYearModel } from '../../models/academic-year.model';
 export class TeacherAssignmentController {
   static getService(): AssignmentService {
     return new AssignmentService();
+  }
+
+  // GET /api/teacher/assignments/:id/students
+  // Returns list of students relevant to this assignment:
+  // - If visibility = specific_students: returns recipients
+  // - If visibility = all_students: returns confirmed course bookings (students) for assignment.course_id
+  static async students(req: Request, res: Response): Promise<void> {
+    try {
+      const me = req.user;
+      if (!me) { res.status(401).json({ success: false, message: 'غير مصادق' }); return; }
+      const id = String(req.params['id']);
+      const service = TeacherAssignmentController.getService();
+      const item = await service.getById(id);
+      if (!item) { res.status(404).json({ success: false, message: 'غير موجود' }); return; }
+      if (String(item.teacher_id) !== String(me.id)) { res.status(403).json({ success: false, message: 'غير مصرح' }); return; }
+
+      if (item.visibility === 'specific_students') {
+        const ids = await AssignmentModel.getRecipientIds(id);
+        const students: { id: string; name: string }[] = [];
+        for (const sid of ids) {
+          const u = await UserModel.findById(sid);
+          if (u) students.push({ id: String(u.id), name: String((u as any).name || '') });
+        }
+        res.status(200).json({ success: true, data: students });
+        return;
+      }
+
+      // all_students: fetch confirmed students by course_id
+      const q = `
+        SELECT u.id::text AS id, u.name AS name
+        FROM course_bookings cb
+        JOIN users u ON u.id = cb.student_id AND u.user_type = 'student' AND u.deleted_at IS NULL
+        WHERE cb.course_id = $1 AND cb.teacher_id = $2 AND cb.status = 'confirmed' AND cb.is_deleted = false
+        ORDER BY u.name ASC
+      `;
+      const rows = (await pool.query(q, [String(item.course_id), String(me.id)])).rows;
+      res.status(200).json({ success: true, data: rows });
+    } catch (error) {
+      console.error('Error get assignment students:', error);
+      res.status(500).json({ success: false, message: 'خطأ داخلي في الخادم' });
+    }
+  }
+
+  // GET /api/teacher/assignments/:id/overview
+  // Returns assignment details, recipients (if visibility is specific_students), and all submissions with basic student info
+  static async overview(req: Request, res: Response): Promise<void> {
+    try {
+      const me = req.user;
+      if (!me) { res.status(401).json({ success: false, message: 'غير مصادق' }); return; }
+      const id = String(req.params['id']);
+      const service = TeacherAssignmentController.getService();
+      const item = await service.getById(id);
+      if (!item) { res.status(404).json({ success: false, message: 'غير موجود' }); return; }
+      if (String(item.teacher_id) !== String(me.id)) { res.status(403).json({ success: false, message: 'غير مصرح' }); return; }
+
+      // Recipients (only when visibility is specific_students)
+      let recipients: { id: string; name: string }[] = [];
+      if (item.visibility === 'specific_students') {
+        const ids = await AssignmentModel.getRecipientIds(id);
+        for (const sid of ids) {
+          const u = await UserModel.findById(sid);
+          if (u) recipients.push({ id: String(u.id), name: String((u as any).name || '') });
+        }
+      }
+
+      // All submissions for this assignment
+      const submissions = await AssignmentModel.listSubmissionsByAssignment(id);
+
+      // Attach basic student info to submissions
+      const studentIds = Array.from(new Set(submissions.map((s: any) => String(s.student_id))));
+      const studentMap = new Map<string, { id: string; name: string }>();
+      for (const sid of studentIds) {
+        const u = await UserModel.findById(sid);
+        if (u) studentMap.set(String(u.id), { id: String(u.id), name: String((u as any).name || '') });
+      }
+      const submissionsWithStudent = submissions.map((s: any) => ({
+        ...s,
+        student: studentMap.get(String(s.student_id)) || { id: String(s.student_id), name: '' },
+      }));
+
+      res.status(200).json({ success: true, data: { assignment: item, recipients, submissions: submissionsWithStudent } });
+    } catch (error) {
+      console.error('Error get assignment overview:', error);
+      res.status(500).json({ success: false, message: 'خطأ داخلي في الخادم' });
+    }
   }
 
   // GET /api/teacher/assignments/:id/recipients
@@ -93,6 +179,13 @@ export class TeacherAssignmentController {
         return;
       }
 
+      // Normalize/validate submission_type to match DB constraint (text|file|link|mixed)
+      const rawSubmissionType = String(submission_type ?? 'mixed').toLowerCase();
+      const allowedSubmissionTypes = new Set<SubmissionType>(['text', 'file', 'link', 'mixed']);
+      const normalizedSubmissionType: SubmissionType = (rawSubmissionType === 'paper'
+        ? 'mixed'
+        : (allowedSubmissionTypes.has(rawSubmissionType as SubmissionType) ? (rawSubmissionType as SubmissionType) : 'mixed'));
+
       // Process attachments: save any base64 files to /public/uploads/assignments and replace with URL
       let processedAttachments = attachments ?? {};
       try {
@@ -130,6 +223,17 @@ export class TeacherAssignmentController {
         // proceed without transforming if saving failed; you can choose to throw if required
       }
 
+      // Add delivery_mode into attachments.meta for frontend logic (paper|electronic|mixed)
+      const rawDeliveryMode = String((req.body?.delivery_mode ?? rawSubmissionType) || 'mixed').toLowerCase();
+      const deliveryMode = ['paper', 'electronic', 'mixed'].includes(rawDeliveryMode) ? rawDeliveryMode : 'mixed';
+      processedAttachments = {
+        ...(processedAttachments || {}),
+        meta: {
+          ...((processedAttachments && processedAttachments.meta) || {}),
+          delivery_mode: deliveryMode,
+        },
+      };
+
       // Resolve study year: prefer provided value, else use active academic year
       const activeYear = await AcademicYearModel.getActive();
       const resolvedStudyYear = study_year ?? activeYear?.year ?? null;
@@ -144,7 +248,7 @@ export class TeacherAssignmentController {
         description: description ? String(description) : null,
         assigned_date: assigned_date ?? null,
         due_date: due_date ?? null,
-        submission_type: submission_type ?? 'mixed',
+        submission_type: normalizedSubmissionType,
         attachments: processedAttachments,
         resources: resources ?? [],
         max_score: max_score ?? 100,
@@ -334,12 +438,22 @@ export class TeacherAssignmentController {
         processedAttachments = { ...body.attachments, files: newFiles };
       }
 
-      const updated = await service.update(id, {
+      // Normalize submission_type to match DB constraint on update as well
+      const rawSubmissionType = typeof body.submission_type === 'string' ? String(body.submission_type).toLowerCase() : undefined;
+      const allowedSubmissionTypes = new Set<SubmissionType>(['text', 'file', 'link', 'mixed']);
+      const normalizedSubmissionType: SubmissionType | undefined = rawSubmissionType
+        ? (['paper', 'online', 'electronic'].includes(rawSubmissionType)
+            ? 'mixed'
+            : (allowedSubmissionTypes.has(rawSubmissionType as SubmissionType) ? (rawSubmissionType as SubmissionType) : undefined))
+        : undefined;
+
+      const patchPayload = {
         ...body,
-        ...(processedAttachments !== undefined
-          ? { attachments: processedAttachments }
-          : {}),
-      });
+        ...(processedAttachments !== undefined ? { attachments: processedAttachments } : {}),
+        ...(normalizedSubmissionType ? { submission_type: normalizedSubmissionType } : {}),
+      };
+
+      const updated = await service.update(id, patchPayload as any);
       if (!updated) {
         res.status(404).json({ success: false, message: 'غير موجود' });
         return;

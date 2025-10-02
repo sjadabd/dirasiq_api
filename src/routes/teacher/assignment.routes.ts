@@ -7,6 +7,8 @@ const router = Router();
 router.post('/', authenticateToken, requireTeacher, TeacherAssignmentController.create);
 router.get('/', authenticateToken, requireTeacher, TeacherAssignmentController.list);
 router.get('/:id', authenticateToken, requireTeacher, TeacherAssignmentController.getById);
+router.get('/:id/overview', authenticateToken, requireTeacher, TeacherAssignmentController.overview);
+router.get('/:id/students', authenticateToken, requireTeacher, TeacherAssignmentController.students);
 router.patch('/:id', authenticateToken, requireTeacher, TeacherAssignmentController.update);
 router.delete('/:id', authenticateToken, requireTeacher, TeacherAssignmentController.remove);
 router.put('/:id/recipients', authenticateToken, requireTeacher, TeacherAssignmentController.setRecipients);

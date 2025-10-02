@@ -245,6 +245,14 @@ export class AssignmentModel {
     return r.rows[0] || null;
   }
 
+  static async listSubmissionsByAssignment(assignmentId: string): Promise<AssignmentSubmission[]> {
+    const r = await pool.query(
+      `SELECT * FROM assignment_submissions WHERE assignment_id = $1 ORDER BY submitted_at ASC, created_at ASC`,
+      [assignmentId]
+    );
+    return r.rows;
+  }
+
   static async gradeSubmission(assignmentId: string, studentId: string, score: number, gradedBy: string, feedback?: string): Promise<AssignmentSubmission | null> {
     const r = await pool.query(
       `UPDATE assignment_submissions SET score=$3, graded_at=NOW(), graded_by=$4, status='graded', feedback=COALESCE($5, feedback), updated_at=NOW()

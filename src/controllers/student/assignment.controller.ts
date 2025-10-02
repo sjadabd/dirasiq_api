@@ -60,7 +60,10 @@ export class StudentAssignmentController {
       const mySubmission = submission
         ? { score: submission.score ?? null, feedback: submission.feedback ?? null, status: submission.status }
         : null;
-      res.status(200).json({ success: true, data: item, mySubmission });
+      // Expose delivery_mode for frontend convenience
+      const delivery_mode = (item as any)?.attachments?.meta?.delivery_mode ?? 'mixed';
+      const dataWithDelivery = { ...item, delivery_mode } as any;
+      res.status(200).json({ success: true, data: dataWithDelivery, mySubmission });
     } catch (error) {
       console.error('Error get assignment:', error);
       res.status(500).json({ success: false, message: 'خطأ داخلي في الخادم' });
@@ -73,9 +76,9 @@ export class StudentAssignmentController {
       const me = req.user;
       if (!me) { res.status(401).json({ success: false, message: 'غير مصادق' }); return; }
       const assignmentId = String(req.params['id']);
-      const service = StudentAssignmentController.getService();
-      const sub = await service.submit(assignmentId, String(me.id), {});
-      // upsert pattern ensures a record exists; for pure GET you could use getSubmission instead.
+      // IMPORTANT: Do NOT call submit() here; it would overwrite existing data with empty fields.
+      // Simply return the current submission if it exists.
+      const sub = await AssignmentModel.getSubmission(assignmentId, String(me.id));
       res.status(200).json({ success: true, data: sub });
     } catch (error) {
       console.error('Error get my submission:', error);

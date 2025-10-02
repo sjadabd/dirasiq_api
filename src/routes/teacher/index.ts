@@ -6,6 +6,7 @@ import rosterRoutes from './roster.routes';
 import sessionRoutes from './session.routes';
 import subjectRoutes from './subject.routes';
 import assignmentRoutes from './assignment.routes';
+import examRoutes from './exam.routes';
 
 const router = Router();
 
@@ -18,5 +19,6 @@ router.use('/notifications', notificationRoutes);
 router.use('/students', rosterRoutes);
 router.use('/roster', rosterRoutes);
 router.use('/assignments', assignmentRoutes);
+router.use('/exams', examRoutes);
 
 export default router;
