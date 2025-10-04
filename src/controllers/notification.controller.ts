@@ -1,4 +1,5 @@
 import { NotificationModel, NotificationPriority, NotificationType, RecipientType } from '@/models/notification.model';
+import { AssignmentModel } from '@/models/assignment.model';
 import { NotificationService } from '@/services/notification.service';
 import { Request, Response } from 'express';
 import { body, param, query, validationResult } from 'express-validator';
@@ -544,27 +545,62 @@ export class NotificationController {
       };
       const isAbsoluteUrl = (u?: string) => !!u && /^(https?:)?\/\//i.test(u);
 
-      const notifications = (result.notifications || result.data || []).map((n: any) => {
+      const rawList = (result.notifications || result.data || []);
+      const notifications = await Promise.all(rawList.map(async (n: any) => {
         const data = n.data || {};
-        const attachments = data.attachments || {};
-        const pdfUrl = attachments.pdfUrl ? toAbsolute(attachments.pdfUrl) : undefined;
-        const imageUrls = Array.isArray(attachments.imageUrls)
+        let attachments = data.attachments || {};
+
+        // Enrich with assignment attachments if missing
+        if (
+          n.type === NotificationType.ASSIGNMENT_DUE || n.type === 'assignment_due'
+        ) {
+          const assignmentId = data.assignmentId || data.assignment_id;
+          const hasFiles = attachments && (Array.isArray(attachments.files) ? attachments.files.length > 0 : false);
+          if (assignmentId && !hasFiles) {
+            try {
+              const assignment = await AssignmentModel.getById(String(assignmentId));
+              if (assignment && assignment.attachments) {
+                attachments = { ...(attachments || {}), ...assignment.attachments };
+              }
+            } catch (e) {
+              // ignore enrichment errors, continue
+            }
+          }
+        }
+
+        // Links in data
+        const link = data.link && !isAbsoluteUrl(data.link) ? toAbsolute(String(data.link)) : data.link;
+        const url = data.url && !isAbsoluteUrl(data.url) ? toAbsolute(String(data.url)) : data.url;
+        const imageUrl = data.imageUrl && !isAbsoluteUrl(data.imageUrl) ? toAbsolute(String(data.imageUrl)) : data.imageUrl;
+
+        // Attachments normalization
+        const pdfUrl = attachments?.pdfUrl ? toAbsolute(attachments.pdfUrl) : undefined;
+        const imageUrls = Array.isArray(attachments?.imageUrls)
           ? attachments.imageUrls.map((u: string) => toAbsolute(u))
           : undefined;
-        const link = data.link && !isAbsoluteUrl(data.link) ? toAbsolute(String(data.link)) : data.link;
+        const files = Array.isArray(attachments?.files)
+          ? attachments.files.map((f: any) => ({
+              ...f,
+              url: typeof f?.url === 'string' && !isAbsoluteUrl(f.url) ? toAbsolute(f.url) : f?.url,
+            }))
+          : undefined;
+
         return {
           ...n,
           data: {
             ...data,
             ...(link ? { link } : {}),
+            ...(url ? { url } : {}),
+            ...(imageUrl ? { imageUrl } : {}),
             attachments: {
-              ...attachments,
+              ...(attachments || {}),
               ...(pdfUrl ? { pdfUrl } : {}),
               ...(imageUrls ? { imageUrls } : {}),
+              ...(files ? { files } : {}),
             },
           },
         };
-      });
+      }));
 
       const modified = {
         ...result,

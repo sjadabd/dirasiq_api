@@ -719,7 +719,7 @@ export namespace StudentService {
           teacher: {
             id: teacher.id,
             name: teacher.name,
-            profileImagePath: (teacher as any).profile_image_path ?? null,
+            profileImagePath: (teacher as any).profileImagePath ?? null,
             latitude: (teacher as any).latitude ?? null,
             longitude: (teacher as any).longitude ?? null
           },

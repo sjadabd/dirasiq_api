@@ -9,6 +9,7 @@ import invoiceRoutes from './invoice.routes';
 import studentEvaluationRoutes from './student-evaluation.routes';
 import teacherRoutes from './teacher.routes';
 import dashboardRoutes from './dashboard.routes';
+import searchRoutes from './search.routes';
 
 const router = Router();
 
@@ -24,5 +25,7 @@ router.use('/evaluations', studentEvaluationRoutes);
 router.use('/invoices', invoiceRoutes);
 router.use('/teachers', teacherRoutes);
 router.use('/dashboard', dashboardRoutes);
+router.use('/search', searchRoutes);
 
 export default router;
+
