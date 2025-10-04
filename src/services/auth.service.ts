@@ -21,6 +21,7 @@ import {
 import bcrypt from 'bcryptjs';
 import { QrService } from '@/services/qr.service';
 import jwt from 'jsonwebtoken';
+import { ImageService } from '@/utils/image.service';
 
 export class AuthService {
   // Register super admin
@@ -870,6 +871,25 @@ export class AuthService {
         if (address) updateData.address = address;
       }
 
+      // Handle profile avatar if provided (base64): delete old file then save new
+      try {
+        const profileImageBase64 = profileData?.profileImageBase64 as string | undefined;
+        if (profileImageBase64 && profileImageBase64.startsWith('data:image/')) {
+          // delete old avatar if exists
+          try {
+            const existing = await UserModel.findById(userId);
+            const oldPath = (existing as any)?.profileImagePath || (existing as any)?.profile_image_path;
+            if (oldPath) await ImageService.deleteUserAvatar(oldPath);
+          } catch (delErr) {
+            console.warn('Could not delete old user avatar:', delErr);
+          }
+          const savedPath = await ImageService.saveUserAvatar(profileImageBase64, `avatar_${user.id}`);
+          updateData.profile_image_path = savedPath;
+        }
+      } catch (e) {
+        console.error('Failed to process profile avatar (completeProfile):', e);
+      }
+
       // 👇 هنا الجزء الخاص بالمعلم
       if (userType === 'teacher') {
         const {
@@ -1162,6 +1182,27 @@ export class AuthService {
         if (allowedFields.includes(key)) {
           filteredData[key] = value;
         }
+      }
+
+      // ✅ معالجة صورة الملف الشخصي (base64) إن وُجدت ضمن نفس الطلب
+      try {
+        const raw = profileData?.profileImageBase64 as string | undefined;
+        if (raw) {
+          // بعض العملاء يرسلون Base64 بدون بادئة data: → نطبّعها كصورة jpeg افتراضياً
+          const base64 = raw.startsWith('data:image/') ? raw : `data:image/jpeg;base64,${raw}`;
+
+          // احذف الصورة القديمة إن وُجدت
+          const oldPath = (user as any)?.profileImagePath || (user as any)?.profile_image_path;
+          if (oldPath) {
+            try { await ImageService.deleteUserAvatar(oldPath); } catch (delErr) { console.warn('delete avatar (updateProfile):', delErr); }
+          }
+
+          // احفظ الصورة الجديدة ومرّر المسار لقاعدة البيانات
+          const savedPath = await ImageService.saveUserAvatar(base64, `avatar_${user.id}`);
+          filteredData['profile_image_path'] = savedPath;
+        }
+      } catch (imgErr) {
+        console.error('Failed processing profile avatar (updateProfile):', imgErr);
       }
 
       const updatedUser = await UserModel.update(userId, filteredData);

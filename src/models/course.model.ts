@@ -381,6 +381,7 @@ export class CourseModel {
         u.address as teacher_address,
         u.bio as teacher_bio,
         u.experience_years as teacher_experience_years,
+        u.profile_image_path as teacher_profile_image_path,
         u.latitude as teacher_latitude,
         u.longitude as teacher_longitude,
         g.name as grade_name,

@@ -304,7 +304,8 @@ export class UserModel {
       'street_name',
       'suburb',
       'location_confidence',
-      'teacher_qr_image_path'
+      'teacher_qr_image_path',
+      'profile_image_path'
     ];
 
     const updates: string[] = [];
@@ -466,6 +467,7 @@ export class UserModel {
       streetName: dbUser.street_name,
       suburb: dbUser.suburb,
       locationConfidence: dbUser.location_confidence,
+      profileImagePath: dbUser.profile_image_path,
       createdAt: dbUser.created_at,
       updatedAt: dbUser.updated_at,
     };

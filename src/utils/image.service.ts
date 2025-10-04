@@ -2,10 +2,35 @@ import fs from 'fs';
 import path from 'path';
 
 export class ImageService {
-  private static uploadsDir = path.join(process.cwd(), 'public', 'uploads', 'courses');
-
+  private static uploadsDir = path.join(
+    process.cwd(),
+    'public',
+    'uploads',
+    'courses'
+  );
+  private static usersUploadsDir = path.join(
+    process.cwd(),
+    'public',
+    'uploads',
+    'users'
+  );
+  // Delete a user avatar file
+  static async deleteUserAvatar(imagePath: string): Promise<void> {
+    try {
+      if (!imagePath) return;
+      const absolutePath = path.join(process.cwd(), 'public', imagePath);
+      if (fs.existsSync(absolutePath)) {
+        fs.unlinkSync(absolutePath);
+      }
+    } catch (error) {
+      console.error('Error deleting user avatar:', error);
+    }
+  }
   // Convert base64 to file and save
-  static async saveBase64Image(base64Data: string, filename: string): Promise<string> {
+  static async saveBase64Image(
+    base64Data: string,
+    filename: string
+  ): Promise<string> {
     try {
       // Ensure uploads directory exists
       if (!fs.existsSync(this.uploadsDir)) {
@@ -13,7 +38,9 @@ export class ImageService {
       }
 
       // Extract base64 data (remove data:image/...;base64, prefix)
-      const base64Match = base64Data.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+      const base64Match = base64Data.match(
+        /^data:([A-Za-z-+\/]+);base64,(.+)$/
+      );
       if (!base64Match) {
         throw new Error('Invalid base64 image format');
       }
@@ -47,6 +74,39 @@ export class ImageService {
     } catch (error) {
       console.error('Error saving base64 image:', error);
       throw new Error('Failed to save image');
+    }
+  }
+
+  // Save base64 user avatar under uploads/users
+  static async saveUserAvatar(
+    base64Data: string,
+    filename: string
+  ): Promise<string> {
+    try {
+      if (!fs.existsSync(this.usersUploadsDir)) {
+        fs.mkdirSync(this.usersUploadsDir, { recursive: true });
+      }
+
+      const base64Match = base64Data.match(
+        /^data:([A-Za-z-+\/]+);base64,(.+)$/
+      );
+      if (!base64Match) throw new Error('Invalid base64 image format');
+      const [, mimeType, base64String] = base64Match;
+      if (!mimeType || !mimeType.startsWith('image/'))
+        throw new Error('Invalid image mime type');
+      if (!base64String) throw new Error('Invalid base64 data');
+
+      const buffer = Buffer.from(base64String, 'base64');
+      const timestamp = Date.now();
+      const randomString = Math.random().toString(36).substring(2, 15);
+      const extension = mimeType.split('/')[1];
+      const uniqueFilename = `${filename}_${timestamp}_${randomString}.${extension}`;
+      const filePath = path.join(this.usersUploadsDir, uniqueFilename);
+      fs.writeFileSync(filePath, buffer);
+      return `/uploads/users/${uniqueFilename}`;
+    } catch (error) {
+      console.error('Error saving user avatar:', error);
+      throw new Error('Failed to save user avatar');
     }
   }
 
@@ -93,7 +153,10 @@ export class ImageService {
 
   // Update course images (handle both base64 and existing paths)
   // Update course images (handle both base64 and existing paths)
-  static async updateCourseImages(newImages: string[], oldImages: string[]): Promise<string[]> {
+  static async updateCourseImages(
+    newImages: string[],
+    oldImages: string[]
+  ): Promise<string[]> {
     const finalImages: string[] = [];
     const oldImagesSet = new Set(oldImages); // لتسهيل التحقق من الصور القديمة
     const keptImages: Set<string> = new Set();
@@ -103,7 +166,7 @@ export class ImageService {
 
       if (!image) continue;
 
-      if (image.startsWith("data:image/")) {
+      if (image.startsWith('data:image/')) {
         // صورة جديدة → احفظها
         const filename = `course_image_${Date.now()}_${i}`;
         const savedPath = await this.saveBase64Image(image, filename);
@@ -130,7 +193,6 @@ export class ImageService {
 
     return finalImages;
   }
-
 
   // Delete all course images
   static async deleteCourseImages(imagePaths: string[]): Promise<void> {
