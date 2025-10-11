@@ -6,17 +6,14 @@ export class StudentDashboardController {
     try {
       const studentId = (req as any).user.id as string;
       const result = await StudentService.getDashboardOverview(studentId);
-      console.log(result);
       res.status(result.success ? 200 : 400).json(result);
     } catch (error) {
       console.error('Error in StudentDashboardController.getOverview:', error);
-      res
-        .status(500)
-        .json({
-          success: false,
-          message: 'خطأ داخلي في الخادم',
-          errors: ['حدث خطأ في الخادم'],
-        });
+      res.status(500).json({
+        success: false,
+        message: 'خطأ داخلي في الخادم',
+        errors: ['حدث خطأ في الخادم'],
+      });
     }
   }
 
@@ -26,10 +23,17 @@ export class StudentDashboardController {
       const result = await StudentService.getWeeklySchedule(studentId);
       res.status(result.success ? 200 : 400).json(result);
     } catch (error) {
-      console.error('Error in StudentDashboardController.getWeeklySchedule:', error);
+      console.error(
+        'Error in StudentDashboardController.getWeeklySchedule:',
+        error
+      );
       res
         .status(500)
-        .json({ success: false, message: 'خطأ داخلي في الخادم', errors: ['حدث خطأ في الخادم'] });
+        .json({
+          success: false,
+          message: 'خطأ داخلي في الخادم',
+          errors: ['حدث خطأ في الخادم'],
+        });
     }
   }
 }

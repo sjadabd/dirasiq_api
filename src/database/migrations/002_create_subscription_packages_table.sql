@@ -37,35 +37,3 @@ CREATE TRIGGER update_subscription_packages_updated_at
     BEFORE UPDATE ON subscription_packages
     FOR EACH ROW
     EXECUTE FUNCTION update_subscription_packages_updated_at_column();
-
--- Insert default free package (only if it doesn't exist)
-INSERT INTO subscription_packages (name, description, max_students, price, duration_days, is_free, is_active)
-SELECT 'الباقة المجانية', 'باقة مجانية للمعلمين الجدد - حد أقصى 5 طلاب', 5, 0.00, 30, TRUE, TRUE
-WHERE NOT EXISTS (
-    SELECT 1 FROM subscription_packages WHERE name = 'الباقة المجانية'
-);
-
--- Insert some sample paid packages (only if they don't exist)
-INSERT INTO subscription_packages (name, description, max_students, price, duration_days, is_free, is_active)
-SELECT 'الباقة الأساسية', 'باقة أساسية للمعلمين - حد أقصى 20 طالب', 20, 25.00, 30, FALSE, TRUE
-WHERE NOT EXISTS (
-    SELECT 1 FROM subscription_packages WHERE name = 'الباقة الأساسية'
-);
-
-INSERT INTO subscription_packages (name, description, max_students, price, duration_days, is_free, is_active)
-SELECT 'الباقة المتقدمة', 'باقة متقدمة للمعلمين - حد أقصى 50 طالب', 50, 45.00, 30, FALSE, TRUE
-WHERE NOT EXISTS (
-    SELECT 1 FROM subscription_packages WHERE name = 'الباقة المتقدمة'
-);
-
-INSERT INTO subscription_packages (name, description, max_students, price, duration_days, is_free, is_active)
-SELECT 'الباقة الاحترافية', 'باقة احترافية للمعلمين - حد أقصى 100 طالب', 100, 80.00, 30, FALSE, TRUE
-WHERE NOT EXISTS (
-    SELECT 1 FROM subscription_packages WHERE name = 'الباقة الاحترافية'
-);
-
-INSERT INTO subscription_packages (name, description, max_students, price, duration_days, is_free, is_active)
-SELECT 'الباقة السنوية', 'باقة سنوية بخصم 20% - حد أقصى 100 طالب', 100, 768.00, 365, FALSE, TRUE
-WHERE NOT EXISTS (
-    SELECT 1 FROM subscription_packages WHERE name = 'الباقة السنوية'
-);

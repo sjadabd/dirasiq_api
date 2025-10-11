@@ -14,8 +14,14 @@ router.post('/:invoiceId/payments', TeacherInvoiceController.addPayment);
 // Add discount to invoice
 router.post('/:invoiceId/discounts', TeacherInvoiceController.addDiscount);
 
+// Update invoice (metadata and totals with safe validations)
+router.patch('/:invoiceId', TeacherInvoiceController.updateInvoice);
+
 // List invoices for current teacher
 router.get('/', TeacherInvoiceController.listInvoices);
+
+// Overall summary (totals only) for current teacher
+router.get('/summary', TeacherInvoiceController.invoicesSummary);
 
 // Get installments for a specific invoice
 router.get('/:invoiceId/installments', TeacherInvoiceController.listInstallments);

@@ -10,6 +10,8 @@ import examRoutes from './exam.routes';
 import studentEvaluationRoutes from './student-evaluation.routes';
 import paymentRoutes from './payment.routes';
 import invoiceRoutes from './invoice.routes';
+import subscriptionPackageRoutes from './subscription-package.routes';
+import dashboardRoutes from './dashboard.routes';
 
 const router = Router();
 
@@ -26,6 +28,9 @@ router.use('/exams', examRoutes);
 router.use('/evaluations', studentEvaluationRoutes);
 router.use('/payments', paymentRoutes);
 router.use('/invoices', invoiceRoutes);
+router.use('/subscription-packages', subscriptionPackageRoutes);
+router.use('/dashboard', dashboardRoutes);
 
 export default router;
+
 

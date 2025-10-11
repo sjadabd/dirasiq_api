@@ -45,9 +45,10 @@ export class TeacherPaymentController {
         WHERE rp.teacher_id = $1 AND cb.study_year = $2 AND cb.is_deleted = false
       `;
 
-      const [listR, countR] = await Promise.all([
+      const [listR, countR, report] = await Promise.all([
         pool.query(listQ, [teacherId, studyYear, limit, offset]),
-        pool.query(countQ, [teacherId, studyYear])
+        pool.query(countQ, [teacherId, studyYear]),
+        ReservationPaymentModel.getTeacherReport(teacherId, studyYear)
       ]);
 
       const total = parseInt(countR.rows[0].count, 10) || 0;
@@ -65,6 +66,14 @@ export class TeacherPaymentController {
         reportLink: `/teacher/payments/reservations/${row.booking_id}`
       }));
 
+      // Build report totals (same logic as in getReservationPaymentsReport)
+      const totalAmount = report.items.reduce((sum: number, it: any) => sum + (it.amount || 0), 0);
+      const totalPaidAmount = report.items
+        .filter((it: any) => it.status === 'paid')
+        .reduce((sum: number, it: any) => sum + (it.amount || 0), 0);
+      const discountAmount = 0; // No discount column yet
+      const remainingAmount = totalAmount - totalPaidAmount - discountAmount;
+
       return res.json({
         success: true,
         message: 'Reservation payments fetched successfully',
@@ -76,8 +85,22 @@ export class TeacherPaymentController {
             limit,
             total,
             totalPages: Math.ceil(total / limit)
-          }
-        }
+          },
+          report: {
+            teacherId: report.teacherId,
+            studyYear: report.studyYear,
+            counts: {
+              totalPaid: report.totalPaid,
+              totalPending: report.totalPending,
+            },
+            totals: {
+              totalAmount,
+              totalPaidAmount,
+              discountAmount,
+              remainingAmount,
+            },
+          },
+        },
       });
     } catch (error: any) {
       return res.status(500).json({ success: false, message: error.message || 'Failed to fetch reservation payments' });

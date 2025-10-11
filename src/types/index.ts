@@ -294,6 +294,15 @@ export interface ApiResponse<T = any> {
   data?: T;
   errors?: string[];
   count?: number;
+  // Optional pagination object for list endpoints that return top-level pagination
+  pagination?: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
+  // Optional summary/aggregates object when endpoints include computed totals
+  summary?: any;
 }
 
 export interface PaginationParams {
