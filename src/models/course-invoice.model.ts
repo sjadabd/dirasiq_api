@@ -33,6 +33,7 @@ export class CourseInvoiceModel {
     invoiceType: InvoiceType;
     paymentMode: 'cash' | 'installments';
     amountDue: number;
+    invoiceDate?: string | null;
     dueDate?: string | null;
     notes?: string | null;
   }): Promise<DbCourseInvoice> {
@@ -40,7 +41,7 @@ export class CourseInvoiceModel {
       INSERT INTO course_invoices (
         student_id, teacher_id, course_id, study_year, invoice_type, payment_mode,
         amount_due, discount_total, amount_paid, invoice_status, invoice_date, due_date, notes
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7, 0, 0, 'pending', CURRENT_DATE, $8, $9)
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7, 0, 0, 'pending', COALESCE($8, TO_CHAR(CURRENT_DATE,'YYYY-MM-DD')), $9, $10)
       RETURNING *
     `;
     const v = [
@@ -51,6 +52,7 @@ export class CourseInvoiceModel {
       data.invoiceType,
       data.paymentMode,
       data.amountDue,
+      data.invoiceDate || null,
       data.dueDate || null,
       data.notes || null,
     ];
@@ -92,7 +94,7 @@ export class CourseInvoiceModel {
         WHEN amount_paid > 0 AND remaining_amount > 0 THEN 'partial'
         ELSE 'pending'
       END,
-      paid_date = CASE WHEN remaining_amount = 0 THEN NOW() ELSE paid_date END,
+      paid_date = CASE WHEN remaining_amount = 0 THEN (CURRENT_DATE)::text ELSE paid_date END,
       updated_at = NOW()
       WHERE id = $1
       RETURNING *

@@ -1,6 +1,6 @@
-import { Router } from 'express';
-import { authenticateToken } from '@/middleware/auth.middleware';
 import { TeacherInvoiceController } from '@/controllers/teacher/invoice.controller';
+import { authenticateToken } from '@/middleware/auth.middleware';
+import { Router } from 'express';
 
 const router = Router();
 router.use(authenticateToken);
@@ -26,11 +26,14 @@ router.get('/summary', TeacherInvoiceController.invoicesSummary);
 // Get installments for a specific invoice
 router.get('/:invoiceId/installments', TeacherInvoiceController.listInstallments);
 
-// Get entries (payments/discounts/...) for a specific invoice
-router.get('/:invoiceId/entries', TeacherInvoiceController.listEntries);
+// Get full invoice with summary, installments list, and totals
+router.get('/:invoiceId/full', TeacherInvoiceController.getInvoiceFull);
 
 // Get aggregated report for a specific invoice
-router.get('/:invoiceId/entries/report', TeacherInvoiceController.entriesReport);
+router.get(
+  '/:invoiceId/entries/report',
+  TeacherInvoiceController.entriesReport
+);
 
 // Soft delete an invoice
 router.delete('/:invoiceId', TeacherInvoiceController.softDeleteInvoice);

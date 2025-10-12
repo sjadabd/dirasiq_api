@@ -48,6 +48,7 @@ export class InvoiceInstallmentModel {
   }
 
   static async addPayment(installmentId: string, amount: number, paidAt?: Date): Promise<DbInvoiceInstallment | null> {
+    const paidStr = (paidAt ? new Date(paidAt) : new Date()).toISOString().slice(0, 10);
     const q = `
       UPDATE invoice_installments
       SET paid_amount = GREATEST(paid_amount + $1, 0),
@@ -61,7 +62,7 @@ export class InvoiceInstallmentModel {
       WHERE id = $3
       RETURNING *
     `;
-    const r = await pool.query(q, [amount, paidAt || new Date(), installmentId]);
+    const r = await pool.query(q, [amount, paidStr, installmentId]);
     return r.rows[0] || null;
   }
 }

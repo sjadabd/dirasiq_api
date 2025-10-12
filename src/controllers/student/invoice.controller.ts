@@ -51,13 +51,11 @@ export class StudentInvoiceController {
   }
 
   // GET /student/invoices/:invoiceId/entries
-  static async listEntries(req: AuthenticatedRequest & Request, res: Response<ApiResponse>) {
+  static async listEntries(_req: AuthenticatedRequest & Request, res: Response<ApiResponse>) {
     try {
-      const studentId = req.user?.id as string;
-      const { invoiceId } = req.params as { invoiceId: string };
-      const items = await StudentInvoiceService.listEntries(studentId, invoiceId);
-      if (!items) return res.status(404).json({ success: false, message: 'Invoice not found' });
-      return res.json({ success: true, message: 'Entries fetched', data: items });
+      return res
+        .status(410)
+        .json({ success: false, message: 'Entries API removed in simplified billing' });
     } catch (error: any) {
       return res.status(500).json({ success: false, message: error.message || 'Failed to fetch entries' });
     }

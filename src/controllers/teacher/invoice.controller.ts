@@ -26,10 +26,18 @@ export class TeacherInvoiceController {
         invoiceType,
         paymentMode,
         amountDue,
+        studentId,
+        invoiceDate,
+        discountAmount,
         installments,
-        payments,
-        additionalDiscounts,
-      } = req.body || {};
+        removeInstallmentIds,
+      } = (req.body as any) || {};
+
+      const normalizeDate = (d: any) => {
+        if (!d) return null;
+        if (typeof d === 'string') return d.slice(0, 10);
+        try { return new Date(d).toISOString().slice(0, 10); } catch { return null; }
+      };
 
       const updated = await TeacherInvoiceService.updateInvoice(
         teacherId,
@@ -41,87 +49,110 @@ export class TeacherInvoiceController {
             invoiceType?: InvoiceType;
             paymentMode?: 'cash' | 'installments';
             amountDue?: number;
+            studentId?: string;
+            invoiceDate?: string | null;
+            discountAmount?: number;
             installments?: Array<{
+              id?: string;
               installmentNumber: number;
               plannedAmount: number;
               dueDate: string;
-              notes?: string;
-              initialPaidAmount?: number;
+              notes?: string | null;
+              status?: 'pending' | 'partial' | 'paid';
+              paidAmount?: number;
+              paidDate?: string | null;
             }>;
-            payments?: Array<{
-              amount: number;
-              paymentMethod: PaymentMethod;
-              installmentNumber?: number;
-              paidAt?: string;
-              notes?: string;
-            }>;
-            additionalDiscounts?: Array<{ amount: number; notes?: string }>;
+            removeInstallmentIds?: string[];
           } = {};
-          if (dueDate !== undefined) updates.dueDate = dueDate || null;
+          if (dueDate !== undefined) updates.dueDate = normalizeDate(dueDate);
           if (notes !== undefined) updates.notes = notes || null;
           if (invoiceType !== undefined)
             updates.invoiceType = invoiceType as InvoiceType;
           if (paymentMode !== undefined)
             updates.paymentMode = paymentMode as 'cash' | 'installments';
           if (amountDue !== undefined) updates.amountDue = Number(amountDue);
-          if (Array.isArray(installments) && installments.length > 0) {
+          if (studentId !== undefined) updates.studentId = String(studentId);
+          if (invoiceDate !== undefined) updates.invoiceDate = normalizeDate(invoiceDate);
+          if (discountAmount !== undefined)
+            updates.discountAmount = Math.max(Number(discountAmount || 0), 0);
+          if (Array.isArray(installments))
             updates.installments = installments.map((it: any) => {
-              const obj: {
+              const base: {
+                id?: string;
                 installmentNumber: number;
                 plannedAmount: number;
                 dueDate: string;
-                notes?: string;
-                initialPaidAmount?: number;
+                notes?: string | null;
+                status?: 'pending' | 'partial' | 'paid';
+                paidAmount?: number;
+                paidDate?: string | null;
               } = {
                 installmentNumber: Number(it.installmentNumber),
                 plannedAmount: Number(it.plannedAmount),
-                dueDate: String(it.dueDate),
+                dueDate: String(normalizeDate(it.dueDate)),
               };
-              if (typeof it.notes === 'string') obj.notes = it.notes;
-              if (it.initialPaidAmount !== undefined)
-                obj.initialPaidAmount = Number(it.initialPaidAmount);
-              return obj;
+
+              if (it.id != null) base.id = String(it.id);
+              if (it.notes !== undefined)
+                base.notes = it.notes != null ? String(it.notes) : null;
+              // Normalize paidAmount
+              const paidAmountRaw = it.paidAmount;
+              if (paidAmountRaw != null)
+                base.paidAmount = Math.max(Number(paidAmountRaw || 0), 0);
+
+              // Normalize paidDate (empty string -> null)
+              if (it.paidDate !== undefined)
+                base.paidDate = it.paidDate ? String(normalizeDate(it.paidDate)) : null;
+
+              // Determine status precedence (hard precedence for is_paid):
+              // 1) If is_paid provided: true => paid (snap to full), false => pending (clear any paid data)
+              // 2) Else if status string provided, trust it.
+              // 3) Else infer from paidAmount.
+              if (it.is_paid !== undefined) {
+                const isPaid = Boolean(it.is_paid);
+                if (isPaid) {
+                  base.status = 'paid';
+                  // Snap paidAmount to plannedAmount when marking as paid
+                  base.paidAmount = Math.max(Number(base.plannedAmount || 0), 0);
+                } else {
+                  base.status = 'pending';
+                  // Clear any previous payment info
+                  base.paidAmount = 0;
+                  base.paidDate = null;
+                }
+              } else if (it.status !== undefined) {
+                base.status = String(it.status) as 'pending' | 'partial' | 'paid';
+              } else if (base.paidAmount !== undefined) {
+                base.status = base.paidAmount > 0 ? (base.paidAmount >= base.plannedAmount ? 'paid' : 'partial') : 'pending';
+              }
+
+              return base;
             });
-          }
-          if (Array.isArray(payments) && payments.length > 0) {
-            updates.payments = payments.map((p: any) => {
-              const obj: {
-                amount: number;
-                paymentMethod: PaymentMethod;
-                installmentNumber?: number;
-                paidAt?: string;
-                notes?: string;
-              } = {
-                amount: Number(p.amount),
-                paymentMethod: p.paymentMethod as PaymentMethod,
-              };
-              if (p.installmentNumber !== undefined)
-                obj.installmentNumber = Number(p.installmentNumber);
-              if (p.paidAt) obj.paidAt = String(p.paidAt);
-              if (typeof p.notes === 'string') obj.notes = p.notes;
-              return obj;
-            });
-          }
-          if (
-            Array.isArray(additionalDiscounts) &&
-            additionalDiscounts.length > 0
-          ) {
-            updates.additionalDiscounts = additionalDiscounts.map((d: any) => {
-              const obj: { amount: number; notes?: string } = {
-                amount: Number(d.amount),
-              };
-              if (typeof d.notes === 'string') obj.notes = d.notes;
-              return obj;
-            });
-          }
+          if (Array.isArray(removeInstallmentIds))
+            updates.removeInstallmentIds = removeInstallmentIds.map((x: any) => String(x));
           return updates;
         })()
       );
 
+      // Format date-only fields in response
+      const toDateOnly = (d: any) => {
+        if (!d) return null;
+        if (typeof d === 'string' && /^\d{4}-\d{2}-\d{2}/.test(d)) return d.slice(0, 10);
+        try { return new Date(d).toISOString().slice(0, 10); } catch { return null; }
+      };
+      const formatted = updated
+        ? {
+            ...(updated as any),
+            invoice_date: toDateOnly((updated as any).invoice_date),
+            due_date: toDateOnly((updated as any).due_date),
+            paid_date: toDateOnly((updated as any).paid_date),
+          }
+        : updated;
+
       return res.json({
         success: true,
         message: 'Invoice updated',
-        data: updated,
+        data: formatted as any,
       });
     } catch (error: any) {
       const msg = error?.message || 'Failed to update invoice';
@@ -145,13 +176,25 @@ export class TeacherInvoiceController {
         paymentMode,
         invoiceType = 'course',
         amountDue,
+        invoiceDate,
         discountAmount,
         dueDate,
         notes,
         installments,
-        payments,
-        additionalDiscounts,
-      } = req.body || {};
+      } = (req.body as any) || {};
+
+      const normalizeDate = (d: any) => (d ? new Date(d).toISOString().slice(0, 10) : null);
+      const normalizedInvoiceDate = normalizeDate(invoiceDate);
+      const normalizedDueDate = normalizeDate(dueDate);
+      const normalizedInstallments = Array.isArray(installments)
+        ? installments.map((it: any) => ({
+            ...it,
+            dueDate: String(normalizeDate(it.dueDate)),
+            ...(it.paidDate !== undefined
+              ? { paidDate: normalizeDate(it.paidDate) }
+              : {}),
+          }))
+        : undefined;
 
       if (
         !studentId ||
@@ -173,11 +216,10 @@ export class TeacherInvoiceController {
         invoiceType: invoiceType as InvoiceType,
         paymentMode,
         amountDue: Number(amountDue),
-        dueDate: dueDate || null,
+        invoiceDate: normalizedInvoiceDate,
+        dueDate: normalizedDueDate,
         notes: notes || null,
-        installments,
-        payments,
-        additionalDiscounts,
+        installments: normalizedInstallments ?? installments,
       };
       if (discountAmount != null) {
         createOptions.discountAmount = Number(discountAmount);
@@ -207,9 +249,24 @@ export class TeacherInvoiceController {
         });
       }
 
+      // Normalize date-only fields in response
+      const toDateOnly2 = (d: any) => {
+        if (!d) return null;
+        if (typeof d === 'string' && /^\d{4}-\d{2}-\d{2}/.test(d)) return d.slice(0, 10);
+        try { return new Date(d).toISOString().slice(0, 10); } catch { return null; }
+      };
+      const formattedInv = invoice
+        ? {
+            ...(invoice as any),
+            invoice_date: toDateOnly2((invoice as any).invoice_date),
+            due_date: toDateOnly2((invoice as any).due_date),
+            paid_date: toDateOnly2((invoice as any).paid_date),
+          }
+        : invoice;
+
       return res
         .status(201)
-        .json({ success: true, message: 'Invoice created', data: invoice });
+        .json({ success: true, message: 'Invoice created', data: formattedInv as any });
     } catch (error: any) {
       return res
         .status(500)
@@ -275,7 +332,7 @@ export class TeacherInvoiceController {
             const rem = Number((updated as any)?.remaining_amount || 0);
             const paid = Number(amount);
             const full = rem <= 0;
-            let title = full ? 'تم سداد الفاتورة كاملة' : 'تم تسجيل دفعة جزئية';
+            let title = full ? 'تم سداد الفاتورة كاملة' : 'تم تسجيل دفعة';
             let msg = full
               ? `تم سداد فاتورتك بالكامل. قيمة الدفعة: ${paid} دينار`
               : `تم تسجيل دفعة بمبلغ ${paid} دينار. المتبقي على فاتورتك: ${rem} دينار`;
@@ -464,14 +521,19 @@ export class TeacherInvoiceController {
           .status(404)
           .json({ success: false, message: 'Invoice not found' });
 
-      // Fetch installments and entries
-      const [installments, entries] = await Promise.all([
-        TeacherInvoiceService.listInstallmentsByInvoice(teacherId, invoiceId),
-        TeacherInvoiceService.listEntriesByInvoice(teacherId, invoiceId),
-      ]);
+      // Fetch installments only (entries removed)
+      const installments = await TeacherInvoiceService.listInstallmentsByInvoice(
+        teacherId,
+        invoiceId
+      );
 
       // Format helpers
       const toMoney = (n: any) => Number(n ?? 0).toFixed(2);
+      const toDateOnly = (d: any) => {
+        if (!d) return null;
+        if (typeof d === 'string' && /^\d{4}-\d{2}-\d{2}/.test(d)) return d.slice(0, 10);
+        try { return new Date(d).toISOString().slice(0, 10); } catch { return null; }
+      };
       const toIso = (d: any) => (d ? new Date(d).toISOString() : null);
 
       // Build invoice summary formatted as requested (string numbers)
@@ -483,122 +545,133 @@ export class TeacherInvoiceController {
         study_year: (invoice as any).study_year,
         payment_mode: (invoice as any).payment_mode,
         invoice_type: (invoice as any).invoice_type,
-        invoice_date: toIso((invoice as any).invoice_date),
-        due_date: toIso((invoice as any).due_date),
+        invoice_date: toDateOnly((invoice as any).invoice_date),
+        due_date: toDateOnly((invoice as any).due_date),
+        notes: (invoice as any).notes || null,
       } as const;
 
-      // Build map: installmentId -> installment_number for allocations
-      const installmentNumberById: Record<string, number> = {};
-      (installments || []).forEach((inst: any) => {
-        if (inst && inst.id) installmentNumberById[String(inst.id)] = inst.installment_number;
-      });
-
-      // Build the combined installments array in the exact requested format
-      const combined: any[] = [];
-
-      // 1) Synthetic amount_due row
-      combined.push({
-        id: (invoice as any).id,
-        invoice_id: (invoice as any).id,
-        entry_type: 'amount_due',
-        amount: toMoney((invoice as any).amount_due),
-        installment_id: null,
-        payment_method: null,
-        installment_status: null,
-        paid_at: null,
-        notes: 'المبلغ الكلي',
-        created_at: toIso((invoice as any).created_at),
-        updated_at: toIso((invoice as any).updated_at),
-        deleted_at: null,
-      });
-
-      // 2) Discount entries from invoice_entries
-      (entries || []).forEach((e: any) => {
-        if ((e.entry_type || e.entryType) === 'discount') {
-          combined.push({
-            id: e.id,
-            invoice_id: e.invoice_id || (invoice as any).id,
-            entry_type: 'discount',
-            amount: toMoney(e.amount),
-            installment_id: e.installment_id || null,
-            payment_method: e.payment_method || null,
-            installment_status: e.installment_status || null,
-            paid_at: toIso(e.paid_at || e.paidAt),
-            notes: e.notes || null,
-            created_at: toIso(e.created_at),
-            updated_at: toIso(e.updated_at),
-            deleted_at: e.deleted_at ? toIso(e.deleted_at) : null,
-          });
-        }
-      });
-
-      // 3) Installments as payment rows
-      (installments || []).forEach((inst: any) => {
-        combined.push({
-          id: inst.id,
-          invoice_id: inst.invoice_id,
-          installment_number: inst.installment_number,
-          entry_type: 'payment',
-          planned_amount: toMoney(inst.planned_amount),
-          paid_amount: toMoney(inst.paid_amount),
-          remaining_amount: toMoney(inst.remaining_amount),
-          installment_status: inst.installment_status,
-          due_date: toIso(inst.due_date),
-          paid_date: toIso(inst.paid_date),
-          notes: inst.notes || null,
-          created_at: toIso(inst.created_at),
-          updated_at: toIso(inst.updated_at),
-          deleted_at: inst.deleted_at ? toIso(inst.deleted_at) : null,
-        });
-      });
-
-      // Return combined payload exactly as requested
+      // Return simple payload: invoice summary + installments list
       return res.json({
         success: true,
-        message: 'Invoice details with installments and entries fetched',
+        message: 'Invoice details with installments fetched',
         data: {
           invoice: summary,
-          installments: combined,
+          installments: (installments || []).map((inst: any) => ({
+            id: inst.id,
+            invoice_id: inst.invoice_id,
+            installment_number: inst.installment_number,
+            planned_amount: toMoney(inst.planned_amount),
+            paid_amount: toMoney(inst.paid_amount),
+            remaining_amount: toMoney(inst.remaining_amount),
+            installment_status: inst.installment_status,
+            is_paid: String(inst.installment_status) === 'paid',
+            due_date: toDateOnly(inst.due_date),
+            paid_date: toDateOnly(inst.paid_date),
+            notes: inst.notes || null,
+            created_at: toIso(inst.created_at),
+            updated_at: toIso(inst.updated_at),
+            deleted_at: inst.deleted_at ? toIso(inst.deleted_at) : null,
+          })),
         },
       });
     } catch (error: any) {
-      return res
-        .status(500)
-        .json({
-          success: false,
-          message: error.message || 'Failed to fetch installments',
-        });
+      return res.status(500).json({
+        success: false,
+        message: error.message || 'Failed to fetch installments',
+      });
     }
   }
 
-  // GET /teacher/invoices/:invoiceId/entries
-  static async listEntries(
+  static async getInvoiceFull(
     req: AuthenticatedRequest & Request,
     res: Response<ApiResponse>
   ) {
     try {
       const teacherId = req.user?.id as string;
       const { invoiceId } = req.params as { invoiceId: string };
-      const items = await TeacherInvoiceService.listEntriesByInvoice(
+
+      const invoice = await TeacherInvoiceService.getInvoiceForTeacher(
         teacherId,
         invoiceId
       );
-      if (!items)
+      if (!invoice)
         return res
           .status(404)
           .json({ success: false, message: 'Invoice not found' });
+
+      const installments = await TeacherInvoiceService.listInstallmentsByInvoice(
+        teacherId,
+        invoiceId
+      );
+
+      const toMoneyStr = (n: any) => Number(n ?? 0).toFixed(2);
+      const toMoneyNum = (n: any) => Number(Number(n ?? 0).toFixed(2));
+      const toDateOnly = (d: any) => {
+        if (!d) return null;
+        if (typeof d === 'string' && /^\d{4}-\d{2}-\d{2}/.test(d)) return d.slice(0, 10);
+        try { return new Date(d).toISOString().slice(0, 10); } catch { return null; }
+      };
+      const toIso = (d: any) => (d ? new Date(d).toISOString() : null);
+
+      const summary = {
+        amount_due: toMoneyStr((invoice as any).amount_due),
+        discount_total: toMoneyStr((invoice as any).discount_total),
+        amount_paid: toMoneyStr((invoice as any).amount_paid),
+        remaining_amount: toMoneyStr((invoice as any).remaining_amount),
+        study_year: (invoice as any).study_year,
+        payment_mode: (invoice as any).payment_mode,
+        invoice_type: (invoice as any).invoice_type,
+        invoice_date: toDateOnly((invoice as any).invoice_date),
+        due_date: toDateOnly((invoice as any).due_date),
+        notes: (invoice as any).notes || null,
+      } as const;
+
+      const items = (installments || []) as any[];
+      const totals = {
+        count: items.length,
+        paidCount: items.filter(i => String(i.installment_status) === 'paid').length,
+        partialCount: items.filter(i => String(i.installment_status) === 'partial').length,
+        pendingCount: items.filter(i => String(i.installment_status) === 'pending').length,
+        overdueCount: (() => {
+          const todayStr = toDateOnly(new Date()) as string;
+          return items.filter(i => String(i.installment_status) !== 'paid' && (toDateOnly(i.due_date) || '') < todayStr).length;
+        })(),
+        plannedTotal: toMoneyNum(items.reduce((s, i) => s + Number(i.planned_amount || 0), 0)),
+        paidTotal: toMoneyNum(items.reduce((s, i) => s + Number(i.paid_amount || 0), 0)),
+        remainingTotal: toMoneyNum(items.reduce((s, i) => s + Number(i.remaining_amount || 0), 0)),
+      };
+
+      const installmentsList = items.map((inst: any) => ({
+        id: inst.id,
+        invoice_id: inst.invoice_id,
+        installment_number: inst.installment_number,
+        planned_amount: toMoneyStr(inst.planned_amount),
+        paid_amount: toMoneyStr(inst.paid_amount),
+        remaining_amount: toMoneyStr(inst.remaining_amount),
+        installment_status: inst.installment_status,
+        is_paid: String(inst.installment_status) === 'paid',
+        due_date: toDateOnly(inst.due_date),
+        paid_date: toDateOnly(inst.paid_date),
+        notes: inst.notes || null,
+        created_at: toIso(inst.created_at),
+        updated_at: toIso(inst.updated_at),
+        deleted_at: inst.deleted_at ? toIso(inst.deleted_at) : null,
+      }));
+
       return res.json({
         success: true,
-        message: 'Entries fetched',
-        data: items,
+        message: 'Invoice full details fetched',
+        data: {
+          invoice: summary,
+          installments: installmentsList,
+          totals,
+        },
       });
     } catch (error: any) {
-      return res
-        .status(500)
-        .json({
-          success: false,
-          message: error.message || 'Failed to fetch entries',
-        });
+      return res.status(500).json({
+        success: false,
+        message: error.message || 'Failed to fetch invoice',
+      });
     }
   }
 
@@ -610,32 +683,62 @@ export class TeacherInvoiceController {
     try {
       const teacherId = req.user?.id as string;
       const { invoiceId } = req.params as { invoiceId: string };
-      const invoice = await TeacherInvoiceService.getInvoiceForTeacher(
+
+      // Ensure invoice exists and belongs to teacher
+      const invoice = await TeacherInvoiceService.getInvoiceForTeacher(teacherId, invoiceId);
+      if (!invoice)
+        return res.status(404).json({ success: false, message: 'Invoice not found' });
+
+      const installments = await TeacherInvoiceService.listInstallmentsByInvoice(
         teacherId,
         invoiceId
       );
-      if (!invoice)
-        return res
-          .status(404)
-          .json({ success: false, message: 'Invoice not found' });
-      const report = {
-        amount_due: invoice.amount_due,
-        discount_total: invoice.discount_total,
-        amount_paid: invoice.amount_paid,
-        remaining_amount: invoice.remaining_amount,
+
+      const toMoneyNum = (n: any) => Number(Number(n ?? 0).toFixed(2));
+      const toDateOnly = (d: any) => {
+        if (!d) return null;
+        if (typeof d === 'string' && /^\d{4}-\d{2}-\d{2}/.test(d)) return d.slice(0, 10);
+        try { return new Date(d).toISOString().slice(0, 10); } catch { return null; }
       };
+
+      const today = new Date();
+      const todayStr = toDateOnly(today) as string;
+
+      const items = (installments || []) as any[];
+      const totals = {
+        count: items.length,
+        paidCount: items.filter(i => String(i.installment_status) === 'paid').length,
+        partialCount: items.filter(i => String(i.installment_status) === 'partial').length,
+        pendingCount: items.filter(i => String(i.installment_status) === 'pending').length,
+        overdueCount: items.filter(i => String(i.installment_status) !== 'paid' && (toDateOnly(i.due_date) || '') < todayStr).length,
+        plannedTotal: toMoneyNum(items.reduce((s, i) => s + Number(i.planned_amount || 0), 0)),
+        paidTotal: toMoneyNum(items.reduce((s, i) => s + Number(i.paid_amount || 0), 0)),
+        remainingTotal: toMoneyNum(items.reduce((s, i) => s + Number(i.remaining_amount || 0), 0)),
+      };
+
+      const summary = {
+        amount_due: toMoneyNum((invoice as any).amount_due),
+        discount_total: toMoneyNum((invoice as any).discount_total),
+        amount_paid: toMoneyNum((invoice as any).amount_paid),
+        remaining_amount: toMoneyNum((invoice as any).remaining_amount),
+        study_year: (invoice as any).study_year,
+        payment_mode: (invoice as any).payment_mode,
+        invoice_type: (invoice as any).invoice_type,
+        invoice_date: toDateOnly((invoice as any).invoice_date),
+        due_date: toDateOnly((invoice as any).due_date),
+        notes: (invoice as any).notes || null,
+      } as const;
+
       return res.json({
         success: true,
-        message: 'Invoice entries report',
-        data: report,
+        message: 'Invoice entries report (installments-based) fetched',
+        data: { summary, installments: totals },
       });
     } catch (error: any) {
-      return res
-        .status(500)
-        .json({
-          success: false,
-          message: error.message || 'Failed to fetch report',
-        });
+      return res.status(500).json({
+        success: false,
+        message: error.message || 'Failed to fetch report',
+      });
     }
   }
 

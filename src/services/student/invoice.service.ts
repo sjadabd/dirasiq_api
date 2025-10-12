@@ -1,6 +1,11 @@
-import { CourseInvoiceModel, DbCourseInvoice } from '@/models/course-invoice.model';
-import { InvoiceInstallmentModel, DbInvoiceInstallment } from '@/models/invoice-installment.model';
-import { InvoiceEntryModel, DbInvoiceEntry } from '@/models/invoice-entry.model';
+import {
+  CourseInvoiceModel,
+  DbCourseInvoice,
+} from '@/models/course-invoice.model';
+import {
+  DbInvoiceInstallment,
+  InvoiceInstallmentModel,
+} from '@/models/invoice-installment.model';
 import { InvoiceStatus } from '@/types';
 
 export class StudentInvoiceService {
@@ -13,9 +18,18 @@ export class StudentInvoiceService {
     const where: string[] = ['ci.student_id = $1', 'ci.deleted_at IS NULL'];
     const params: any[] = [studentId];
     let i = 2;
-    if (options.studyYear) { where.push(`ci.study_year = $${i++}`); params.push(options.studyYear); }
-    if (options.courseId) { where.push(`ci.course_id = $${i++}`); params.push(options.courseId); }
-    if (options.status)    { where.push(`ci.invoice_status = $${i++}`); params.push(options.status); }
+    if (options.studyYear) {
+      where.push(`ci.study_year = $${i++}`);
+      params.push(options.studyYear);
+    }
+    if (options.courseId) {
+      where.push(`ci.course_id = $${i++}`);
+      params.push(options.courseId);
+    }
+    if (options.status) {
+      where.push(`ci.invoice_status = $${i++}`);
+      params.push(options.status);
+    }
 
     const offset = (Math.max(1, Number(page)) - 1) * Math.max(1, Number(limit));
 
@@ -29,8 +43,14 @@ export class StudentInvoiceService {
       LIMIT $${i} OFFSET $${i + 1}
     `;
     const { default: pool } = await import('@/config/database');
-    const r = await pool.query(q, [...params, Math.max(1, Number(limit)), offset]);
-    const invoices = r.rows as Array<DbCourseInvoice & { teacher_name?: string; course_name?: string }>;
+    const r = await pool.query(q, [
+      ...params,
+      Math.max(1, Number(limit)),
+      offset,
+    ]);
+    const invoices = r.rows as Array<
+      DbCourseInvoice & { teacher_name?: string; course_name?: string }
+    >;
 
     // Build totals report
     const totals = invoices.reduce(
@@ -54,19 +74,32 @@ export class StudentInvoiceService {
         });
         return acc;
       },
-      { total_amount_due: 0, total_discount: 0, total_paid: 0, total_remaining: 0, by_invoices: [] as any[] }
+      {
+        total_amount_due: 0,
+        total_discount: 0,
+        total_paid: 0,
+        total_remaining: 0,
+        by_invoices: [] as any[],
+      }
     );
 
     return { invoices, report: totals };
   }
 
-  static async getInvoice(studentId: string, invoiceId: string): Promise<DbCourseInvoice | null> {
+  static async getInvoice(
+    studentId: string,
+    invoiceId: string
+  ): Promise<DbCourseInvoice | null> {
     const invoice = await CourseInvoiceModel.findById(invoiceId);
-    if (!invoice || String(invoice.student_id) !== String(studentId)) return null;
+    if (!invoice || String(invoice.student_id) !== String(studentId))
+      return null;
     return invoice;
   }
 
-  static async getInvoiceFull(studentId: string, invoiceId: string): Promise<any | null> {
+  static async getInvoiceFull(
+    studentId: string,
+    invoiceId: string
+  ): Promise<any | null> {
     const { default: pool } = await import('@/config/database');
     // Fetch invoice with teacher and course names
     const iq = `
@@ -81,14 +114,12 @@ export class StudentInvoiceService {
     if (!invoice) return null;
 
     const installments = await InvoiceInstallmentModel.listByInvoice(invoiceId);
-    // Build payments table view
-
-    // Build grouped payments table:
-    // - For installments: one row per installment (no partial entries)
+    // Build grouped payments table (simplified):
+    // - For installments: one row per installment (no partials list)
     // - For cash: single summary row
     let paymentsRows: any[] = [];
     if (invoice.payment_mode === 'installments') {
-      paymentsRows = installments.map((inst) => ({
+      paymentsRows = installments.map(inst => ({
         payment_number: inst.installment_number,
         planned_amount: Number(inst.planned_amount || 0),
         paid_amount: Number(inst.paid_amount || 0),
@@ -149,16 +180,13 @@ export class StudentInvoiceService {
     };
   }
 
-  static async listInstallments(studentId: string, invoiceId: string): Promise<DbInvoiceInstallment[] | null> {
+  static async listInstallments(
+    studentId: string,
+    invoiceId: string
+  ): Promise<DbInvoiceInstallment[] | null> {
     const inv = await this.getInvoice(studentId, invoiceId);
     if (!inv) return null;
     return await InvoiceInstallmentModel.listByInvoice(invoiceId);
-  }
-
-  static async listEntries(studentId: string, invoiceId: string): Promise<DbInvoiceEntry[] | null> {
-    const inv = await this.getInvoice(studentId, invoiceId);
-    if (!inv) return null;
-    return await InvoiceEntryModel.listByInvoice(invoiceId);
   }
 
   static async getInstallmentFull(
@@ -180,38 +208,21 @@ export class StudentInvoiceService {
     if (!invoice) return null;
 
     const installments = await InvoiceInstallmentModel.listByInvoice(invoiceId);
-    const installment = installments.find((i) => String(i.id) === String(installmentId));
+    const installment = installments.find(
+      i => String(i.id) === String(installmentId)
+    );
     if (!installment) return null;
 
-    const allEntries = await InvoiceEntryModel.listByInvoice(invoiceId);
-    const entries = allEntries.filter((e) => String(e.installment_id) === String(installmentId));
-
-    const payments = entries
-      .filter((e) => e.entry_type === 'payment')
-      .map((e) => ({
-        id: e.id,
-        amount: Number(e.amount || 0),
-        payment_method: e.payment_method,
-        paid_at: e.paid_at,
-        notes: e.notes,
-        created_at: e.created_at,
-      }));
-
-    const discounts = entries
-      .filter((e) => e.entry_type === 'discount')
-      .map((e) => ({
-        id: e.id,
-        amount: Number(e.amount || 0),
-        notes: e.notes,
-        created_at: e.created_at,
-      }));
-
+    // Simplified: No entries table; totals derive only from installment and invoice-level discount
     const totals = {
       total_planned: Number(installment.planned_amount || 0),
       total_paid: Number(installment.paid_amount || 0),
-      total_discount: discounts.reduce((s, d) => s + Number(d.amount || 0), 0),
+      total_discount: 0,
     } as any;
-    totals.total_remaining = Math.max(totals.total_planned - (totals.total_paid + totals.total_discount), 0);
+    totals.total_remaining = Math.max(
+      totals.total_planned - totals.total_paid,
+      0
+    );
 
     return {
       invoice: {
@@ -233,8 +244,8 @@ export class StudentInvoiceService {
         paid_date: installment.paid_date,
         notes: installment.notes,
       },
-      partials: payments,
-      discounts,
+      partials: [],
+      discounts: [],
       totals,
     };
   }
