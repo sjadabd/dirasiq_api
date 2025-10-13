@@ -221,7 +221,20 @@ export class TeacherExamController {
       const exam = await service.getById(examId);
       if (!exam) { res.status(404).json({ success: false, message: 'غير موجود' }); return; }
       if (String(exam.teacher_id) !== String(me.id)) { res.status(403).json({ success: false, message: 'غير مصرح' }); return; }
-      const grade = await service.setGrade(examId, studentId, Number(score), String(me.id));
+      const numericScore = Number(score);
+      if (!Number.isFinite(numericScore)) {
+        res.status(400).json({ success: false, message: 'قيمة الدرجة غير صالحة' });
+        return;
+      }
+      if (numericScore < 0) {
+        res.status(400).json({ success: false, message: 'لا يمكن أن تكون الدرجة سالبة' });
+        return;
+      }
+      if (numericScore > Number((exam as any).max_score)) {
+        res.status(400).json({ success: false, message: `لا يمكن أن تكون الدرجة أكبر من الدرجة القصوى (${Number((exam as any).max_score)})` });
+        return;
+      }
+      const grade = await service.setGrade(examId, studentId, numericScore, String(me.id));
       // Notify the specific student about the new/updated grade
       try {
         const notif = req.app.get('notificationService') as NotificationService;

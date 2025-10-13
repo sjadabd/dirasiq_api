@@ -73,17 +73,62 @@ export class ExamModel {
   }
 
   static async getById(id: string): Promise<Exam | null> {
-    const r = await pool.query('SELECT * FROM exams WHERE id = $1', [id]);
+    const q = `
+      SELECT 
+        e.*,
+        COALESCE(
+          JSON_AGG(
+            DISTINCT JSONB_BUILD_OBJECT(
+              'id', s.id::text,
+              'title', s.title,
+              'weekday', s.weekday,
+              'start_time', s.start_time,
+              'end_time', s.end_time,
+              'state', s.state
+            )
+          ) FILTER (WHERE s.id IS NOT NULL),
+          '[]'
+        ) AS sessions
+      FROM exams e
+      LEFT JOIN exam_sessions es ON es.exam_id = e.id
+      LEFT JOIN sessions s ON s.id = es.session_id AND s.is_deleted = false
+      WHERE e.id = $1
+      GROUP BY e.id
+    `;
+    const r = await pool.query(q, [id]);
     return r.rows[0] || null;
   }
 
   static async listByTeacher(teacherId: string, page = 1, limit = 20, type?: ExamType): Promise<{ data: Exam[]; total: number; }> {
     const offset = (page - 1) * limit;
     const params: any[] = [teacherId];
-    let where = 'teacher_id = $1';
-    if (type) { params.push(type); where += ` AND exam_type = $${params.length}`; }
+    let where = 'e.teacher_id = $1';
+    if (type) { params.push(type); where += ` AND e.exam_type = $${params.length}`; }
     params.push(limit, offset);
-    const dataQ = `SELECT * FROM exams WHERE ${where} ORDER BY exam_date DESC, created_at DESC LIMIT $${params.length-1} OFFSET $${params.length}`;
+    const dataQ = `
+      SELECT 
+        e.*,
+        COALESCE(
+          JSON_AGG(
+            DISTINCT JSONB_BUILD_OBJECT(
+              'id', s.id::text,
+              'title', s.title,
+              'weekday', s.weekday,
+              'start_time', s.start_time,
+              'end_time', s.end_time,
+              'state', s.state
+            )
+          ) FILTER (WHERE s.id IS NOT NULL),
+          '[]'
+        ) AS sessions
+      FROM exams e
+      LEFT JOIN exam_sessions es ON es.exam_id = e.id
+      LEFT JOIN sessions s ON s.id = es.session_id AND s.is_deleted = false
+      WHERE ${where}
+      GROUP BY e.id
+      ORDER BY e.exam_date DESC, e.created_at DESC
+      LIMIT $${params.length-1} OFFSET $${params.length}
+    `;
     const rows = (await pool.query(dataQ, params)).rows;
     const cntParams: any[] = [teacherId];
     let cntWhere = 'teacher_id = $1';
