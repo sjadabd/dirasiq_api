@@ -1,6 +1,6 @@
-import { TeacherSearchService } from '@/services/teacher-search.service';
 import { Request, Response } from 'express';
 import { body, validationResult } from 'express-validator';
+import { TeacherSearchService } from '../services/teacher-search.service';
 
 export class TeacherSearchController {
   // Search teachers by coordinates (with distance calculation)

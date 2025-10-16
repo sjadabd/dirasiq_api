@@ -1,5 +1,5 @@
-import pool from '@/config/database';
-import { BookingStatus, CourseBooking, CourseBookingWithDetails, CreateCourseBookingRequest, UpdateCourseBookingRequest } from '@/types';
+import pool from '../config/database';
+import { BookingStatus, CourseBooking, CourseBookingWithDetails, CreateCourseBookingRequest, UpdateCourseBookingRequest } from '../types';
 import { BookingUsageLogModel } from './booking-usage-log.model';
 import { TeacherSubscriptionModel } from './teacher-subscription.model';
 

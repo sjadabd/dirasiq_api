@@ -1,6 +1,6 @@
-import { GradeService } from '@/services/super_admin/grade.service';
 import { Request, Response } from 'express';
 import { body, param, query, validationResult } from 'express-validator';
+import { GradeService } from '../../services/super_admin/grade.service';
 
 export class GradeController {
   // Create new grade (Super Admin only)

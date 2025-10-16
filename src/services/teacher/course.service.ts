@@ -1,11 +1,11 @@
-import { CourseModel } from '@/models/course.model';
-import { GradeModel } from '@/models/grade.model';
-import { NotificationPriority, NotificationType, RecipientType } from '@/models/notification.model';
-import { SubjectModel } from '@/models/subject.model';
-import { UserModel } from '@/models/user.model';
-import { NotificationService } from '@/services/notification.service';
-import { ApiResponse, CreateCourseRequest, UpdateCourseRequest } from '@/types';
-import { ImageService } from '@/utils/image.service';
+import { CourseModel } from '../../models/course.model';
+import { GradeModel } from '../../models/grade.model';
+import { NotificationPriority, NotificationType, RecipientType } from '../../models/notification.model';
+import { SubjectModel } from '../../models/subject.model';
+import { UserModel } from '../../models/user.model';
+import { NotificationService } from '../../services/notification.service';
+import { ApiResponse, CreateCourseRequest, UpdateCourseRequest } from '../../types';
+import { ImageService } from '../../utils/image.service';
 import { AcademicYearService } from '../super_admin/academic-year.service';
 
 export class CourseService {

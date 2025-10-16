@@ -1,4 +1,4 @@
-import pool from '@/config/database';
+import pool from '../config/database';
 
 async function seedFreeSubscriptions() {
   console.log('Seeding free subscriptions for existing teachers...');

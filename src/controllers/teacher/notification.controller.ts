@@ -1,9 +1,9 @@
-import pool from '@/config/database';
-import { AcademicYearModel } from '@/models/academic-year.model';
-import { NotificationType } from '@/models/notification.model';
-import { NotificationService } from '@/services/notification.service';
 import { Request, Response } from 'express';
 import path from 'path';
+import pool from '../../config/database';
+import { AcademicYearModel } from '../../models/academic-year.model';
+import { NotificationType } from '../../models/notification.model';
+import { NotificationService } from '../../services/notification.service';
 import {
   saveBase64File,
   saveMultipleBase64Images,
@@ -34,7 +34,7 @@ export class TeacherNotificationController {
 
       const type =
         typeRaw &&
-        Object.values(NotificationType).includes(typeRaw as NotificationType)
+          Object.values(NotificationType).includes(typeRaw as NotificationType)
           ? (typeRaw as NotificationType)
           : null;
 
@@ -112,12 +112,12 @@ export class TeacherNotificationController {
             ? n.recipient_ids
             : typeof n?.recipient_ids === 'string'
               ? (() => {
-                  try {
-                    return JSON.parse(n.recipient_ids);
-                  } catch {
-                    return [];
-                  }
-                })()
+                try {
+                  return JSON.parse(n.recipient_ids);
+                } catch {
+                  return [];
+                }
+              })()
               : [],
         };
         return { ...n, sender, recipients };

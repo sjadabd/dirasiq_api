@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
-import { AuthenticatedRequest, ApiResponse, InvoiceStatus } from '@/types';
-import { StudentInvoiceService } from '@/services/student/invoice.service';
+import { StudentInvoiceService } from '../../services/student/invoice.service';
+import { ApiResponse, AuthenticatedRequest, InvoiceStatus } from '../../types';
 
 export class StudentInvoiceController {
   // GET /student/invoices

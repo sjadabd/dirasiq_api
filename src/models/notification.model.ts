@@ -1,5 +1,5 @@
-import pool from '@/config/database';
-import { AcademicYearModel } from '@/models/academic-year.model';
+import pool from '../config/database';
+import { AcademicYearModel } from '../models/academic-year.model';
 
 export enum NotificationType {
   HOMEWORK_REMINDER = 'homework_reminder',

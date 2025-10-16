@@ -1,5 +1,5 @@
-import pool from '@/config/database';
-import { ReservationPayment, TeacherReservationPaymentsReportResponse } from '@/types';
+import pool from '../config/database';
+import { ReservationPayment, TeacherReservationPaymentsReportResponse } from '../types';
 
 export class ReservationPaymentModel {
   static async findByBookingId(bookingId: string): Promise<ReservationPayment | null> {

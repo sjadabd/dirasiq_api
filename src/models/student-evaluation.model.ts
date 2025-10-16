@@ -1,4 +1,4 @@
-import pool from '@/config/database';
+import pool from '../config/database';
 
 export type EvalRating = 'excellent' | 'very_good' | 'good' | 'fair' | 'weak';
 
@@ -105,7 +105,7 @@ export class StudentEvaluationModel {
     };
 
     const allowed: (keyof StudentEvaluation)[] = [
-      'scientific_level','behavioral_level','attendance_level','homework_preparation','participation_level','instruction_following','guidance','notes','eval_date'
+      'scientific_level', 'behavioral_level', 'attendance_level', 'homework_preparation', 'participation_level', 'instruction_following', 'guidance', 'notes', 'eval_date'
     ];
     for (const key of allowed) {
       const v = (patch as any)[key];
@@ -119,7 +119,7 @@ export class StudentEvaluationModel {
 
     // If eval_date changed, update eval_date_date accordingly
     if ((patch as any).eval_date !== undefined) {
-      fields.push(`eval_date_date = DATE($${p-1})`); // uses same param as eval_date
+      fields.push(`eval_date_date = DATE($${p - 1})`); // uses same param as eval_date
     }
 
     const q = `
@@ -154,7 +154,7 @@ export class StudentEvaluationModel {
     if (options.from) { where.push(`eval_date_date >= $${p}`); vals.push(options.from); p++; }
     if (options.to) { where.push(`eval_date_date <= $${p}`); vals.push(options.to); p++; }
 
-    const dataQ = `SELECT * FROM student_evaluations WHERE ${where.join(' AND ')} ORDER BY eval_date_date DESC, created_at DESC LIMIT $${p} OFFSET $${p+1}`;
+    const dataQ = `SELECT * FROM student_evaluations WHERE ${where.join(' AND ')} ORDER BY eval_date_date DESC, created_at DESC LIMIT $${p} OFFSET $${p + 1}`;
     const data = (await pool.query(dataQ, [...vals, limit, offset])).rows;
 
     const countQ = `SELECT COUNT(*)::int AS c FROM student_evaluations WHERE ${where.join(' AND ')}`;
@@ -178,7 +178,7 @@ export class StudentEvaluationModel {
     if (options.from) { where.push(`eval_date_date >= $${p}`); vals.push(options.from); p++; }
     if (options.to) { where.push(`eval_date_date <= $${p}`); vals.push(options.to); p++; }
 
-    const dataQ = `SELECT * FROM student_evaluations WHERE ${where.join(' AND ')} ORDER BY eval_date_date DESC, created_at DESC LIMIT $${p} OFFSET $${p+1}`;
+    const dataQ = `SELECT * FROM student_evaluations WHERE ${where.join(' AND ')} ORDER BY eval_date_date DESC, created_at DESC LIMIT $${p} OFFSET $${p + 1}`;
     const data = (await pool.query(dataQ, [...vals, limit, offset])).rows;
 
     const countQ = `SELECT COUNT(*)::int AS c FROM student_evaluations WHERE ${where.join(' AND ')}`;

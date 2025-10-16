@@ -1,13 +1,16 @@
-import { sendPasswordResetEmail, sendVerificationEmail } from '@/config/email';
-import { GradeModel } from '@/models/grade.model';
-import { StudentGradeModel } from '@/models/student-grade.model';
-import { TeacherGradeModel } from '@/models/teacher-grade.model';
-import { TokenModel } from '@/models/token.model';
-import { SubscriptionPackageModel } from '@/models/subscription-package.model';
-import { TeacherSubscriptionModel } from '@/models/teacher-subscription.model';
-import { UserModel } from '@/models/user.model';
-import { GeocodingService } from '@/services/geocoding.service';
-import { AcademicYearService } from '@/services/super_admin/academic-year.service';
+import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
+import { sendPasswordResetEmail, sendVerificationEmail } from '../config/email';
+import { GradeModel } from '../models/grade.model';
+import { StudentGradeModel } from '../models/student-grade.model';
+import { SubscriptionPackageModel } from '../models/subscription-package.model';
+import { TeacherGradeModel } from '../models/teacher-grade.model';
+import { TeacherSubscriptionModel } from '../models/teacher-subscription.model';
+import { TokenModel } from '../models/token.model';
+import { UserModel } from '../models/user.model';
+import { GeocodingService } from '../services/geocoding.service';
+import { QrService } from '../services/qr.service';
+import { AcademicYearService } from '../services/super_admin/academic-year.service';
 import {
   ApiResponse,
   LoginRequest,
@@ -17,11 +20,8 @@ import {
   User,
   UserStatus,
   UserType
-} from '@/types';
-import bcrypt from 'bcryptjs';
-import { QrService } from '@/services/qr.service';
-import jwt from 'jsonwebtoken';
-import { ImageService } from '@/utils/image.service';
+} from '../types';
+import { ImageService } from '../utils/image.service';
 
 export class AuthService {
   // Register super admin

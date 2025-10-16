@@ -1,15 +1,15 @@
-import { InvoiceInstallmentModel } from '@/models/invoice-installment.model';
-import { NotificationType, RecipientType } from '@/models/notification.model';
-import { NotificationService } from '@/services/notification.service';
-import { TeacherInvoiceService } from '@/services/teacher/invoice.service';
+import { Request, Response } from 'express';
+import { InvoiceInstallmentModel } from '../../models/invoice-installment.model';
+import { NotificationType, RecipientType } from '../../models/notification.model';
+import { NotificationService } from '../../services/notification.service';
+import { TeacherInvoiceService } from '../../services/teacher/invoice.service';
 import {
   ApiResponse,
   AuthenticatedRequest,
   InvoiceStatus,
   InvoiceType,
   PaymentMethod,
-} from '@/types';
-import { Request, Response } from 'express';
+} from '../../types';
 
 export class TeacherInvoiceController {
   // PATCH /teacher/invoices/:invoiceId
@@ -142,11 +142,11 @@ export class TeacherInvoiceController {
       };
       const formatted = updated
         ? {
-            ...(updated as any),
-            invoice_date: toDateOnly((updated as any).invoice_date),
-            due_date: toDateOnly((updated as any).due_date),
-            paid_date: toDateOnly((updated as any).paid_date),
-          }
+          ...(updated as any),
+          invoice_date: toDateOnly((updated as any).invoice_date),
+          due_date: toDateOnly((updated as any).due_date),
+          paid_date: toDateOnly((updated as any).paid_date),
+        }
         : updated;
 
       return res.json({
@@ -188,12 +188,12 @@ export class TeacherInvoiceController {
       const normalizedDueDate = normalizeDate(dueDate);
       const normalizedInstallments = Array.isArray(installments)
         ? installments.map((it: any) => ({
-            ...it,
-            dueDate: String(normalizeDate(it.dueDate)),
-            ...(it.paidDate !== undefined
-              ? { paidDate: normalizeDate(it.paidDate) }
-              : {}),
-          }))
+          ...it,
+          dueDate: String(normalizeDate(it.dueDate)),
+          ...(it.paidDate !== undefined
+            ? { paidDate: normalizeDate(it.paidDate) }
+            : {}),
+        }))
         : undefined;
 
       if (
@@ -257,11 +257,11 @@ export class TeacherInvoiceController {
       };
       const formattedInv = invoice
         ? {
-            ...(invoice as any),
-            invoice_date: toDateOnly2((invoice as any).invoice_date),
-            due_date: toDateOnly2((invoice as any).due_date),
-            paid_date: toDateOnly2((invoice as any).paid_date),
-          }
+          ...(invoice as any),
+          invoice_date: toDateOnly2((invoice as any).invoice_date),
+          due_date: toDateOnly2((invoice as any).due_date),
+          paid_date: toDateOnly2((invoice as any).paid_date),
+        }
         : invoice;
 
       return res

@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
-import { validationResult, query, param } from 'express-validator';
-import { StudentService } from '@/services/student/student.service';
+import { param, query, validationResult } from 'express-validator';
+import { StudentService } from '../../services/student/student.service';
 
 export class StudentTeacherController {
   static async getSuggestedTeachers(req: Request, res: Response): Promise<void> {

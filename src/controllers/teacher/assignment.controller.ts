@@ -1,14 +1,14 @@
-import { AssignmentModel, SubmissionType } from '@/models/assignment.model';
-import { UserModel } from '@/models/user.model';
-import { NotificationModel } from '@/models/notification.model';
-import { AssignmentService } from '@/services/assignment.service';
-import { NotificationService } from '@/services/notification.service';
-import { saveBase64File } from '@/utils/file.util';
 import { Request, Response } from 'express';
-import pool from '@/config/database';
 import fs from 'fs';
 import path from 'path';
+import pool from '../../config/database';
 import { AcademicYearModel } from '../../models/academic-year.model';
+import { AssignmentModel, SubmissionType } from '../../models/assignment.model';
+import { NotificationModel } from '../../models/notification.model';
+import { UserModel } from '../../models/user.model';
+import { AssignmentService } from '../../services/assignment.service';
+import { NotificationService } from '../../services/notification.service';
+import { saveBase64File } from '../../utils/file.util';
 
 export class TeacherAssignmentController {
   static getService(): AssignmentService {
@@ -443,8 +443,8 @@ export class TeacherAssignmentController {
       const allowedSubmissionTypes = new Set<SubmissionType>(['text', 'file', 'link', 'mixed']);
       const normalizedSubmissionType: SubmissionType | undefined = rawSubmissionType
         ? (['paper', 'online', 'electronic'].includes(rawSubmissionType)
-            ? 'mixed'
-            : (allowedSubmissionTypes.has(rawSubmissionType as SubmissionType) ? (rawSubmissionType as SubmissionType) : undefined))
+          ? 'mixed'
+          : (allowedSubmissionTypes.has(rawSubmissionType as SubmissionType) ? (rawSubmissionType as SubmissionType) : undefined))
         : undefined;
 
       const patchPayload = {

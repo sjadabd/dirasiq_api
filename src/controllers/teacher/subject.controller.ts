@@ -1,6 +1,6 @@
-import { SubjectService } from '@/services/teacher/subject.service';
 import { Request, Response } from 'express';
 import { body, param, query, validationResult } from 'express-validator';
+import { SubjectService } from '../../services/teacher/subject.service';
 
 export class SubjectController {
   // Create new subject

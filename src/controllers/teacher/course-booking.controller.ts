@@ -1,13 +1,13 @@
-import { CourseBookingModel } from '@/models/course-booking.model';
-import { TeacherSubscriptionModel } from '@/models/teacher-subscription.model';
-import { NotificationService } from '@/services/notification.service';
-import { CourseBookingService } from '@/services/teacher/course-booking.service';
+import { Request, Response } from 'express';
+import { CourseBookingModel } from '../../models/course-booking.model';
+import { TeacherSubscriptionModel } from '../../models/teacher-subscription.model';
+import { NotificationService } from '../../services/notification.service';
+import { CourseBookingService } from '../../services/teacher/course-booking.service';
 import {
   BookingStatus,
   CourseBooking,
   UpdateCourseBookingRequest,
-} from '@/types';
-import { Request, Response } from 'express';
+} from '../../types';
 
 export class TeacherCourseBookingController {
   private static notificationService: NotificationService;

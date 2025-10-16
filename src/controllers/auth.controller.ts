@@ -1,10 +1,10 @@
-import { AuthService } from '@/services/auth.service';
-import { GoogleAuthService } from '@/services/google-auth.service';
-import { AcademicYearService } from "@/services/super_admin/academic-year.service";
-import { SubscriptionPackageService } from '@/services/super_admin/subscription-package.service';
-import { TeacherSubscriptionService } from '@/services/teacher-subscription.service';
 import { Request, Response } from 'express';
 import { body, validationResult } from 'express-validator';
+import { AuthService } from '../services/auth.service';
+import { GoogleAuthService } from '../services/google-auth.service';
+import { AcademicYearService } from "../services/super_admin/academic-year.service";
+import { SubscriptionPackageService } from '../services/super_admin/subscription-package.service';
+import { TeacherSubscriptionService } from '../services/teacher-subscription.service';
 
 export class AuthController {
   // Register super admin

@@ -1,5 +1,5 @@
-import { GradeModel } from '@/models/grade.model';
-import { ApiResponse, CreateGradeRequest, UpdateGradeRequest } from '@/types';
+import { GradeModel } from '../../models/grade.model';
+import { ApiResponse, CreateGradeRequest, UpdateGradeRequest } from '../../types';
 
 export class GradeService {
   // Create new grade (Super Admin only)
@@ -205,7 +205,7 @@ export class GradeService {
   static async getUserGrades(userId: string, userType: string, studyYear?: string): Promise<ApiResponse> {
     try {
       // Validate user exists
-      const { UserModel } = await import('@/models/user.model');
+      const { UserModel } = await import('../../models/user.model');
       const user = await UserModel.findById(userId);
       if (!user) {
         return {
@@ -218,7 +218,7 @@ export class GradeService {
       // Get active academic year if studyYear not provided
       let activeStudyYear = studyYear;
       if (!activeStudyYear) {
-        const { AcademicYearModel } = await import('@/models/academic-year.model');
+        const { AcademicYearModel } = await import('../../models/academic-year.model');
         const activeAcademicYear = await AcademicYearModel.getActive();
         if (activeAcademicYear) {
           activeStudyYear = activeAcademicYear.year;
@@ -237,7 +237,7 @@ export class GradeService {
 
       if (userType === 'teacher') {
         // Get teacher grades
-        const { TeacherGradeModel } = await import('@/models/teacher-grade.model');
+        const { TeacherGradeModel } = await import('../../models/teacher-grade.model');
         const teacherGrades = await TeacherGradeModel.findByTeacherId(userId);
 
         // Filter by study year and get grade details
@@ -257,7 +257,7 @@ export class GradeService {
         );
       } else if (userType === 'student') {
         // Get student grades
-        const { StudentGradeModel } = await import('@/models/student-grade.model');
+        const { StudentGradeModel } = await import('../../models/student-grade.model');
         const studentGrades = await StudentGradeModel.findByStudentId(userId);
 
         // Filter by study year and get grade details

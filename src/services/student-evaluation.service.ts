@@ -1,4 +1,4 @@
-import { StudentEvaluationModel, StudentEvaluation, EvalRating } from '@/models/student-evaluation.model';
+import { EvalRating, StudentEvaluation, StudentEvaluationModel } from '../models/student-evaluation.model';
 
 export class StudentEvaluationService {
   get model() { return StudentEvaluationModel; }

@@ -1,7 +1,7 @@
-import pool from '@/config/database';
-import { ApiResponse } from '@/types';
-import { UserModel } from '@/models/user.model';
-import { StudentGradeModel } from '@/models/student-grade.model';
+import pool from '../../config/database';
+import { StudentGradeModel } from '../../models/student-grade.model';
+import { UserModel } from '../../models/user.model';
+import { ApiResponse } from '../../types';
 
 interface UnifiedSearchParams {
   q?: string;

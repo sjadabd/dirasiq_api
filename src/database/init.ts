@@ -1,6 +1,6 @@
-import pool from '@/config/database';
 import fs from 'fs';
 import path from 'path';
+import pool from '../config/database';
 
 export async function initializeDatabase(): Promise<void> {
   try {

@@ -1,6 +1,6 @@
 import { Router } from 'express';
-import { authenticateToken, requireTeacher } from '@/middleware/auth.middleware';
-import { TeacherNotificationController } from '@/controllers/teacher/notification.controller';
+import { TeacherNotificationController } from '../../controllers/teacher/notification.controller';
+import { authenticateToken, requireTeacher } from '../../middleware/auth.middleware';
 
 const router = Router();
 

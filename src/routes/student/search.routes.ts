@@ -1,6 +1,6 @@
 import { Router } from 'express';
-import { authenticateToken, requireStudent } from '@/middleware/auth.middleware';
-import { StudentSearchController } from '@/controllers/student/search.controller';
+import { StudentSearchController } from '../../controllers/student/search.controller';
+import { authenticateToken, requireStudent } from '../../middleware/auth.middleware';
 
 const router = Router();
 

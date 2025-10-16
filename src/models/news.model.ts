@@ -1,5 +1,5 @@
-import pool from '@/config/database';
-import { CreateNewsRequest, News, NewsType, UpdateNewsRequest } from '@/types';
+import pool from '../config/database';
+import { CreateNewsRequest, News, NewsType, UpdateNewsRequest } from '../types';
 
 export class NewsModel {
   private static mapRowToNews(row: any): News {

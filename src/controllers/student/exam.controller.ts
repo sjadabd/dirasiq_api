@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
-import { ExamService } from '@/services/exam.service';
-import { ExamModel, ExamType } from '@/models/exam.model';
+import { ExamModel, ExamType } from '../../models/exam.model';
+import { ExamService } from '../../services/exam.service';
 
 export class StudentExamController {
   static getService(): ExamService { return new ExamService(); }
@@ -45,7 +45,7 @@ export class StudentExamController {
       if (!me) { res.status(401).json({ success: false, message: 'غير مصادق' }); return; }
       const id = String(req.params['id']);
       // Fetch exam details + student's grade
-      const pool = (require('@/config/database') as any).default || require('@/config/database');
+      const pool = (require('../../config/database') as any).default || require('../../config/database');
       const q = `
         SELECT
           e.id::text AS exam_id,

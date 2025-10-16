@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
-import { StudentEvaluationService } from '@/services/student-evaluation.service';
-import { NotificationService } from '@/services/notification.service';
+import { NotificationService } from '../../services/notification.service';
+import { StudentEvaluationService } from '../../services/student-evaluation.service';
 
 export class TeacherStudentEvaluationController {
   static getService(): StudentEvaluationService { return new StudentEvaluationService(); }
@@ -124,7 +124,7 @@ export class TeacherStudentEvaluationController {
       const rows = result.data;
       const studentIds = Array.from(new Set(rows.map(r => String((r as any).student_id)))).filter(Boolean);
       if (studentIds.length > 0) {
-        const pool = (require('@/config/database') as any).default || require('@/config/database');
+        const pool = (require('../../config/database') as any).default || require('../../config/database');
         const q = `
           SELECT u.id::text AS student_id,
                  u.name AS student_name,
@@ -192,7 +192,7 @@ export class TeacherStudentEvaluationController {
       if (!dateRaw) { res.status(400).json({ success: false, message: 'حقل التاريخ مطلوب (date)' }); return; }
       if (!courseId && !sessionId) { res.status(400).json({ success: false, message: 'الفلترة مطلوبة عبر courseId أو sessionId' }); return; }
 
-      const pool = (require('@/config/database') as any).default || require('@/config/database');
+      const pool = (require('../../config/database') as any).default || require('../../config/database');
       const offset = (page - 1) * limit;
 
       // Build targeted students (by session attendees and/or course bookings)

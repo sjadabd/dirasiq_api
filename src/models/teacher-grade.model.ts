@@ -1,5 +1,5 @@
-import pool from '@/config/database';
-import { CreateTeacherGradeRequest, TeacherGrade, UpdateTeacherGradeRequest } from '@/types';
+import pool from '../config/database';
+import { CreateTeacherGradeRequest, TeacherGrade, UpdateTeacherGradeRequest } from '../types';
 
 export class TeacherGradeModel {
   // Create a new teacher grade

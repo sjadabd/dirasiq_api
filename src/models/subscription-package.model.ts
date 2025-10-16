@@ -1,5 +1,5 @@
-import pool from '@/config/database';
-import { CreateSubscriptionPackageRequest, SubscriptionPackage, UpdateSubscriptionPackageRequest } from '@/types';
+import pool from '../config/database';
+import { CreateSubscriptionPackageRequest, SubscriptionPackage, UpdateSubscriptionPackageRequest } from '../types';
 
 export class SubscriptionPackageModel {
   // Create a new subscription package

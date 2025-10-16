@@ -1,6 +1,6 @@
-import { SubscriptionPackageController } from '@/controllers/super_admin/subscription-package.controller';
-import { authenticateToken, requireSuperAdmin } from '@/middleware/auth.middleware';
 import { Router } from 'express';
+import { SubscriptionPackageController } from '../../controllers/super_admin/subscription-package.controller';
+import { authenticateToken, requireSuperAdmin } from '../../middleware/auth.middleware';
 
 const router = Router();
 

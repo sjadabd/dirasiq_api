@@ -1,9 +1,9 @@
-import { NotificationModel, NotificationPriority, NotificationType, RecipientType } from '@/models/notification.model';
-import { AssignmentModel } from '@/models/assignment.model';
-import { NotificationService } from '@/services/notification.service';
 import { Request, Response } from 'express';
 import { body, param, query, validationResult } from 'express-validator';
 import path from 'path';
+import { AssignmentModel } from '../models/assignment.model';
+import { NotificationModel, NotificationPriority, NotificationType, RecipientType } from '../models/notification.model';
+import { NotificationService } from '../services/notification.service';
 import { saveBase64File, saveMultipleBase64Images } from '../utils/file.util';
 
 export class NotificationController {
@@ -580,9 +580,9 @@ export class NotificationController {
           : undefined;
         const files = Array.isArray(attachments?.files)
           ? attachments.files.map((f: any) => ({
-              ...f,
-              url: typeof f?.url === 'string' && !isAbsoluteUrl(f.url) ? toAbsolute(f.url) : f?.url,
-            }))
+            ...f,
+            url: typeof f?.url === 'string' && !isAbsoluteUrl(f.url) ? toAbsolute(f.url) : f?.url,
+          }))
           : undefined;
 
         return {

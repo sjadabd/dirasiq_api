@@ -1,5 +1,5 @@
-import pool from '@/config/database';
-import { InvoiceStatus, InvoiceType } from '@/types';
+import pool from '../config/database';
+import { InvoiceStatus, InvoiceType } from '../types';
 
 export interface DbCourseInvoice {
   id: string;

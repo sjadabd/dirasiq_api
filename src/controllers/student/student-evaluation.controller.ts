@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { StudentEvaluationService } from '@/services/student-evaluation.service';
+import { StudentEvaluationService } from '../../services/student-evaluation.service';
 
 export class StudentStudentEvaluationController {
   static getService(): StudentEvaluationService { return new StudentEvaluationService(); }

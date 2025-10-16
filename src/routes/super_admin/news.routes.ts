@@ -1,6 +1,6 @@
-import { NewsController } from '@/controllers/super_admin/news.controller';
-import { authenticateToken, requireSuperAdmin } from '@/middleware/auth.middleware';
 import { Router } from 'express';
+import { NewsController } from '../../controllers/super_admin/news.controller';
+import { authenticateToken, requireSuperAdmin } from '../../middleware/auth.middleware';
 
 const router = Router();
 

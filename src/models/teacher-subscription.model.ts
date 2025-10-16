@@ -1,9 +1,9 @@
-import pool from '@/config/database'
+import pool from '../config/database'
 import {
   CreateTeacherSubscriptionRequest,
   TeacherSubscription,
   UpdateTeacherSubscriptionRequest,
-} from '@/types'
+} from '../types'
 
 export class TeacherSubscriptionModel {
   // إنشاء اشتراك جديد

@@ -1,5 +1,5 @@
-import pool from '@/config/database';
-import { CreateSubjectRequest, Subject, UpdateSubjectRequest } from '@/types';
+import pool from '../config/database';
+import { CreateSubjectRequest, Subject, UpdateSubjectRequest } from '../types';
 
 export class SubjectModel {
   // Create new subject

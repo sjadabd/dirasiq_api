@@ -1,5 +1,5 @@
-import pool from '@/config/database';
-import { Token } from '@/types';
+import pool from '../config/database';
+import { Token } from '../types';
 
 export class TokenModel {
   // Create a new token (مع إمكانية إضافة playerId)
@@ -21,9 +21,9 @@ export class TokenModel {
 
   static async getPlayerIdsByUserId(userId: string): Promise<string[]> {
     const query = `
-      SELECT DISTINCT onesignal_player_id 
-      FROM tokens 
-      WHERE user_id = $1 
+      SELECT DISTINCT onesignal_player_id
+      FROM tokens
+      WHERE user_id = $1
         AND onesignal_player_id IS NOT NULL
     `;
     const result = await pool.query(query, [userId]);
@@ -60,7 +60,7 @@ export class TokenModel {
   // Find token by token string
   static async findByToken(token: string): Promise<Token | null> {
     const query = `
-      SELECT * FROM tokens 
+      SELECT * FROM tokens
       WHERE token = $1 AND expires_at > CURRENT_TIMESTAMP
     `;
 
@@ -75,7 +75,7 @@ export class TokenModel {
   // Find all tokens for a user
   static async findByUserId(userId: string): Promise<Token[]> {
     const query = `
-      SELECT * FROM tokens 
+      SELECT * FROM tokens
       WHERE user_id = $1 AND expires_at > CURRENT_TIMESTAMP
       ORDER BY created_at DESC
     `;
@@ -108,7 +108,7 @@ export class TokenModel {
   // Get token count for a user
   static async getTokenCount(userId: string): Promise<number> {
     const query = `
-      SELECT COUNT(*) FROM tokens 
+      SELECT COUNT(*) FROM tokens
       WHERE user_id = $1 AND expires_at > CURRENT_TIMESTAMP
     `;
 

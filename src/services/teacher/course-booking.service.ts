@@ -1,6 +1,6 @@
-import { CourseBookingModel } from '@/models/course-booking.model';
-import { NotificationService } from '@/services/notification.service';
-import { BookingStatus, CourseBooking, CourseBookingWithDetails, CreateCourseBookingRequest, UpdateCourseBookingRequest } from '@/types';
+import { CourseBookingModel } from '../../models/course-booking.model';
+import { NotificationService } from '../../services/notification.service';
+import { BookingStatus, CourseBooking, CourseBookingWithDetails, CreateCourseBookingRequest, UpdateCourseBookingRequest } from '../../types';
 
 export class CourseBookingService {
   private static notificationService: NotificationService;

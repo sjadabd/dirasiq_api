@@ -1,10 +1,10 @@
 import { Request, Response } from 'express';
-import { AssignmentService } from '@/services/assignment.service';
-import { AcademicYearModel } from '@/models/academic-year.model';
-import { AssignmentModel } from '@/models/assignment.model';
-import { NotificationService } from '@/services/notification.service';
 import path from 'path';
-import { saveBase64File } from '@/utils/file.util';
+import { AcademicYearModel } from '../../models/academic-year.model';
+import { AssignmentModel } from '../../models/assignment.model';
+import { AssignmentService } from '../../services/assignment.service';
+import { NotificationService } from '../../services/notification.service';
+import { saveBase64File } from '../../utils/file.util';
 
 export class StudentAssignmentController {
   static getService(): AssignmentService {

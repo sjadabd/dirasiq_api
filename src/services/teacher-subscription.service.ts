@@ -1,10 +1,10 @@
-import { SubscriptionPackageModel } from '@/models/subscription-package.model'
-import { TeacherSubscriptionModel } from '@/models/teacher-subscription.model'
+import { SubscriptionPackageModel } from '../models/subscription-package.model'
+import { TeacherSubscriptionModel } from '../models/teacher-subscription.model'
 import {
   ApiResponse,
   CreateTeacherSubscriptionRequest,
   UpdateTeacherSubscriptionRequest
-} from '@/types'
+} from '../types'
 
 export class TeacherSubscriptionService {
   // إنشاء اشتراك جديد

@@ -1,7 +1,7 @@
-import { NotificationController, notificationValidation } from '@/controllers/notification.controller';
-import { authenticateToken } from '@/middleware/auth.middleware';
-import { UserType } from '@/types';
 import { NextFunction, Request, Response, Router } from 'express';
+import { NotificationController, notificationValidation } from '../controllers/notification.controller';
+import { authenticateToken } from '../middleware/auth.middleware';
+import { UserType } from '../types';
 
 const router = Router();
 const notificationController = new NotificationController();

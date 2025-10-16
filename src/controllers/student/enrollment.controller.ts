@@ -1,8 +1,8 @@
-import { AcademicYearService } from '@/services/super_admin/academic-year.service';
-import { CourseBookingService } from '@/services/teacher/course-booking.service';
-import { BookingStatus, CourseBookingWithDetails } from '@/types';
 import { Request, Response } from 'express';
-import { SessionModel } from '@/models/session.model';
+import { SessionModel } from '../../models/session.model';
+import { AcademicYearService } from '../../services/super_admin/academic-year.service';
+import { CourseBookingService } from '../../services/teacher/course-booking.service';
+import { BookingStatus, CourseBookingWithDetails } from '../../types';
 
 export class StudentEnrollmentController {
   // GET /api/student/enrollments

@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
-import { TeacherExpenseModel } from '@/models/teacher-expense.model';
-import { AcademicYearModel } from '@/models/academic-year.model';
+import { AcademicYearModel } from '../../models/academic-year.model';
+import { TeacherExpenseModel } from '../../models/teacher-expense.model';
 
 export class TeacherExpenseController {
   static async create(req: Request, res: Response): Promise<void> {

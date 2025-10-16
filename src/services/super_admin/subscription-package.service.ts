@@ -1,5 +1,5 @@
-import { SubscriptionPackageModel } from '@/models/subscription-package.model';
-import { CreateSubscriptionPackageRequest, SubscriptionPackage, UpdateSubscriptionPackageRequest } from '@/types';
+import { SubscriptionPackageModel } from '../../models/subscription-package.model';
+import { CreateSubscriptionPackageRequest, SubscriptionPackage, UpdateSubscriptionPackageRequest } from '../../types';
 
 export class SubscriptionPackageService {
   // Create a new subscription package

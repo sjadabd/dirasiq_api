@@ -1,8 +1,8 @@
-import { NewsService } from '@/services/news.service';
-import { CreateNewsRequest, UpdateNewsRequest, NewsType } from '@/types';
 import { Request, Response } from 'express';
 import fs from 'fs';
 import path from 'path';
+import { NewsService } from '../../services/news.service';
+import { CreateNewsRequest, NewsType, UpdateNewsRequest } from '../../types';
 
 export class NewsController {
   // Save base64 image to disk under public/uploads/news and return public path '/uploads/news/<filename>'
@@ -48,7 +48,7 @@ export class NewsController {
       if (!publicPath.startsWith('/uploads/news/')) return;
       const relative = publicPath.replace(/^\//, ''); // remove leading slash
       const fileOnDisk = path.resolve(process.cwd(), 'public', relative.replace(/^uploads\//, 'uploads/'));
-      await fs.promises.unlink(fileOnDisk).catch(() => {});
+      await fs.promises.unlink(fileOnDisk).catch(() => { });
     } catch {
       // Silently ignore delete errors
     }

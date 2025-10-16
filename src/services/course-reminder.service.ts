@@ -1,6 +1,6 @@
-import pool from '@/config/database';
-import { NotificationService } from '@/services/notification.service';
-import { NotificationType, RecipientType } from '@/models/notification.model';
+import pool from '../config/database';
+import { NotificationType, RecipientType } from '../models/notification.model';
+import { NotificationService } from '../services/notification.service';
 
 export class CourseReminderService {
   private notificationService: NotificationService;

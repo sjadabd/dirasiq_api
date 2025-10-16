@@ -1,11 +1,11 @@
-import { NewsModel } from '@/models/news.model';
+import { NewsModel } from '../models/news.model';
 import {
   CreateNewsRequest,
   News,
   NewsType,
   PaginatedResponse,
   UpdateNewsRequest
-} from '@/types';
+} from '../types';
 
 export class NewsService {
   /**

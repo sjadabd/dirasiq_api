@@ -1,6 +1,6 @@
-import { GradeController } from '@/controllers/super_admin/grade.controller';
-import { authenticateToken, requireSuperAdmin } from '@/middleware/auth.middleware';
 import { Router } from 'express';
+import { GradeController } from '../../controllers/super_admin/grade.controller';
+import { authenticateToken, requireSuperAdmin } from '../../middleware/auth.middleware';
 
 const router = Router();
 

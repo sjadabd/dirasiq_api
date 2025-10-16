@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { query, validationResult } from 'express-validator';
-import { StudentUnifiedSearchService } from '@/services/student/search.service';
+import { StudentUnifiedSearchService } from '../../services/student/search.service';
 
 export class StudentSearchController {
   // GET /api/student/search/unified?q=...&maxDistance=&page=&limit=

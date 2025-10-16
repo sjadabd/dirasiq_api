@@ -1,12 +1,12 @@
 import {
   CourseInvoiceModel,
   DbCourseInvoice,
-} from '@/models/course-invoice.model';
+} from '../../models/course-invoice.model';
 import {
   DbInvoiceInstallment,
   InvoiceInstallmentModel,
-} from '@/models/invoice-installment.model';
-import { InvoiceStatus } from '@/types';
+} from '../../models/invoice-installment.model';
+import { InvoiceStatus } from '../../types';
 
 export class StudentInvoiceService {
   static async listInvoices(
@@ -42,7 +42,7 @@ export class StudentInvoiceService {
       ORDER BY ci.created_at DESC
       LIMIT $${i} OFFSET $${i + 1}
     `;
-    const { default: pool } = await import('@/config/database');
+    const { default: pool } = await import('../../config/database');
     const r = await pool.query(q, [
       ...params,
       Math.max(1, Number(limit)),
@@ -100,7 +100,7 @@ export class StudentInvoiceService {
     studentId: string,
     invoiceId: string
   ): Promise<any | null> {
-    const { default: pool } = await import('@/config/database');
+    const { default: pool } = await import('../../config/database');
     // Fetch invoice with teacher and course names
     const iq = `
       SELECT ci.*, u.name AS teacher_name, c.course_name
@@ -194,7 +194,7 @@ export class StudentInvoiceService {
     invoiceId: string,
     installmentId: string
   ): Promise<any | null> {
-    const { default: pool } = await import('@/config/database');
+    const { default: pool } = await import('../../config/database');
     // Verify invoice belongs to student and fetch names
     const iq = `
       SELECT ci.*, u.name AS teacher_name, c.course_name

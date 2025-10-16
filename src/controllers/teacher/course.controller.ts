@@ -1,6 +1,6 @@
-import { CourseService } from '@/services/teacher/course.service';
 import { Request, Response } from 'express';
 import { body, param, query, validationResult } from 'express-validator';
+import { CourseService } from '../../services/teacher/course.service';
 
 export class CourseController {
   // Create new course

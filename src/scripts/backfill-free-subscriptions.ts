@@ -1,7 +1,7 @@
 import 'dotenv/config';
-import pool from '@/config/database';
-import { SubscriptionPackageModel } from '@/models/subscription-package.model';
-import { TeacherSubscriptionModel } from '@/models/teacher-subscription.model';
+import pool from '../config/database';
+import { SubscriptionPackageModel } from '../models/subscription-package.model';
+import { TeacherSubscriptionModel } from '../models/teacher-subscription.model';
 
 async function main() {
   console.info('🚀 Backfill free subscriptions for teachers without active subscription...');

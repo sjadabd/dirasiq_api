@@ -1,6 +1,6 @@
-import pool from '@/config/database';
-import { Student, SuperAdmin, Teacher, User, UserStatus, UserType } from '@/types';
 import bcrypt from 'bcryptjs';
+import pool from '../config/database';
+import { Student, SuperAdmin, Teacher, User, UserStatus, UserType } from '../types';
 
 export class UserModel {
   // Create a new user

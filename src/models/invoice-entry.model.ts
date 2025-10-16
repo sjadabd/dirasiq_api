@@ -1,5 +1,5 @@
-import pool from '@/config/database';
-import { PaymentMethod } from '@/types';
+import pool from '../config/database';
+import { PaymentMethod } from '../types';
 
 export type EntryType = 'payment' | 'discount' | 'refund' | 'adjustment';
 

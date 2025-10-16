@@ -1,6 +1,6 @@
-import pool from '@/config/database';
+import pool from '../config/database';
+import { NotificationPriority, NotificationType, RecipientType } from '../models/notification.model';
 import { NotificationService } from './notification.service';
-import { NotificationPriority, NotificationType, RecipientType } from '@/models/notification.model';
 
 export class SessionStartReminderService {
   private notif: NotificationService;
@@ -11,7 +11,7 @@ export class SessionStartReminderService {
 
   // Helper to convert DOW (0-6) to Arabic day name
   private weekdayName(d: number): string {
-    const names = ['الأحد','الاثنين','الثلاثاء','الأربعاء','الخميس','الجمعة','السبت'];
+    const names = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
     return names[d] ?? String(d);
   }
 

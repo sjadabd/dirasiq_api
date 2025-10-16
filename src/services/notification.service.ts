@@ -1,16 +1,16 @@
+import { Client } from 'onesignal-node';
+import { AcademicYearModel } from '../models/academic-year.model';
 import {
   Notification,
   NotificationModel,
   NotificationStatus,
   NotificationType,
   RecipientType,
-} from '@/models/notification.model';
-import { AcademicYearModel } from '@/models/academic-year.model';
-import { StudentGradeModel } from '@/models/student-grade.model';
-import { TokenModel } from '@/models/token.model';
-import { UserModel } from '@/models/user.model';
-import { UserType } from '@/types';
-import { Client } from 'onesignal-node';
+} from '../models/notification.model';
+import { StudentGradeModel } from '../models/student-grade.model';
+import { TokenModel } from '../models/token.model';
+import { UserModel } from '../models/user.model';
+import { UserType } from '../types';
 
 export interface OneSignalConfig {
   appId: string;

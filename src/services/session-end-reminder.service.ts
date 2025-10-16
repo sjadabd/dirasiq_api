@@ -1,6 +1,6 @@
-import pool from '@/config/database';
+import pool from '../config/database';
+import { NotificationPriority, NotificationType, RecipientType } from '../models/notification.model';
 import { NotificationService } from './notification.service';
-import { NotificationPriority, NotificationType, RecipientType } from '@/models/notification.model';
 
 export class SessionEndReminderService {
   private notif: NotificationService;

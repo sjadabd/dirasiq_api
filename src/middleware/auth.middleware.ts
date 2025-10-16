@@ -1,8 +1,8 @@
-import { TokenModel } from '@/models/token.model';
-import { UserModel } from '@/models/user.model';
-import { UserType } from '@/types';
 import { NextFunction, Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
+import { TokenModel } from '../models/token.model';
+import { UserModel } from '../models/user.model';
+import { UserType } from '../types';
 
 // Extend Request interface to include user
 declare global {

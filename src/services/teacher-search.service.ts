@@ -1,5 +1,5 @@
-import { UserModel } from '@/models/user.model';
-import { ApiResponse } from '@/types';
+import { UserModel } from '../models/user.model';
+import { ApiResponse } from '../types';
 import { LocationService } from './location.service';
 
 export interface TeacherSearchParams {

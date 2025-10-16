@@ -1,6 +1,6 @@
-import { StudentCourseBookingController } from '@/controllers/student/course-booking.controller';
-import { authenticateToken } from '@/middleware/auth.middleware';
 import { Router } from 'express';
+import { StudentCourseBookingController } from '../../controllers/student/course-booking.controller';
+import { authenticateToken } from '../../middleware/auth.middleware';
 
 const router = Router();
 

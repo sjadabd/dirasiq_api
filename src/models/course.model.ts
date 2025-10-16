@@ -1,5 +1,5 @@
-import pool from '@/config/database';
-import { Course, CreateCourseRequest, UpdateCourseRequest } from '@/types';
+import pool from '../config/database';
+import { Course, CreateCourseRequest, UpdateCourseRequest } from '../types';
 
 export class CourseModel {
   // Create new course

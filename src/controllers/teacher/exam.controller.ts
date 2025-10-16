@@ -1,8 +1,8 @@
 import { Request, Response } from 'express';
-import { ExamService } from '@/services/exam.service';
-import { ExamModel, ExamType } from '@/models/exam.model';
-import { NotificationService } from '@/services/notification.service';
-import { AcademicYearModel } from '@/models/academic-year.model';
+import { AcademicYearModel } from '../../models/academic-year.model';
+import { ExamModel, ExamType } from '../../models/exam.model';
+import { ExamService } from '../../services/exam.service';
+import { NotificationService } from '../../services/notification.service';
 
 export class TeacherExamController {
   static getService(): ExamService { return new ExamService(); }
@@ -160,7 +160,7 @@ export class TeacherExamController {
         // We'll check via a simple select using pool directly
         const { default: _unused } = { default: null };
         // Direct query using pool
-        const pool = (require('@/config/database') as any).default || require('@/config/database');
+        const pool = (require('../../config/database') as any).default || require('../../config/database');
         const linkRes = await pool.query(linkedQ, [id, sessionId]);
         if (linkRes.rowCount === 0) {
           res.status(400).json({ success: false, message: 'الجلسة غير مرتبطة بهذا الامتحان' });
@@ -182,7 +182,7 @@ export class TeacherExamController {
       }
 
       // No session filter: distinct students targeted by exam (linked sessions OR course confirmed bookings), with grades
-      const pool = (require('@/config/database') as any).default || require('@/config/database');
+      const pool = (require('../../config/database') as any).default || require('../../config/database');
       const q = `
         WITH targeted AS (
           SELECT DISTINCT sa.student_id

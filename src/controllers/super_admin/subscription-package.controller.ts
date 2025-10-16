@@ -1,7 +1,7 @@
-import { SubscriptionPackageService } from '@/services/super_admin/subscription-package.service';
-import { TeacherSubscriptionService } from '@/services/teacher-subscription.service';
 import { Request, Response } from 'express';
 import { body, param, validationResult } from 'express-validator';
+import { SubscriptionPackageService } from '../../services/super_admin/subscription-package.service';
+import { TeacherSubscriptionService } from '../../services/teacher-subscription.service';
 
 export class SubscriptionPackageController {
   // Create a new subscription package (Super Admin only)

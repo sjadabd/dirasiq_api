@@ -1,14 +1,14 @@
-import { AttendanceModel } from '@/models/attendance.model';
-import { CourseBookingModel } from '@/models/course-booking.model';
-import { CourseModel } from '@/models/course.model';
+import { Request, Response } from 'express';
+import { AttendanceModel } from '../../models/attendance.model';
+import { CourseBookingModel } from '../../models/course-booking.model';
+import { CourseModel } from '../../models/course.model';
 import {
   NotificationPriority,
   NotificationType,
   RecipientType,
-} from '@/models/notification.model';
-import { SessionModel } from '@/models/session.model';
-import { NotificationService } from '@/services/notification.service';
-import { Request, Response } from 'express';
+} from '../../models/notification.model';
+import { SessionModel } from '../../models/session.model';
+import { NotificationService } from '../../services/notification.service';
 
 export class TeacherSessionController {
   // Helpers: format time to 12-hour with Arabic AM/PM

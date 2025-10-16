@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import QRCode from 'qrcode';
-import { UserModel } from '@/models/user.model';
+import { UserModel } from '../models/user.model';
 
 export class QrService {
   // Ensure a reusable teacher QR exists. If missing, generate and persist path.

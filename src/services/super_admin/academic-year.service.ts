@@ -1,9 +1,9 @@
-import { AcademicYearModel } from '@/models/academic-year.model';
+import { AcademicYearModel } from '../../models/academic-year.model';
 import {
   ApiResponse,
   CreateAcademicYearRequest,
   UpdateAcademicYearRequest
-} from '@/types';
+} from '../../types';
 
 export class AcademicYearService {
   // Create new academic year

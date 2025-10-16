@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
-import { AuthenticatedRequest, ApiResponse } from '@/types';
-import { ReservationPaymentModel } from '@/models/reservation-payment.model';
-import pool from '@/config/database';
+import pool from '../../config/database';
+import { ReservationPaymentModel } from '../../models/reservation-payment.model';
+import { ApiResponse, AuthenticatedRequest } from '../../types';
 
 export class TeacherPaymentController {
   // GET /teacher/payments/reservations

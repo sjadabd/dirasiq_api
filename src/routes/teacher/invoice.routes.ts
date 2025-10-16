@@ -1,6 +1,6 @@
-import { TeacherInvoiceController } from '@/controllers/teacher/invoice.controller';
-import { authenticateToken } from '@/middleware/auth.middleware';
 import { Router } from 'express';
+import { TeacherInvoiceController } from '../../controllers/teacher/invoice.controller';
+import { authenticateToken } from '../../middleware/auth.middleware';
 
 const router = Router();
 router.use(authenticateToken);

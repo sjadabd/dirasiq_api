@@ -1,4 +1,4 @@
-import pool from '@/config/database';
+import pool from '../config/database';
 
 export interface Session {
   id: string;
@@ -145,7 +145,7 @@ export class SessionModel {
     page = 1,
     limit = 20,
     filters?: { weekday?: number | null; courseId?: string | null }
-  ): Promise<{ sessions: any[]; total: number; }>{
+  ): Promise<{ sessions: any[]; total: number; }> {
     const offset = (page - 1) * limit;
 
     // Build dynamic filters for count query
@@ -180,7 +180,7 @@ export class SessionModel {
     }
 
     const listQ = `
-      SELECT 
+      SELECT
         s.*,
         c.course_name,
         c.study_year,

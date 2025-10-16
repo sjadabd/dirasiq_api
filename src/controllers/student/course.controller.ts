@@ -1,6 +1,6 @@
-import { StudentService } from '@/services/student/student.service';
 import { Request, Response } from 'express';
 import { body, validationResult } from 'express-validator';
+import { StudentService } from '../../services/student/student.service';
 
 export class StudentCourseController {
   // Get suggested courses for student based on grade and location

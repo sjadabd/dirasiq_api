@@ -1,4 +1,4 @@
-import pool from '@/config/database';
+import pool from '../config/database';
 
 export type ExamType = 'daily' | 'monthly';
 
@@ -74,7 +74,7 @@ export class ExamModel {
 
   static async getById(id: string): Promise<Exam | null> {
     const q = `
-      SELECT 
+      SELECT
         e.*,
         COALESCE(
           JSON_AGG(
@@ -106,7 +106,7 @@ export class ExamModel {
     if (type) { params.push(type); where += ` AND e.exam_type = $${params.length}`; }
     params.push(limit, offset);
     const dataQ = `
-      SELECT 
+      SELECT
         e.*,
         COALESCE(
           JSON_AGG(
@@ -127,7 +127,7 @@ export class ExamModel {
       WHERE ${where}
       GROUP BY e.id
       ORDER BY e.exam_date DESC, e.created_at DESC
-      LIMIT $${params.length-1} OFFSET $${params.length}
+      LIMIT $${params.length - 1} OFFSET $${params.length}
     `;
     const rows = (await pool.query(dataQ, params)).rows;
     const cntParams: any[] = [teacherId];
@@ -156,7 +156,7 @@ export class ExamModel {
     let where = `(${whereCourse} ${whereSession} ${whereGrade})`;
     if (type) { params.push(type); where += ` AND e.exam_type = $${params.length}`; }
     params.push(limit, offset);
-    const dataQ = `SELECT e.* FROM exams e WHERE ${where} ORDER BY e.exam_date DESC, e.created_at DESC LIMIT $${params.length-1} OFFSET $${params.length}`;
+    const dataQ = `SELECT e.* FROM exams e WHERE ${where} ORDER BY e.exam_date DESC, e.created_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`;
     const rows = (await pool.query(dataQ, params)).rows;
     const cntParams: any[] = [studentId];
     let cntWhere = `(${whereCourse} ${whereSession} ${whereGrade})`;

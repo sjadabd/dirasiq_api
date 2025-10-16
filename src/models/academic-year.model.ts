@@ -1,5 +1,5 @@
-import pool from '@/config/database';
-import { AcademicYear, CreateAcademicYearRequest, UpdateAcademicYearRequest } from '@/types';
+import pool from '../config/database';
+import { AcademicYear, CreateAcademicYearRequest, UpdateAcademicYearRequest } from '../types';
 
 export class AcademicYearModel {
   // Create new academic year

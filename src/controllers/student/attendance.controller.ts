@@ -1,7 +1,7 @@
-import { AttendanceModel } from '@/models/attendance.model';
-import { NotificationPriority, NotificationType, RecipientType } from '@/models/notification.model';
-import { NotificationService } from '@/services/notification.service';
 import { Request, Response } from 'express';
+import { AttendanceModel } from '../../models/attendance.model';
+import { NotificationPriority, NotificationType, RecipientType } from '../../models/notification.model';
+import { NotificationService } from '../../services/notification.service';
 
 export class StudentAttendanceController {
   // Helpers: format time to 12-hour with Arabic AM/PM

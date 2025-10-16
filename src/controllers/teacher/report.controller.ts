@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
-import pool from '@/config/database';
-import { TeacherExpenseModel } from '@/models/teacher-expense.model';
+import pool from '../../config/database';
+import { TeacherExpenseModel } from '../../models/teacher-expense.model';
 
 export class TeacherReportController {
   static async financial(req: Request, res: Response): Promise<void> {
@@ -23,7 +23,7 @@ export class TeacherReportController {
 
       // Aggregate reservation invoices separately
       const reservationQ = `
-        SELECT 
+        SELECT
           COALESCE(SUM(CASE WHEN ci.invoice_type = 'reservation' THEN ci.amount_due ELSE 0 END),0)::decimal AS total_due,
           COALESCE(SUM(CASE WHEN ci.invoice_type = 'reservation' THEN ci.discount_total ELSE 0 END),0)::decimal AS total_discount,
           COALESCE(SUM(CASE WHEN ci.invoice_type = 'reservation' THEN ci.amount_paid ELSE 0 END),0)::decimal AS total_paid,
@@ -34,7 +34,7 @@ export class TeacherReportController {
 
       // Aggregate student invoices (non-reservation)
       const studentInvQ = `
-        SELECT 
+        SELECT
           COALESCE(SUM(CASE WHEN ci.invoice_type <> 'reservation' THEN ci.amount_due ELSE 0 END),0)::decimal AS total_due,
           COALESCE(SUM(CASE WHEN ci.invoice_type <> 'reservation' THEN ci.discount_total ELSE 0 END),0)::decimal AS total_discount,
           COALESCE(SUM(CASE WHEN ci.invoice_type <> 'reservation' THEN ci.amount_paid ELSE 0 END),0)::decimal AS total_paid,

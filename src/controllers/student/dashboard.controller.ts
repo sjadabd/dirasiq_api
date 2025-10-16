@@ -1,5 +1,5 @@
-import { StudentService } from '@/services/student/student.service';
 import { Request, Response } from 'express';
+import { StudentService } from '../../services/student/student.service';
 
 export class StudentDashboardController {
   static async getOverview(req: Request, res: Response): Promise<void> {

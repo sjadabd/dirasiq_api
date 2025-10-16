@@ -1,4 +1,4 @@
-import pool from '@/config/database';
+import pool from '../config/database';
 
 export type SubmissionType = 'text' | 'file' | 'link' | 'mixed';
 export type Visibility = 'all_students' | 'group' | 'specific_students';
@@ -129,7 +129,7 @@ export class AssignmentModel {
     return r.rows[0] || null;
   }
 
-  static async listByTeacher(teacherId: string, page = 1, limit = 20, studyYear?: string | null): Promise<{data: Assignment[]; total: number;}> {
+  static async listByTeacher(teacherId: string, page = 1, limit = 20, studyYear?: string | null): Promise<{ data: Assignment[]; total: number; }> {
     const offset = (page - 1) * limit;
     const params: any[] = [teacherId];
     let where = `teacher_id = $1 AND deleted_at IS NULL`;
@@ -139,7 +139,7 @@ export class AssignmentModel {
     }
     params.push(limit, offset);
     const r = await pool.query(
-      `SELECT * FROM assignments WHERE ${where} ORDER BY created_at DESC LIMIT $${params.length-1} OFFSET $${params.length}`,
+      `SELECT * FROM assignments WHERE ${where} ORDER BY created_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`,
       params
     );
     const countParams: any[] = [teacherId];
@@ -169,7 +169,7 @@ export class AssignmentModel {
     }
   }
 
-  static async listForStudent(studentId: string, page = 1, limit = 20, studyYear?: string | null): Promise<{data: Assignment[]; total: number;}> {
+  static async listForStudent(studentId: string, page = 1, limit = 20, studyYear?: string | null): Promise<{ data: Assignment[]; total: number; }> {
     const offset = (page - 1) * limit;
     const params: any[] = [studentId];
     let where = `a.deleted_at IS NULL AND a.is_active = TRUE AND (a.visibility = 'all_students' OR ar.student_id = $1)`;
@@ -184,7 +184,7 @@ export class AssignmentModel {
       LEFT JOIN assignment_recipients ar ON ar.assignment_id = a.id AND a.visibility = 'specific_students'
       WHERE ${where}
       ORDER BY a.assigned_date DESC, a.due_date NULLS LAST
-      LIMIT $${params.length-1} OFFSET $${params.length};
+      LIMIT $${params.length - 1} OFFSET $${params.length};
     `;
     const r = await pool.query(q, params);
     const countParams: any[] = [studentId];

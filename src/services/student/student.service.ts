@@ -1,10 +1,10 @@
-import pool from '@/config/database';
-import { CourseModel } from '@/models/course.model';
-import { GradeModel } from '@/models/grade.model';
-import { StudentGradeModel } from '@/models/student-grade.model';
-import { SubjectModel } from '@/models/subject.model';
-import { UserModel } from '@/models/user.model';
-import { ApiResponse, StudentGrade } from '@/types';
+import pool from '../../config/database';
+import { CourseModel } from '../../models/course.model';
+import { GradeModel } from '../../models/grade.model';
+import { StudentGradeModel } from '../../models/student-grade.model';
+import { SubjectModel } from '../../models/subject.model';
+import { UserModel } from '../../models/user.model';
+import { ApiResponse, StudentGrade } from '../../types';
 
 export class StudentService {
   // Get active grades for student
@@ -303,9 +303,9 @@ export class StudentService {
     const a =
       Math.sin(dLat / 2) * Math.sin(dLat / 2) +
       Math.cos(this.toRadians(lat1)) *
-        Math.cos(this.toRadians(lat2)) *
-        Math.sin(dLon / 2) *
-        Math.sin(dLon / 2);
+      Math.cos(this.toRadians(lat2)) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
 
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     const distance = R * c; // Distance in kilometers
@@ -555,45 +555,45 @@ export namespace StudentService {
 
       const nextSession = nextSessionRes.rows[0]
         ? {
-            id: String(nextSessionRes.rows[0].id),
-            courseId: String(nextSessionRes.rows[0].course_id),
-            teacherId: String(nextSessionRes.rows[0].teacher_id),
-            weekday: Number(nextSessionRes.rows[0].weekday),
-            startTime: nextSessionRes.rows[0].start_time,
-            endTime: nextSessionRes.rows[0].end_time,
-            nextOccurrence: new Date(nextSessionRes.rows[0].next_occurrence).toISOString(),
-            courseName: nextSessionRes.rows[0].course_name,
-            subject: {
-              id: nextSessionRes.rows[0].subject_id || null,
-              name: nextSessionRes.rows[0].subject_name || null
-            },
-            teacher: {
-              name: nextSessionRes.rows[0].teacher_name,
-              profileImagePath: nextSessionRes.rows[0].profile_image_path || null,
-              latitude: nextSessionRes.rows[0].latitude ?? null,
-              longitude: nextSessionRes.rows[0].longitude ?? null
-            }
+          id: String(nextSessionRes.rows[0].id),
+          courseId: String(nextSessionRes.rows[0].course_id),
+          teacherId: String(nextSessionRes.rows[0].teacher_id),
+          weekday: Number(nextSessionRes.rows[0].weekday),
+          startTime: nextSessionRes.rows[0].start_time,
+          endTime: nextSessionRes.rows[0].end_time,
+          nextOccurrence: new Date(nextSessionRes.rows[0].next_occurrence).toISOString(),
+          courseName: nextSessionRes.rows[0].course_name,
+          subject: {
+            id: nextSessionRes.rows[0].subject_id || null,
+            name: nextSessionRes.rows[0].subject_name || null
+          },
+          teacher: {
+            name: nextSessionRes.rows[0].teacher_name,
+            profileImagePath: nextSessionRes.rows[0].profile_image_path || null,
+            latitude: nextSessionRes.rows[0].latitude ?? null,
+            longitude: nextSessionRes.rows[0].longitude ?? null
           }
+        }
         : null;
 
       const nextMonthlyExam = nextExamRes.rows[0]
         ? {
-            id: String(nextExamRes.rows[0].id),
-            courseId: String(nextExamRes.rows[0].course_id),
-            teacherId: String(nextExamRes.rows[0].teacher_id),
-            subjectId: String(nextExamRes.rows[0].subject_id),
-            examDate: nextExamRes.rows[0].exam_date,
-            examType: nextExamRes.rows[0].exam_type,
-            maxScore: Number(nextExamRes.rows[0].max_score),
-            courseName: nextExamRes.rows[0].course_name,
-            subjectName: nextExamRes.rows[0].subject_name,
-            teacher: {
-              name: nextExamRes.rows[0].teacher_name,
-              profileImagePath: nextExamRes.rows[0].profile_image_path || null,
-              latitude: nextExamRes.rows[0].latitude ?? null,
-              longitude: nextExamRes.rows[0].longitude ?? null
-            }
+          id: String(nextExamRes.rows[0].id),
+          courseId: String(nextExamRes.rows[0].course_id),
+          teacherId: String(nextExamRes.rows[0].teacher_id),
+          subjectId: String(nextExamRes.rows[0].subject_id),
+          examDate: nextExamRes.rows[0].exam_date,
+          examType: nextExamRes.rows[0].exam_type,
+          maxScore: Number(nextExamRes.rows[0].max_score),
+          courseName: nextExamRes.rows[0].course_name,
+          subjectName: nextExamRes.rows[0].subject_name,
+          teacher: {
+            name: nextExamRes.rows[0].teacher_name,
+            profileImagePath: nextExamRes.rows[0].profile_image_path || null,
+            latitude: nextExamRes.rows[0].latitude ?? null,
+            longitude: nextExamRes.rows[0].longitude ?? null
           }
+        }
         : null;
 
       return {

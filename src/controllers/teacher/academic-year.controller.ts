@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { AcademicYearModel } from '@/models/academic-year.model';
+import { AcademicYearModel } from '../../models/academic-year.model';
 
 export class TeacherAcademicYearController {
   static async list(req: Request, res: Response): Promise<void> {

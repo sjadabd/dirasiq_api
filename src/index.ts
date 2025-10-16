@@ -1,18 +1,3 @@
-import { initializeDatabase } from '@/database/init';
-import authRoutes from '@/routes/auth.routes';
-import notificationRoutes from '@/routes/notification.routes';
-import studentRoutes from '@/routes/student';
-import academicYearRoutes from '@/routes/super_admin/academic-year.routes';
-import gradeRoutes from '@/routes/super_admin/grade.routes';
-import newsRoutes from '@/routes/super_admin/news.routes';
-import subscriptionPackageRoutes from '@/routes/super_admin/subscription-package.routes';
-import teacherRoutes from '@/routes/teacher';
-import teacherSearchRoutes from '@/routes/teacher-search.routes';
-import courseRoutes from '@/routes/teacher/course.routes';
-import subjectRoutes from '@/routes/teacher/subject.routes';
-import userOnesignalRoutes from '@/routes/user-onesignal.routes';
-import { notificationCronService } from '@/services/notification-cron.service';
-import { NotificationService } from '@/services/notification.service';
 import compression from 'compression';
 import cors from 'cors';
 import dotenv from 'dotenv';
@@ -21,6 +6,21 @@ import rateLimit from 'express-rate-limit';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import path from 'path';
+import { initializeDatabase } from './database/init';
+import authRoutes from './routes/auth.routes';
+import notificationRoutes from './routes/notification.routes';
+import studentRoutes from './routes/student';
+import academicYearRoutes from './routes/super_admin/academic-year.routes';
+import gradeRoutes from './routes/super_admin/grade.routes';
+import newsRoutes from './routes/super_admin/news.routes';
+import subscriptionPackageRoutes from './routes/super_admin/subscription-package.routes';
+import teacherRoutes from './routes/teacher';
+import teacherSearchRoutes from './routes/teacher-search.routes';
+import courseRoutes from './routes/teacher/course.routes';
+import subjectRoutes from './routes/teacher/subject.routes';
+import userOnesignalRoutes from './routes/user-onesignal.routes';
+import { notificationCronService } from './services/notification-cron.service';
+import { NotificationService } from './services/notification.service';
 
 // Load environment variables
 dotenv.config();
@@ -58,11 +58,11 @@ app.use(
       process.env['NODE_ENV'] === 'production'
         ? ['https://yourdomain.com'] // Replace with your frontend domain
         : [
-            'http://localhost:3000',
-            'http://localhost:3001',
-            'http://localhost:5173',
-            'http://localhost:5174',
-          ],
+          'http://localhost:3000',
+          'http://localhost:3001',
+          'http://localhost:5173',
+          'http://localhost:5174',
+        ],
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
     allowedHeaders: ['Content-Type', 'Authorization'],

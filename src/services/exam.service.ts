@@ -1,4 +1,4 @@
-import { ExamModel, Exam, ExamGrade, ExamType } from '@/models/exam.model';
+import { Exam, ExamGrade, ExamModel, ExamType } from '../models/exam.model';
 
 export class ExamService {
   get model() { return ExamModel; }

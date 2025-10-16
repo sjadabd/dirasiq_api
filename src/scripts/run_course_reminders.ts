@@ -1,4 +1,4 @@
-import { CourseReminderService } from '@/services/course-reminder.service';
+import { CourseReminderService } from '../services/course-reminder.service';
 
 function parseArgs(argv: string[]): Record<string, string> {
   const args: Record<string, string> = {};

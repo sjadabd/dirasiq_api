@@ -1,6 +1,6 @@
-import { CourseBookingService } from '@/services/teacher/course-booking.service';
-import { CourseBookingWithDetails, CreateCourseBookingRequest } from '@/types';
 import { Request, Response } from 'express';
+import { CourseBookingService } from '../../services/teacher/course-booking.service';
+import { CourseBookingWithDetails, CreateCourseBookingRequest } from '../../types';
 
 export class StudentCourseBookingController {
   // Create a new course booking

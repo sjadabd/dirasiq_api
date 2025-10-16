@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
-import pool from '@/config/database';
-import { CourseModel } from '@/models/course.model';
+import pool from '../../config/database';
+import { CourseModel } from '../../models/course.model';
 
 export class TeacherRosterController {
   // GET /api/teacher/students

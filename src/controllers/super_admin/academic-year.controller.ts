@@ -1,6 +1,6 @@
-import { AcademicYearService } from '@/services/super_admin/academic-year.service';
 import { Request, Response } from 'express';
 import { body, param, query, validationResult } from 'express-validator';
+import { AcademicYearService } from '../../services/super_admin/academic-year.service';
 
 export class AcademicYearController {
   // Create new academic year

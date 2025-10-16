@@ -1,4 +1,4 @@
-import { AssignmentModel, Assignment, AssignmentSubmission } from '@/models/assignment.model';
+import { Assignment, AssignmentModel, AssignmentSubmission } from '../models/assignment.model';
 
 export class AssignmentService {
 

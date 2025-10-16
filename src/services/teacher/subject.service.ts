@@ -1,6 +1,6 @@
-import { SubjectModel } from '@/models/subject.model';
-import { UserModel } from '@/models/user.model';
-import { ApiResponse, CreateSubjectRequest, UpdateSubjectRequest } from '@/types';
+import { SubjectModel } from '../../models/subject.model';
+import { UserModel } from '../../models/user.model';
+import { ApiResponse, CreateSubjectRequest, UpdateSubjectRequest } from '../../types';
 
 export class SubjectService {
   // Create new subject

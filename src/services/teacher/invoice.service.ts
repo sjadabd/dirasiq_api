@@ -1,7 +1,7 @@
-import pool from '@/config/database';
-import { CourseInvoiceModel } from '@/models/course-invoice.model';
-import { InvoiceInstallmentModel } from '@/models/invoice-installment.model';
-import { InvoiceStatus, InvoiceType, PaymentMethod } from '@/types';
+import pool from '../../config/database';
+import { CourseInvoiceModel } from '../../models/course-invoice.model';
+import { InvoiceInstallmentModel } from '../../models/invoice-installment.model';
+import { InvoiceStatus, InvoiceType, PaymentMethod } from '../../types';
 
 export class TeacherInvoiceService {
   static async updateInvoice(
@@ -342,7 +342,7 @@ export class TeacherInvoiceService {
       if (!invFresh) throw new Error('Invoice not found');
       const remaining = Math.max(
         Number(invFresh.amount_due) -
-          (Number(invFresh.discount_total) + Number(invFresh.amount_paid)),
+        (Number(invFresh.discount_total) + Number(invFresh.amount_paid)),
         0
       );
       if (val > remaining) {
@@ -386,7 +386,7 @@ export class TeacherInvoiceService {
         if (!invAfterDiscount) throw new Error('Invoice not found');
         let remaining = Math.max(
           Number(invAfterDiscount.amount_due) -
-            (Number(invAfterDiscount.discount_total) + Number(invAfterDiscount.amount_paid)),
+          (Number(invAfterDiscount.discount_total) + Number(invAfterDiscount.amount_paid)),
           0
         );
 
@@ -476,7 +476,7 @@ export class TeacherInvoiceService {
     // Also ensure invoice remaining can cover the amount
     const remaining = Math.max(
       Number(inv.amount_due) -
-        (Number(inv.discount_total) + Number(inv.amount_paid)),
+      (Number(inv.discount_total) + Number(inv.amount_paid)),
       0
     );
     if (Number(options.amount) > remaining) {
@@ -510,7 +510,7 @@ export class TeacherInvoiceService {
     if (!inv) throw new Error('Invoice not found');
     const remaining = Math.max(
       Number(inv.amount_due) -
-        (Number(inv.discount_total) + Number(inv.amount_paid)),
+      (Number(inv.discount_total) + Number(inv.amount_paid)),
       0
     );
     if (Number(options.amount) > remaining) {

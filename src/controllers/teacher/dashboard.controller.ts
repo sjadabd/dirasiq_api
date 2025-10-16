@@ -1,6 +1,6 @@
-import pool from '@/config/database';
 import { Request, Response } from 'express';
-import { BookingStatus } from '@/types';
+import pool from '../../config/database';
+import { BookingStatus } from '../../types';
 
 export class TeacherDashboardController {
   static async getDashboard(req: Request, res: Response): Promise<void> {
@@ -50,14 +50,14 @@ export class TeacherDashboardController {
             AND is_deleted = false
             AND weekday = EXTRACT(DOW FROM CURRENT_DATE)::int
         `,
-       depositsTotals: `
-          SELECT 
+        depositsTotals: `
+          SELECT
             COALESCE(SUM(amount), 0)::float AS total_deposit,
             COALESCE(SUM(CASE WHEN status = 'paid' THEN amount ELSE 0 END), 0)::float AS received_deposit
           FROM reservation_payments
           WHERE teacher_id = $1
        `,
-       studentInvoicesTotals: `
+        studentInvoicesTotals: `
          SELECT
            COALESCE(SUM(amount_due), 0)::float AS total_due,
            COALESCE(SUM(amount_paid), 0)::float AS amount_paid,
@@ -129,7 +129,7 @@ export class TeacherDashboardController {
       }
 
       const q = `
-        SELECT 
+        SELECT
           s.id,
           s.course_id,
           s.teacher_id,
