@@ -1,4 +1,5 @@
 import { SubscriptionPackageService } from '@/services/super_admin/subscription-package.service';
+import { TeacherSubscriptionService } from '@/services/teacher-subscription.service';
 import { Request, Response } from 'express';
 import { body, param, validationResult } from 'express-validator';
 
@@ -351,22 +352,30 @@ export class SubscriptionPackageController {
   // Get active subscription packages (Public)
   static async getActivePackages(_req: Request, res: Response): Promise<void> {
     try {
-      const result = await SubscriptionPackageService.getActivePackages();
+      // ✅ حاول الحصول على user من locals
+      const user = (res.locals as any)?.user;
+      const teacherId = user?.userId || null;
 
-      if (result.success) {
-        res.status(200).json(result);
-      } else {
-        res.status(400).json(result);
-      }
+      // ✅ استدعاء الخدمة وتمرير teacherId فقط عند توفره
+      const data = await SubscriptionPackageService.getActivePackages(teacherId || undefined);
+
+      res.status(200).json({
+        success: true,
+        message: teacherId
+          ? 'تم جلب الباقات مع تحديد اشتراكك الحالي ✅'
+          : 'تم جلب الباقات العامة (لم يتم تحديد اشتراك)',
+        data,
+      });
     } catch (error) {
       console.error('Error in getActivePackages controller:', error);
       res.status(500).json({
         success: false,
         message: 'حدث خطأ في الخادم',
-        errors: ['حدث خطأ في الخادم']
+        errors: ['حدث خطأ في الخادم'],
       });
     }
   }
+
 
   // Get free subscription package (Public)
   static async getFreePackage(_req: Request, res: Response): Promise<void> {
@@ -380,6 +389,48 @@ export class SubscriptionPackageController {
       }
     } catch (error) {
       console.error('Error in getFreePackage controller:', error);
+      res.status(500).json({
+        success: false,
+        message: 'حدث خطأ في الخادم',
+        errors: ['حدث خطأ في الخادم']
+      });
+    }
+  }
+
+  // Teacher: Activate subscription by package ID
+  static async activateForTeacher(req: Request, res: Response): Promise<void> {
+    try {
+      await param('id').isUUID().withMessage('معرف غير صحيح').run(req);
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        res.status(400).json({
+          success: false,
+          message: 'فشل في التحقق من البيانات',
+          errors: errors.array().map(e => e.msg)
+        });
+        return;
+      }
+
+      const teacher = (req as any).user;
+      if (!teacher?.id) {
+        res.status(401).json({
+          success: false,
+          message: 'المصادقة مطلوبة',
+          errors: ['المستخدم غير مصادق عليه']
+        });
+        return;
+      }
+
+      const { id } = req.params;
+      const result = await TeacherSubscriptionService.activateForTeacher(teacher.id, id!);
+
+      if (result.success) {
+        res.status(200).json(result);
+      } else {
+        res.status(400).json(result);
+      }
+    } catch (error) {
+      console.error('Error in activateForTeacher controller:', error);
       res.status(500).json({
         success: false,
         message: 'حدث خطأ في الخادم',

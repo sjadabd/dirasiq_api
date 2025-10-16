@@ -252,15 +252,52 @@ export class SubscriptionPackageModel {
   }
 
   // Get active subscription packages
-  static async getActivePackages(): Promise<SubscriptionPackage[]> {
-    const query = `
-      SELECT * FROM subscription_packages
-      WHERE is_active = true AND deleted_at IS NULL
-      ORDER BY price ASC, max_students ASC
-    `;
+  static async getActivePackages(teacher_id?: string): Promise<any[]> {
+    try {
+      // ✅ جلب كل الباقات النشطة
+      const packagesQuery = `
+        SELECT *
+        FROM subscription_packages
+        WHERE is_active = true
+          AND deleted_at IS NULL
+        ORDER BY price ASC, max_students ASC
+      `;
+      const { rows: packages } = await pool.query(packagesQuery);
 
-    const result = await pool.query(query);
-    return result.rows.map((row: any) => this.mapDatabaseToSubscriptionPackage(row));
+      // ✅ إذا لم يتم تمرير teacher_id فقط ارجع الباقات
+      if (!teacher_id) {
+        return packages.map((row) => ({
+          ...this.mapDatabaseToSubscriptionPackage(row),
+          current: false,
+        }));
+      }
+
+      // ✅ جلب الباقة الحالية للمعلم من جدول teacher_subscriptions
+      const activeSubQuery = `
+        SELECT subscription_package_id
+        FROM teacher_subscriptions
+        WHERE teacher_id = $1
+          AND is_active = true
+          AND deleted_at IS NULL
+        LIMIT 1
+      `;
+      const { rows: activeSub } = await pool.query(activeSubQuery, [teacher_id]);
+      const currentPackageId = activeSub.length ? activeSub[0].subscription_package_id : null;
+
+      // ✅ دمج البيانات وتحديد الباقة الحالية
+      const result = packages.map((row) => {
+        const mapped = this.mapDatabaseToSubscriptionPackage(row);
+        return {
+          ...mapped,
+          current: mapped.id === currentPackageId,
+        };
+      });
+
+      return result;
+    } catch (error) {
+      console.error('❌ Error in getActivePackages:', error);
+      throw error;
+    }
   }
 
   // Get free subscription package
@@ -292,7 +329,8 @@ export class SubscriptionPackageModel {
       isFree: dbPackage.is_free,
       isActive: dbPackage.is_active,
       createdAt: dbPackage.created_at,
-      updatedAt: dbPackage.updated_at
+      updatedAt: dbPackage.updated_at,
+      current: false
     };
   }
 }

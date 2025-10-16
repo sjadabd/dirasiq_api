@@ -338,14 +338,14 @@ export class SubscriptionPackageService {
   }
 
   // Get active subscription packages
-  static async getActivePackages(): Promise<{
+  static async getActivePackages(teacher_id?: string): Promise<{
     success: boolean;
     message: string;
     data?: SubscriptionPackage[];
     errors?: string[];
   }> {
     try {
-      const packages = await SubscriptionPackageModel.getActivePackages();
+      const packages = await SubscriptionPackageModel.getActivePackages(teacher_id);
 
       return {
         success: true,

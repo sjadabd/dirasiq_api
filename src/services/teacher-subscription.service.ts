@@ -1,3 +1,4 @@
+import { SubscriptionPackageModel } from '@/models/subscription-package.model'
 import { TeacherSubscriptionModel } from '@/models/teacher-subscription.model'
 import {
   ApiResponse,
@@ -150,6 +151,52 @@ export class TeacherSubscriptionService {
       }
     } catch (error) {
       console.error('Error deleting subscription:', error)
+      return {
+        success: false,
+        message: 'فشلت العملية',
+        errors: ['خطأ داخلي في الخادم']
+      }
+    }
+  }
+
+  // تفعيل باقة لمعلم: إلغاء تفعيل الحالية وإنشاء اشتراك جديد من الباقة المطلوبة
+  static async activateForTeacher(teacherId: string, packageId: string): Promise<ApiResponse> {
+    try {
+      // 1) التحقق من الباقة
+      const pkg = await SubscriptionPackageModel.findById(packageId)
+      if (!pkg || !pkg.isActive) {
+        return {
+          success: false,
+          message: 'الباقة غير موجودة أو غير مفعلة',
+          errors: ['الباقة غير موجودة أو غير مفعلة']
+        }
+      }
+
+      // 2) إلغاء تفعيل الاشتراك الحالي إن وجد
+      const current = await TeacherSubscriptionModel.findActiveByTeacherId(teacherId)
+      if (current) {
+        await TeacherSubscriptionModel.update(current.id, { isActive: false })
+      }
+
+      // 3) إنشاء اشتراك جديد بحسب مدة الباقة
+      const startDate = new Date()
+      const endDate = new Date(startDate)
+      endDate.setDate(endDate.getDate() + Number(pkg.durationDays || 30))
+
+      const created = await TeacherSubscriptionModel.create({
+        teacherId,
+        subscriptionPackageId: pkg.id,
+        startDate,
+        endDate
+      })
+
+      return {
+        success: true,
+        message: 'تم تفعيل الباقة للمعلم بنجاح',
+        data: created
+      }
+    } catch (error) {
+      console.error('Error activating subscription for teacher:', error)
       return {
         success: false,
         message: 'فشلت العملية',

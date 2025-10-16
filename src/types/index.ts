@@ -236,6 +236,7 @@ export interface SubscriptionPackage {
   durationDays: number;
   isFree: boolean;
   isActive: boolean;
+  current: boolean;
   createdAt: Date;
   updatedAt: Date;
 }

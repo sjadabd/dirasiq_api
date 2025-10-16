@@ -1,14 +1,17 @@
 import { SubscriptionPackageController } from '@/controllers/super_admin/subscription-package.controller';
+import { authenticateToken, requireTeacher } from '@/middleware/auth.middleware';
+import { optionalAuth } from '@/middleware/optionalAuth';
 import { Router } from 'express';
-// import { authenticateToken, requireTeacher } from '@/middleware/auth.middleware';
 
 const router = Router();
 
-// Teacher-authenticated routes
-// router.use(authenticateToken);
-// router.use(requireTeacher);
+// ✅ الميدلوير يقرأ التوكن ويملأ res.locals.user إذا وُجد
+router.get('/active', optionalAuth, SubscriptionPackageController.getActivePackages);
 
-// Get all active subscription packages (Teacher access)
-router.get('/active', SubscriptionPackageController.getActivePackages);
+// Public: جلب باقة واحدة بدون تسجيل دخول
+router.get('/:id', SubscriptionPackageController.getPackageById);
+
+// Teacher: تفعيل اشتراك لباقـة معينة
+router.post('/:id/activate', authenticateToken, requireTeacher, SubscriptionPackageController.activateForTeacher);
 
 export default router;
