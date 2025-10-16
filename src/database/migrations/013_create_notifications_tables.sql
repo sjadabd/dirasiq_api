@@ -99,21 +99,6 @@ CREATE INDEX IF NOT EXISTS idx_notification_templates_type ON notification_templ
 CREATE INDEX IF NOT EXISTS idx_notification_templates_is_active ON notification_templates(is_active);
 CREATE INDEX IF NOT EXISTS idx_notification_templates_created_by ON notification_templates(created_by);
 
--- Insert default notification templates (including new_booking)
-INSERT INTO notification_templates (name, title_template, message_template, type, priority, variables, created_by) VALUES
-('homework_reminder', 'تنبيه واجب منزلي - {{course_name}}', 'لديك واجب منزلي جديد في مادة {{subject_name}} من المعلم {{teacher_name}}. الموعد النهائي: {{due_date}}', 'homework_reminder', 'high', '{"course_name": "اسم الدورة", "subject_name": "اسم المادة", "teacher_name": "اسم المعلم", "due_date": "تاريخ الاستحقاق"}', (SELECT id FROM users WHERE user_type = 'super_admin' LIMIT 1)),
-('new_booking', 'حجز جديد - {{course_name}}', 'لديك حجز جديد من الطالب {{student_name}} في دورة {{course_name}}. {{student_message}}', 'new_booking', 'high', '{"course_name": "اسم الدورة", "student_name": "اسم الطالب", "student_message": "رسالة الطالب"}', (SELECT id FROM users WHERE user_type = 'super_admin' LIMIT 1)),
-('course_update', 'تحديث في الدورة - {{course_name}}', 'تم تحديث الدورة {{course_name}} من قبل المعلم {{teacher_name}}. {{update_message}}', 'course_update', 'medium', '{"course_name": "اسم الدورة", "teacher_name": "اسم المعلم", "update_message": "رسالة التحديث"}', (SELECT id FROM users WHERE user_type = 'super_admin' LIMIT 1)),
-('booking_confirmation', 'تأكيد حجز - {{course_name}}', 'تم تأكيد حجزك في الدورة {{course_name}} مع المعلم {{teacher_name}}. موعد الحصة: {{booking_date}}', 'booking_confirmation', 'medium', '{"course_name": "اسم الدورة", "teacher_name": "اسم المعلم", "booking_date": "تاريخ الحصة"}', (SELECT id FROM users WHERE user_type = 'super_admin' LIMIT 1)),
-('payment_reminder', 'تذكير بالدفع - {{course_name}}', 'تذكير: يرجى دفع رسوم الدورة {{course_name}} قبل {{due_date}} لتجنب إلغاء الحجز', 'payment_reminder', 'high', '{"course_name": "اسم الدورة", "due_date": "تاريخ الاستحقاق"}', (SELECT id FROM users WHERE user_type = 'super_admin' LIMIT 1)),
-('system_announcement', 'إعلان نظام - {{title}}', '{{message}}', 'system_announcement', 'medium', '{"title": "عنوان الإعلان", "message": "محتوى الإعلان"}', (SELECT id FROM users WHERE user_type = 'super_admin' LIMIT 1)),
-('grade_update', 'تحديث الدرجات - {{course_name}}', 'تم تحديث درجاتك في مادة {{subject_name}} من الدورة {{course_name}}. الدرجة الجديدة: {{grade}}', 'grade_update', 'medium', '{"course_name": "اسم الدورة", "subject_name": "اسم المادة", "grade": "الدرجة"}', (SELECT id FROM users WHERE user_type = 'super_admin' LIMIT 1)),
-('assignment_due', 'واجب مستحق قريباً - {{assignment_name}}', 'الواجب {{assignment_name}} في مادة {{subject_name}} مستحق خلال {{time_remaining}}', 'assignment_due', 'high', '{"assignment_name": "اسم الواجب", "subject_name": "اسم المادة", "time_remaining": "الوقت المتبقي"}', (SELECT id FROM users WHERE user_type = 'super_admin' LIMIT 1)),
-('class_reminder', 'تذكير بالحصة - {{course_name}}', 'تذكير: حصة {{course_name}} مع المعلم {{teacher_name}} ستبدأ خلال {{time_remaining}}', 'class_reminder', 'medium', '{"course_name": "اسم الدورة", "teacher_name": "اسم المعلم", "time_remaining": "الوقت المتبقي"}', (SELECT id FROM users WHERE user_type = 'super_admin' LIMIT 1)),
-('subscription_expiry', 'انتهاء الاشتراك قريباً', 'اشتراكك في المنصة سينتهي خلال {{days_remaining}} أيام. يرجى تجديد الاشتراك للاستمرار في الاستفادة من الخدمات', 'subscription_expiry', 'high', '{"days_remaining": "عدد الأيام المتبقية"}', (SELECT id FROM users WHERE user_type = 'super_admin' LIMIT 1)),
-('new_course_available', 'دورة جديدة متاحة - {{course_name}}', 'دورة جديدة متاحة: {{course_name}} مع المعلم {{teacher_name}}. {{course_description}}', 'new_course_available', 'low', '{"course_name": "اسم الدورة", "teacher_name": "اسم المعلم", "course_description": "وصف الدورة"}', (SELECT id FROM users WHERE user_type = 'super_admin' LIMIT 1))
-ON CONFLICT (name) DO NOTHING;
-
 -- Create function & triggers to auto-update updated_at
 CREATE OR REPLACE FUNCTION update_notifications_updated_at()
 RETURNS TRIGGER AS $$
