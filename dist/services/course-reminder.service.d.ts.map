@@ -1,0 +1,1 @@
+{"version":3,"file":"course-reminder.service.d.ts","sourceRoot":"","sources":["../../src/services/course-reminder.service.ts"],"names":[],"mappings":"AAIA,qBAAa,qBAAqB;IAChC,OAAO,CAAC,mBAAmB,CAAsB;;IAa3C,aAAa,IAAI,OAAO,CAAC,IAAI,CAAC;IAU9B,qBAAqB,CAAC,QAAQ,EAAE,MAAM,EAAE,cAAc,GAAE,MAAU,GAAG,OAAO,CAAC,IAAI,CAAC;YAwC1E,qBAAqB;CAiDpC"}

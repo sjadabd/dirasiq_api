@@ -1,0 +1,1 @@
+{"version":3,"file":"report.controller.d.ts","sourceRoot":"","sources":["../../../src/controllers/teacher/report.controller.ts"],"names":[],"mappings":"AAAA,OAAO,EAAE,OAAO,EAAE,QAAQ,EAAE,MAAM,SAAS,CAAC;AAI5C,qBAAa,uBAAuB;WACrB,SAAS,CAAC,GAAG,EAAE,OAAO,EAAE,GAAG,EAAE,QAAQ,GAAG,OAAO,CAAC,IAAI,CAAC;CA2FnE"}

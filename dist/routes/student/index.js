@@ -1,0 +1,33 @@
+"use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const assignment_routes_1 = __importDefault(require("./assignment.routes"));
+const attendance_routes_1 = __importDefault(require("./attendance.routes"));
+const course_routes_1 = __importDefault(require("./course.routes"));
+const course_booking_routes_1 = __importDefault(require("./course-booking.routes"));
+const exam_routes_1 = __importDefault(require("./exam.routes"));
+const enrollment_routes_1 = __importDefault(require("./enrollment.routes"));
+const invoice_routes_1 = __importDefault(require("./invoice.routes"));
+const student_evaluation_routes_1 = __importDefault(require("./student-evaluation.routes"));
+const teacher_routes_1 = __importDefault(require("./teacher.routes"));
+const dashboard_routes_1 = __importDefault(require("./dashboard.routes"));
+const search_routes_1 = __importDefault(require("./search.routes"));
+const router = (0, express_1.Router)();
+router.use('/assignments', assignment_routes_1.default);
+router.use('/attendance', attendance_routes_1.default);
+router.use('/courses', course_routes_1.default);
+router.use('/course-bookings', course_booking_routes_1.default);
+router.use('/bookings', course_booking_routes_1.default);
+router.use('/exams', exam_routes_1.default);
+router.use('/enrollment', enrollment_routes_1.default);
+router.use('/enrollments', enrollment_routes_1.default);
+router.use('/evaluations', student_evaluation_routes_1.default);
+router.use('/invoices', invoice_routes_1.default);
+router.use('/teachers', teacher_routes_1.default);
+router.use('/dashboard', dashboard_routes_1.default);
+router.use('/search', search_routes_1.default);
+exports.default = router;
+//# sourceMappingURL=index.js.map

@@ -1,0 +1,22 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const roster_controller_1 = require("../../controllers/teacher/roster.controller");
+const session_controller_1 = require("../../controllers/teacher/session.controller");
+const auth_middleware_1 = require("../../middleware/auth.middleware");
+const router = (0, express_1.Router)();
+router.use(auth_middleware_1.authenticateToken, auth_middleware_1.requireTeacher);
+router.post('/', session_controller_1.TeacherSessionController.createSession);
+router.get('/', session_controller_1.TeacherSessionController.listMySessions);
+router.get('/names', roster_controller_1.TeacherRosterController.listSessionNames);
+router.get('/courses/:courseId/confirmed-students', session_controller_1.TeacherSessionController.getConfirmedStudentsByCourse);
+router.get('/:id/attendees', session_controller_1.TeacherSessionController.listAttendees);
+router.post('/:id/attendees', session_controller_1.TeacherSessionController.addAttendees);
+router.delete('/:id/attendees', session_controller_1.TeacherSessionController.removeAttendees);
+router.get('/:id/attendance', session_controller_1.TeacherSessionController.getSessionAttendanceByDate);
+router.post('/:id/attendance', session_controller_1.TeacherSessionController.bulkSetSessionAttendance);
+router.put('/:id', session_controller_1.TeacherSessionController.updateSession);
+router.delete('/:id', session_controller_1.TeacherSessionController.deleteSession);
+router.post('/:id/end', session_controller_1.TeacherSessionController.endSessionAndNotify);
+exports.default = router;
+//# sourceMappingURL=session.routes.js.map
