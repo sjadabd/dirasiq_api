@@ -120,8 +120,8 @@ app.use(limiter);
 // =====================================================
 // 🔹 Core Middleware (بدون أي limits للملفات)
 // =====================================================
-app.use(express.json({ limit: "Infinity" }));
-app.use(express.urlencoded({ extended: true, limit: "Infinity" }));
+app.use(express.json({ limit: "1000mb" }));
+app.use(express.urlencoded({ extended: true, limit: "1000mb" }));
 
 // =====================================================
 // 🔹 Static Files
