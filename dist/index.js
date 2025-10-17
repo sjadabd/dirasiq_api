@@ -34,13 +34,17 @@ const allowedOrigins = [
     'https://mulhimiq.com',
     'https://www.mulhimiq.com',
     'https://api.mulhimiq.com',
-    'http://localhost:3000',
-    'http://localhost:3001',
-    'http://localhost:5173',
-    'http://localhost:5174',
 ];
 app.use((0, cors_1.default)({
-    origin: allowedOrigins,
+    origin: (origin, callback) => {
+        if (!origin)
+            return callback(null, true);
+        if (allowedOrigins.includes(origin)) {
+            return callback(null, true);
+        }
+        console.warn(`❌ Blocked CORS request from: ${origin}`);
+        return callback(new Error('CORS not allowed for this origin'), false);
+    },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
@@ -51,6 +55,19 @@ app.use((0, helmet_1.default)({
     crossOriginEmbedderPolicy: false,
     contentSecurityPolicy: false,
 }));
+app.use((0, morgan_1.default)(NODE_ENV === 'development' ? 'dev' : 'combined'));
+app.use((0, compression_1.default)());
+const APP_URL = process.env['APP_URL'] || 'https://api.mulhimiq.com/';
+app.use((_req, res, next) => {
+    const originalJson = res.json.bind(res);
+    res.json = (data) => {
+        if (typeof data === 'object' && data !== null) {
+            data.content_url = APP_URL;
+        }
+        return originalJson(data);
+    };
+    next();
+});
 const limiter = (0, express_rate_limit_1.default)({
     windowMs: parseInt(process.env['RATE_LIMIT_WINDOW_MS'] || '900000', 10),
     max: parseInt(process.env['RATE_LIMIT_MAX_REQUESTS'] || '1000', 10),
@@ -60,8 +77,6 @@ const limiter = (0, express_rate_limit_1.default)({
 app.use(limiter);
 app.use(express_1.default.json({ limit: '15mb' }));
 app.use(express_1.default.urlencoded({ extended: true, limit: '15mb' }));
-app.use((0, compression_1.default)());
-app.use((0, morgan_1.default)(NODE_ENV === 'development' ? 'dev' : 'combined'));
 app.use('/public', (0, cors_1.default)({ origin: true, methods: ['GET'] }), express_1.default.static(path_1.default.join(__dirname, '../public')));
 app.use('/uploads', (0, cors_1.default)({ origin: true, methods: ['GET'] }), express_1.default.static(path_1.default.join(__dirname, '../public/uploads')));
 app.get('/health', (_req, res) => {
