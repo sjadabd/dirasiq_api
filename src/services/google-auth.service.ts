@@ -5,9 +5,9 @@ export class GoogleAuthService {
 
   // Initialize Google OAuth client
   static initialize() {
-    const clientId = process.env['GOOGLE_CLIENT_ID'] || '577832490185-gnglmomcjlkn9us9fm5qofc2geiau296.apps.googleusercontent.com';
+    const clientId = process.env['GOOGLE_CLIENT_ID'] || '';
     const clientSecret = process.env['GOOGLE_CLIENT_SECRET'] || '';
-    const redirectUri = process.env['GOOGLE_REDIRECT_URI'] || 'https://mulhimiq.com/api/auth/google/callback';
+    const redirectUri = process.env['GOOGLE_REDIRECT_URI'] || '';
 
     this.client = new OAuth2Client(clientId, clientSecret, redirectUri);
   }
