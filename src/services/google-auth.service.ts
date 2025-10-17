@@ -5,8 +5,59 @@ export class GoogleAuthService {
 
   // Initialize Google OAuth client
   static initialize() {
-    this.client = new OAuth2Client();
+    const clientId = process.env['GOOGLE_CLIENT_ID'] || '577832490185-gnglmomcjlkn9us9fm5qofc2geiau296.apps.googleusercontent.com';
+    const clientSecret = process.env['GOOGLE_CLIENT_SECRET'] || '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';
+    const redirectUri = process.env['GOOGLE_REDIRECT_URI'] || 'https://mulhimiq.com/api/auth/google/callback';
+
+    this.client = new OAuth2Client(clientId, clientSecret, redirectUri);
   }
+
+  // ✅ Exchange authorization code for access + id tokens
+  static async exchangeCodeForTokens(code: string): Promise<{
+    success: boolean;
+    tokens?: any;
+    user?: any;
+    error?: string;
+  }> {
+    try {
+      if (!this.client) {
+        this.initialize();
+      }
+
+      const { tokens } = await this.client.getToken(code);
+      this.client.setCredentials(tokens);
+
+      // احصل على معلومات المستخدم
+      const ticket = await this.client.verifyIdToken({
+        idToken: tokens.id_token!,
+        audience: process.env['GOOGLE_CLIENT_ID'] || '',
+      });
+
+
+      const payload = ticket.getPayload();
+
+      if (!payload) {
+        return { success: false, error: 'No payload found in token' };
+      }
+
+      const user = {
+        id: payload.sub,
+        name: payload.name,
+        email: payload.email,
+        picture: payload.picture,
+        email_verified: payload.email_verified,
+      };
+
+      return { success: true, tokens, user };
+    } catch (error: any) {
+      console.error('Error exchanging Google code:', error);
+      return {
+        success: false,
+        error: error.message || 'Failed to exchange Google code',
+      };
+    }
+  }
+
 
   // Verify Google JWT token
   static async verifyGoogleToken(idToken: string): Promise<{
