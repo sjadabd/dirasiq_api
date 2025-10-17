@@ -31,27 +31,32 @@ const PORT: number = parseInt(process.env['PORT'] || '3000', 10);
 const NODE_ENV: string = process.env['NODE_ENV'] || 'development';
 
 // =====================================================
-// 🔹 CORS Configuration
+// 🔹 Secure and Explicit CORS Configuration
 // =====================================================
 const allowedOrigins = [
   'https://mulhimiq.com',
   'https://www.mulhimiq.com',
   'https://api.mulhimiq.com',
-  'http://localhost:3000',
-  'http://localhost:3001',
-  'http://localhost:5173',
-  'http://localhost:5174',
 ];
 
 app.use(
   cors({
-    origin: allowedOrigins,
+    origin: (origin, callback) => {
+      // السماح بطلبات Postman و axios بدون Origin
+      if (!origin) return callback(null, true);
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+      console.warn(`❌ Blocked CORS request from: ${origin}`);
+      return callback(new Error('CORS not allowed for this origin'), false);
+    },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
   })
 );
 
+// للسماح بطلبات preflight
 app.options('*', cors());
 
 // =====================================================
@@ -90,7 +95,7 @@ app.use((_req, res, next) => {
 // 🔹 Rate Limiting
 // =====================================================
 const limiter = rateLimit({
-  windowMs: parseInt(process.env['RATE_LIMIT_WINDOW_MS'] || '900000', 10), // 15 min
+  windowMs: parseInt(process.env['RATE_LIMIT_WINDOW_MS'] || '900000', 10),
   max: parseInt(process.env['RATE_LIMIT_MAX_REQUESTS'] || '1000', 10),
   standardHeaders: true,
   legacyHeaders: false,
