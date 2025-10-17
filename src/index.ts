@@ -37,6 +37,7 @@ const allowedOrigins = [
   'https://mulhimiq.com',
   'https://www.mulhimiq.com',
   'https://api.mulhimiq.com',
+  'http://localhost:5174',
 ];
 
 app.use(
