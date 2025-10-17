@@ -1,1 +1,0 @@
-{"version":3,"file":"session-end-reminder.service.d.ts","sourceRoot":"","sources":["../../src/services/session-end-reminder.service.ts"],"names":[],"mappings":"AAEA,OAAO,EAAE,mBAAmB,EAAE,MAAM,wBAAwB,CAAC;AAE7D,qBAAa,yBAAyB;IACpC,OAAO,CAAC,KAAK,CAAsB;gBAEvB,KAAK,EAAE,mBAAmB;IAQhC,iCAAiC,IAAI,OAAO,CAAC,IAAI,CAAC;CAgCzD"}

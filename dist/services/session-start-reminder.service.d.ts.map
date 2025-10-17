@@ -1,1 +1,0 @@
-{"version":3,"file":"session-start-reminder.service.d.ts","sourceRoot":"","sources":["../../src/services/session-start-reminder.service.ts"],"names":[],"mappings":"AAEA,OAAO,EAAE,mBAAmB,EAAE,MAAM,wBAAwB,CAAC;AAE7D,qBAAa,2BAA2B;IACtC,OAAO,CAAC,KAAK,CAAsB;gBAEvB,KAAK,EAAE,mBAAmB;IAKtC,OAAO,CAAC,WAAW;IASb,kCAAkC,IAAI,OAAO,CAAC,IAAI,CAAC;CAyC1D"}
