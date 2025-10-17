@@ -12,6 +12,7 @@
     "lint:fix": "eslint src/**/*.ts --fix",
     "format": "prettier --write src/**/*.{ts,js,json}",
     "format:check": "prettier --check src/**/*.{ts,js,json}",
+    "start:webhook": "node dist/webhook.js",
     "db:init": "ts-node -r tsconfig-paths/register src/database/init.ts"
   },
   "keywords": [
