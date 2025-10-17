@@ -22,83 +22,99 @@ import userOnesignalRoutes from './routes/user-onesignal.routes';
 import { notificationCronService } from './services/notification-cron.service';
 import { NotificationService } from './services/notification.service';
 
-// Load environment variables
+// =====================================================
+// 🔹 Load Environment Variables
+// =====================================================
 dotenv.config();
-
 const app = express();
 const PORT: number = parseInt(process.env['PORT'] || '3000', 10);
+const NODE_ENV: string = process.env['NODE_ENV'] || 'development';
 
-// Security middleware
-app.use(
-  helmet({
-    contentSecurityPolicy: {
-      directives: {
-        defaultSrc: ["'self'"],
-        styleSrc: ["'self'", "'unsafe-inline'"],
-        scriptSrc: ["'self'"],
-        imgSrc: [
-          "'self'",
-          'data:',
-          'https:',
-          'http://localhost:3000',
-          'http://localhost:3001',
-          'http://localhost:5173',
-        ],
-      },
-    },
-    crossOriginEmbedderPolicy: false,
-    crossOriginResourcePolicy: { policy: 'cross-origin' },
-  })
-);
+// =====================================================
+// 🔹 CORS Configuration
+// =====================================================
+const allowedOrigins = [
+  'https://mulhimiq.com',
+  'https://www.mulhimiq.com',
+  'https://api.mulhimiq.com',
+  'http://localhost:3000',
+  'http://localhost:3001',
+  'http://localhost:5173',
+  'http://localhost:5174',
+];
 
-// CORS configuration
 app.use(
   cors({
-    origin:
-      process.env['NODE_ENV'] === 'production'
-        ? ['https://yourdomain.com'] // Replace with your frontend domain
-        : [
-          'http://localhost:3000',
-          'http://localhost:3001',
-          'http://localhost:5173',
-          'http://localhost:5174',
-        ],
+    origin: allowedOrigins,
     credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
   })
 );
 
-// Rate limiting
+// allow preflight requests
+app.options('*', cors());
+
+// =====================================================
+// 🔹 Security Middleware
+// =====================================================
+app.use(
+  helmet({
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+    crossOriginEmbedderPolicy: false,
+    contentSecurityPolicy: false, // disable CSP to prevent blocking images/scripts
+  })
+);
+
+// =====================================================
+// 🔹 Rate Limiting (Anti-DDoS)
+// =====================================================
 const limiter = rateLimit({
-  windowMs: parseInt(process.env['RATE_LIMIT_WINDOW_MS'] || '900000'), // 15 minutes
-  max: parseInt(process.env['RATE_LIMIT_MAX_REQUESTS'] || '100'), // limit each IP to 100 requests per windowMs
-  message: {
-    success: false,
-    message: 'عدد الطلبات كبير جداً',
-    errors: ['حاول مرة أخرى لاحقاً'],
-  },
+  windowMs: parseInt(process.env['RATE_LIMIT_WINDOW_MS'] || '900000', 10), // 15 min
+  max: parseInt(process.env['RATE_LIMIT_MAX_REQUESTS'] || '1000', 10),     // max requests
   standardHeaders: true,
   legacyHeaders: false,
 });
-
 app.use(limiter);
 
-// Body parsing middleware
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
-
-// Compression middleware
+// =====================================================
+// 🔹 Core Middleware
+// =====================================================
+app.use(express.json({ limit: '15mb' }));
+app.use(express.urlencoded({ extended: true, limit: '15mb' }));
 app.use(compression());
+app.use(morgan(NODE_ENV === 'development' ? 'dev' : 'combined'));
 
-// Logging middleware
-if (process.env['NODE_ENV'] === 'development') {
-  app.use(morgan('dev'));
-} else {
-  app.use(morgan('combined'));
-}
+// =====================================================
+// 🔹 Static Files (uploads/public)
+// =====================================================
+app.use(
+  '/public',
+  cors({ origin: true, methods: ['GET'] }),
+  express.static(path.join(__dirname, '../public'))
+);
 
-// Initialize and attach NotificationService (OneSignal)
+app.use(
+  '/uploads',
+  cors({ origin: true, methods: ['GET'] }),
+  express.static(path.join(__dirname, '../public/uploads'))
+);
+
+// =====================================================
+// 🔹 Health Check Endpoint
+// =====================================================
+app.get('/health', (_req, res) => {
+  res.status(200).json({
+    success: true,
+    message: '🚀 Server running successfully',
+    timestamp: new Date().toISOString(),
+    environment: NODE_ENV,
+  });
+});
+
+// =====================================================
+// 🔹 Initialize OneSignal Service
+// =====================================================
 try {
   const oneSignalAppId =
     process.env['ONESIGNAL_APP_ID'] ||
@@ -115,65 +131,9 @@ try {
   console.warn('⚠️ NotificationService not initialized:', e);
 }
 
-// Health check endpoint
-app.get('/health', (_req, res) => {
-  res.status(200).json({
-    success: true,
-    message: 'الخادم يعمل بنجاح',
-    timestamp: new Date().toISOString(),
-    environment: process.env['NODE_ENV'] || 'development',
-  });
-});
-
-// Serve static files with CORS
-app.use(
-  '/public',
-  cors({
-    origin: true,
-    credentials: false,
-    methods: ['GET'],
-    allowedHeaders: ['Content-Type'],
-  }),
-  express.static(path.join(__dirname, '../public'))
-);
-
-// Normalize duplicate slashes in /uploads URLs to avoid 404 like /uploads//notifications//...
-app.use((req, _res, next) => {
-  if (req.url.startsWith('/uploads/')) {
-    // Collapse multiple slashes to a single slash
-    const normalized = req.url
-      .replace(/\\+/g, '/')
-      .replace(/\/+\/+/g, '/')
-      .replace(/\/{2,}/g, '/');
-    if (normalized !== req.url) {
-      req.url = normalized;
-    }
-  }
-  next();
-});
-
-app.use(
-  '/uploads',
-  cors({
-    origin: true,
-    credentials: false,
-    methods: ['GET'],
-    allowedHeaders: ['Content-Type'],
-  }),
-  (req, res, next) => {
-    // Normalize duplicate slashes in the subpath (after /uploads)
-    if (req.url && /\/{2,}/.test(req.url)) {
-      req.url = req.url.replace(/\/{2,}/g, '/');
-    }
-    res.header('Access-Control-Allow-Origin', '*');
-    res.header('Access-Control-Allow-Methods', 'GET');
-    res.header('Access-Control-Allow-Headers', 'Content-Type');
-    next();
-  },
-  express.static(path.join(__dirname, '../public/uploads'))
-);
-
-// API routes
+// =====================================================
+// 🔹 API Routes
+// =====================================================
 app.use('/api/auth', authRoutes);
 app.use('/api/student', studentRoutes);
 app.use('/api/teacher', teacherRoutes);
@@ -188,20 +148,8 @@ app.use('/api/notifications', notificationRoutes);
 app.use('/api/user', userOnesignalRoutes);
 
 // =====================================================
-// Course Enrollment System Routes
+// 🔹 Error Handling
 // =====================================================
-
-// Student enrollment routes
-app.use('/api/student/enrollment', studentRoutes);
-
-// Teacher enrollment routes
-app.use('/api/teacher/enrollment', teacherRoutes);
-
-// =====================================================
-// Error handling middleware
-// =====================================================
-
-// 404 handler
 app.use('*', (req, res) => {
   res.status(404).json({
     success: false,
@@ -210,7 +158,6 @@ app.use('*', (req, res) => {
   });
 });
 
-// Global error handler
 app.use(
   (
     error: any,
@@ -218,30 +165,26 @@ app.use(
     res: express.Response,
     _next: express.NextFunction
   ) => {
-    console.error('Global error handler:', error);
-
+    console.error('Global error:', error);
     res.status(error.status || 500).json({
       success: false,
       message: error.message || 'حدث خطأ في الخادم',
-      ...(process.env['NODE_ENV'] === 'development' && { stack: error.stack }),
+      ...(NODE_ENV === 'development' && { stack: error.stack }),
     });
   }
 );
 
 // =====================================================
-// Database initialization and server startup
+// 🔹 Start Server and Initialize DB
 // =====================================================
-
 async function startServer() {
   try {
-    // Initialize database
     await initializeDatabase();
-    // Start notification cron service
     notificationCronService.start();
-    // Start server
+
     app.listen(PORT, '0.0.0.0', () => {
-      console.log(`🚀 Server is running on http://0.0.0.0:${PORT}`);
-      console.log(`🔗 Health check: http://192.168.68.103:${PORT}/health`);
+      console.log(`🚀 Server running on http://0.0.0.0:${PORT}`);
+      console.log(`🔗 Health check: http://localhost:${PORT}/health`);
     });
   } catch (error) {
     console.error('❌ Failed to start server:', error);
@@ -249,14 +192,13 @@ async function startServer() {
   }
 }
 
-// Handle graceful shutdown
-process.on('SIGTERM', () => {
-  process.exit(0);
-});
+// =====================================================
+// 🔹 Graceful Shutdown
+// =====================================================
+process.on('SIGTERM', () => process.exit(0));
+process.on('SIGINT', () => process.exit(0));
 
-process.on('SIGINT', () => {
-  process.exit(0);
-});
-
-// Start the server
+// =====================================================
+// 🔹 Launch!
+// =====================================================
 startServer();
