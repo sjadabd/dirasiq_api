@@ -52,7 +52,6 @@ app.use(
   })
 );
 
-// allow preflight requests
 app.options('*', cors());
 
 // =====================================================
@@ -62,16 +61,37 @@ app.use(
   helmet({
     crossOriginResourcePolicy: { policy: 'cross-origin' },
     crossOriginEmbedderPolicy: false,
-    contentSecurityPolicy: false, // disable CSP to prevent blocking images/scripts
+    contentSecurityPolicy: false,
   })
 );
 
 // =====================================================
-// 🔹 Rate Limiting (Anti-DDoS)
+// 🔹 Logging & Compression
+// =====================================================
+app.use(morgan(NODE_ENV === 'development' ? 'dev' : 'combined'));
+app.use(compression());
+
+// =====================================================
+// 🔹 Inject content_url into every JSON response
+// =====================================================
+const APP_URL = process.env['APP_URL'] || 'https://api.mulhimiq.com/';
+app.use((_req, res, next) => {
+  const originalJson = res.json.bind(res);
+  res.json = (data: any) => {
+    if (typeof data === 'object' && data !== null) {
+      data.content_url = APP_URL;
+    }
+    return originalJson(data);
+  };
+  next();
+});
+
+// =====================================================
+// 🔹 Rate Limiting
 // =====================================================
 const limiter = rateLimit({
   windowMs: parseInt(process.env['RATE_LIMIT_WINDOW_MS'] || '900000', 10), // 15 min
-  max: parseInt(process.env['RATE_LIMIT_MAX_REQUESTS'] || '1000', 10),     // max requests
+  max: parseInt(process.env['RATE_LIMIT_MAX_REQUESTS'] || '1000', 10),
   standardHeaders: true,
   legacyHeaders: false,
 });
@@ -82,11 +102,9 @@ app.use(limiter);
 // =====================================================
 app.use(express.json({ limit: '15mb' }));
 app.use(express.urlencoded({ extended: true, limit: '15mb' }));
-app.use(compression());
-app.use(morgan(NODE_ENV === 'development' ? 'dev' : 'combined'));
 
 // =====================================================
-// 🔹 Static Files (uploads/public)
+// 🔹 Static Files
 // =====================================================
 app.use(
   '/public',
@@ -101,7 +119,7 @@ app.use(
 );
 
 // =====================================================
-// 🔹 Health Check Endpoint
+// 🔹 Health Check
 // =====================================================
 app.get('/health', (_req, res) => {
   res.status(200).json({
