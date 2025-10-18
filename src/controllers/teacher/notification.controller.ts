@@ -157,7 +157,7 @@ export class TeacherNotificationController {
         });
         return;
       }
-
+      const page = parseInt(String(req.query['page'] ?? '1'), 10);
       const limit = parseInt(String(req.query['limit'] ?? '20'), 10);
       const teacherId = String(me.id);
       const activeYear = await AcademicYearModel.getActive();
@@ -172,7 +172,8 @@ export class TeacherNotificationController {
         (n.data->>'teacher_id') = $1::text
       )
       AND n.status IN ('sent','delivered','read')
-      AND n.deleted_at IS NULL`;
+      AND n.deleted_at IS NULL
+      AND ((n.data->'sender'->>'type') = 'system' OR n.created_by = 'system')`;
 
       if (activeYear?.year) {
         where += ` AND n.study_year = $${param}::text`;
@@ -184,7 +185,7 @@ export class TeacherNotificationController {
         SELECT COUNT(*)
         FROM notifications n
         LEFT JOIN user_notifications un ON un.notification_id = n.id AND un.user_id = $1
-        WHERE ${where} AND un.read_at IS NULL
+        WHERE ${where}
       `;
       const dataQuery = `
         SELECT n.*,
@@ -192,15 +193,17 @@ export class TeacherNotificationController {
                CASE WHEN un.read_at IS NOT NULL THEN true ELSE false END AS is_read
         FROM notifications n
         LEFT JOIN user_notifications un ON un.notification_id = n.id AND un.user_id = $1
-        WHERE ${where} AND un.read_at IS NULL
+        WHERE ${where}
         ORDER BY n.created_at DESC
-        LIMIT $${param} OFFSET 0
+        LIMIT $${param} OFFSET $${param + 1}
       `;
 
       const total = parseInt(
         (await pool.query(countQuery, values)).rows[0].count
       );
-      const rows = (await pool.query(dataQuery, [...values, limit])).rows;
+      const rows = (
+        await pool.query(dataQuery, [...values, limit, (page - 1) * limit])
+      ).rows;
 
       const withSender = rows.map((n: any) => {
         const sender = n?.data?.sender || {
@@ -227,10 +230,10 @@ export class TeacherNotificationController {
 
       res.status(200).json({
         success: true,
-        message: 'تم جلب الإشعارات غير المقروءة للمعلم',
+        message: 'تم جلب إشعارات النظام للمعلم (مقروءة وغير مقروءة)',
         data: withSender,
         pagination: {
-          page: 1,
+          page,
           limit,
           total,
           totalPages: Math.ceil(total / limit),
