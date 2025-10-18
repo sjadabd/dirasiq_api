@@ -23,7 +23,6 @@ export class TeacherNotificationController {
         });
         return;
       }
-
       const page = parseInt(String(req.query['page'] ?? '1'), 10);
       const limit = parseInt(String(req.query['limit'] ?? '20'), 10);
       const q = (req.query['q'] as string | undefined) ?? null;
@@ -34,7 +33,7 @@ export class TeacherNotificationController {
 
       const type =
         typeRaw &&
-          Object.values(NotificationType).includes(typeRaw as NotificationType)
+        Object.values(NotificationType).includes(typeRaw as NotificationType)
           ? (typeRaw as NotificationType)
           : null;
 
@@ -112,12 +111,12 @@ export class TeacherNotificationController {
             ? n.recipient_ids
             : typeof n?.recipient_ids === 'string'
               ? (() => {
-                try {
-                  return JSON.parse(n.recipient_ids);
-                } catch {
-                  return [];
-                }
-              })()
+                  try {
+                    return JSON.parse(n.recipient_ids);
+                  } catch {
+                    return [];
+                  }
+                })()
               : [],
         };
         return { ...n, sender, recipients };
@@ -136,6 +135,109 @@ export class TeacherNotificationController {
       });
     } catch (error) {
       console.error('Error listing teacher notifications:', error);
+      res.status(500).json({
+        success: false,
+        message: 'خطأ داخلي في الخادم',
+        errors: ['حدث خطأ في الخادم'],
+      });
+    }
+  }
+
+  static async listMyUnreadNotifications(
+    req: Request,
+    res: Response
+  ): Promise<void> {
+    try {
+      const me = req.user;
+      if (!me) {
+        res.status(401).json({
+          success: false,
+          message: 'غير مصادق',
+          errors: ['المستخدم غير مصادق عليه'],
+        });
+        return;
+      }
+
+      const limit = parseInt(String(req.query['limit'] ?? '20'), 10);
+      const teacherId = String(me.id);
+      const activeYear = await AcademicYearModel.getActive();
+      const values: any[] = [teacherId];
+      let param = 2;
+
+      let where = `(
+        n.recipient_type = 'all' OR
+        n.recipient_type = 'teachers' OR
+        (n.recipient_type = 'specific_teachers' AND $1 = ANY(SELECT jsonb_array_elements_text(n.recipient_ids::jsonb)::uuid)) OR
+        (n.data->>'teacherId') = $1::text OR
+        (n.data->>'teacher_id') = $1::text
+      )
+      AND n.status IN ('sent','delivered','read')
+      AND n.deleted_at IS NULL`;
+
+      if (activeYear?.year) {
+        where += ` AND n.study_year = $${param}::text`;
+        values.push(String(activeYear.year));
+        param++;
+      }
+
+      const countQuery = `
+        SELECT COUNT(*)
+        FROM notifications n
+        LEFT JOIN user_notifications un ON un.notification_id = n.id AND un.user_id = $1
+        WHERE ${where} AND un.read_at IS NULL
+      `;
+      const dataQuery = `
+        SELECT n.*,
+               un.read_at AS user_read_at,
+               CASE WHEN un.read_at IS NOT NULL THEN true ELSE false END AS is_read
+        FROM notifications n
+        LEFT JOIN user_notifications un ON un.notification_id = n.id AND un.user_id = $1
+        WHERE ${where} AND un.read_at IS NULL
+        ORDER BY n.created_at DESC
+        LIMIT $${param} OFFSET 0
+      `;
+
+      const total = parseInt(
+        (await pool.query(countQuery, values)).rows[0].count
+      );
+      const rows = (await pool.query(dataQuery, [...values, limit])).rows;
+
+      const withSender = rows.map((n: any) => {
+        const sender = n?.data?.sender || {
+          id: n?.created_by,
+          type: 'system',
+          name: 'النظام',
+        };
+        const recipients = {
+          type: n?.recipient_type,
+          ids: Array.isArray(n?.recipient_ids)
+            ? n.recipient_ids
+            : typeof n?.recipient_ids === 'string'
+              ? (() => {
+                  try {
+                    return JSON.parse(n.recipient_ids);
+                  } catch {
+                    return [];
+                  }
+                })()
+              : [],
+        };
+        return { ...n, sender, recipients };
+      });
+
+      res.status(200).json({
+        success: true,
+        message: 'تم جلب الإشعارات غير المقروءة للمعلم',
+        data: withSender,
+        pagination: {
+          page: 1,
+          limit,
+          total,
+          totalPages: Math.ceil(total / limit),
+        },
+      });
+    } catch (error) {
+      console.error('Error listing teacher unread notifications:', error);
       res.status(500).json({
         success: false,
         message: 'خطأ داخلي في الخادم',
@@ -220,12 +322,10 @@ export class TeacherNotificationController {
           const r = await pool.query(q, [String(me.id)]);
           recipientIds = r.rows.map((row: any) => String(row.id));
           if (recipientIds.length === 0) {
-            res
-              .status(400)
-              .json({
-                success: false,
-                message: 'لا يوجد طلاب مرتبطون بك حالياً',
-              });
+            res.status(400).json({
+              success: false,
+              message: 'لا يوجد طلاب مرتبطون بك حالياً',
+            });
             return;
           }
           break;
@@ -248,7 +348,15 @@ export class TeacherNotificationController {
       };
 
       // Save under project-root public/uploads/notification so it can be served at /uploads/notification
-      const baseDir = path.resolve(__dirname, '..', '..', '..', 'public', 'uploads', 'notification');
+      const baseDir = path.resolve(
+        __dirname,
+        '..',
+        '..',
+        '..',
+        'public',
+        'uploads',
+        'notification'
+      );
       const toRelative = (p: string) => {
         const u = p.replace(/\\/g, '/');
         const i = u.lastIndexOf('/public/');
@@ -262,7 +370,10 @@ export class TeacherNotificationController {
           baseDir,
           'attachment.pdf'
         );
-        data.attachments = { ...(data.attachments || {}), pdfUrl: toRelative(pdfPath) };
+        data.attachments = {
+          ...(data.attachments || {}),
+          pdfUrl: toRelative(pdfPath),
+        };
       }
       if (
         Array.isArray(attachments?.imagesBase64) &&

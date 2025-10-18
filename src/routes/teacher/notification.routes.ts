@@ -10,6 +10,9 @@ router.use(authenticateToken, requireTeacher);
 // query: page, limit, q, type, courseId
 router.get('/', TeacherNotificationController.listMyNotifications);
 
+// GET /api/teacher/notifications/unread
+router.get('/unread', TeacherNotificationController.listMyUnreadNotifications);
+
 // POST /api/teacher/notifications
 router.post('/', TeacherNotificationController.createNotification);
 
