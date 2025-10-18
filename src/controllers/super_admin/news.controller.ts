@@ -3,6 +3,8 @@ import fs from 'fs';
 import path from 'path';
 import { NewsService } from '../../services/news.service';
 import { CreateNewsRequest, NewsType, UpdateNewsRequest } from '../../types';
+import { NotificationController } from '../notification.controller';
+import { RecipientType, NotificationType } from '../../models/notification.model';
 
 export class NewsController {
   // Save base64 image to disk under public/uploads/news and return public path '/uploads/news/<filename>'
@@ -87,31 +89,37 @@ export class NewsController {
 
       // ✅ بعد الإنشاء — أرسل الإشعارات حسب نوع الخبر
       try {
-        const notificationPayload = {
+        const notificationController = new NotificationController();
+        const createdBy = (req as any).user?.id || 'system';
+
+        const recipientType = (() => {
+          switch (data.newsType) {
+            case NewsType.WEB:
+              return RecipientType.TEACHERS;
+            case NewsType.MOBILE:
+              return RecipientType.STUDENTS;
+            case NewsType.WEB_AND_MOBILE:
+            default:
+              return RecipientType.ALL;
+          }
+        })();
+
+        await notificationController.createAndSendNotification({
           title: '📰 خبر جديد!',
-          body: data.title || 'تمت إضافة خبر جديد في المنصة',
+          message: data.title || 'تمت إضافة خبر جديد في المنصة',
+          type: NotificationType.SYSTEM_ANNOUNCEMENT,
+          priority: 'medium',
+          recipientType,
           data: {
             newsId: news.id,
             newsType: data.newsType,
+            url: `/news/${news.id}`,
+            imageUrl: news.imageUrl,
           },
-        };
+          createdBy,
+        });
 
-        const NotificationController = require('../controllers/notification.controller').NotificationController;
-        const notificationController = new NotificationController();
-
-        switch (data.newsType) {
-          case 'web':
-            await notificationController.sendToTeachersInternal(notificationPayload);
-            break;
-          case 'mobile':
-            await notificationController.sendToStudentsInternal(notificationPayload);
-            break;
-          case 'web_and_mobile':
-            await notificationController.sendToAllInternal(notificationPayload);
-            break;
-        }
-
-        console.log(`✅ Notification sent for news type: ${data.newsType}`);
+        console.log(`✅ Notification queued for news type: ${data.newsType}`);
       } catch (notifyErr) {
         console.warn('⚠️ Failed to send notification:', notifyErr);
       }
