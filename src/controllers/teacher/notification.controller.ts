@@ -171,9 +171,9 @@ export class TeacherNotificationController {
         (n.data->>'teacherId') = $1::text OR
         (n.data->>'teacher_id') = $1::text
       )
-      AND n.status IN ('sent','delivered','read')
+      AND n.status IN ('sent','delivered','read','failed')
       AND n.deleted_at IS NULL
-      AND ((n.data->'sender'->>'type') = 'system' OR n.created_by = 'system')`;
+      AND (COALESCE(n.data->'sender'->>'type','') = ANY(ARRAY['system','admin']))`;
 
       if (activeYear?.year) {
         where += ` AND n.study_year = $${param}::text`;
