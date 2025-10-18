@@ -105,6 +105,18 @@ export class NotificationService {
         priority: options.priority || 'normal',
         ttl: options.ttl || 3600,
       };
+      if (options.url) notification.url = options.url;
+      if (options.imageUrl) notification.large_icon = options.imageUrl;
+
+      const payloadStr = JSON.stringify(notification);
+      const payloadSize = Buffer.byteLength(payloadStr, 'utf8');
+      console.info(`📦 OneSignal sendToAll payload size=${payloadSize} bytes`);
+      if (payloadSize > 45000) {
+        notification.data = {
+          notificationId: notification.data?.notificationId,
+          type: notification.data?.type,
+        };
+      }
       const response = await this.oneSignal.createNotification(notification);
       return response.statusCode === 200;
     } catch (error: any) {
