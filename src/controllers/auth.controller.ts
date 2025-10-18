@@ -298,7 +298,11 @@ export class AuthController {
       await Promise.all([
         body('email').isEmail().withMessage('البريد الإلكتروني مطلوب').run(req),
         body('password').notEmpty().withMessage('كلمة المرور مطلوبة').run(req),
-        body('oneSignalPlayerId').optional().isString().run(req), // ✅ تحقق من Player ID
+        body('oneSignalPlayerId')
+          .optional({ nullable: true })
+          .isString()
+          .withMessage('معرّف OneSignal يجب أن يكون نصاً')
+          .run(req),
       ]);
 
       const errors = validationResult(req);

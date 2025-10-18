@@ -15,6 +15,7 @@ router.get('/my-grades', GradeController.getUserGrades);
  */
 router.use(requireSuperAdmin);
 router.post('/', GradeController.create);
+router.get('/', GradeController.getAll);
 router.get('/:id', GradeController.getById);
 router.put('/:id', GradeController.update);
 router.delete('/:id', GradeController.delete);

@@ -59,14 +59,16 @@ export class NewsController {
   static async create(req: Request, res: Response) {
     try {
       const data: CreateNewsRequest = req.body;
-      // Optional: validate provided newsType value if present
+
+      // ✅ تحقق من نوع الخبر
       if (data.newsType && !Object.values(NewsType).includes(data.newsType)) {
         return res.status(400).json({
           success: false,
           message: 'Invalid newsType value'
         });
       }
-      // Handle base64 image upload if provided
+
+      // ✅ معالجة الصورة (base64)
       if (data.imageUrl && typeof data.imageUrl === 'string' && data.imageUrl.startsWith('data:image')) {
         try {
           const savedPath = await NewsController.saveBase64Image(data.imageUrl);
@@ -79,7 +81,40 @@ export class NewsController {
           });
         }
       }
+
+      // ✅ إنشاء الخبر
       const news = await NewsService.createNews(data);
+
+      // ✅ بعد الإنشاء — أرسل الإشعارات حسب نوع الخبر
+      try {
+        const notificationPayload = {
+          title: '📰 خبر جديد!',
+          body: data.title || 'تمت إضافة خبر جديد في المنصة',
+          data: {
+            newsId: news.id,
+            newsType: data.newsType,
+          },
+        };
+
+        const NotificationController = require('../controllers/notification.controller').NotificationController;
+        const notificationController = new NotificationController();
+
+        switch (data.newsType) {
+          case 'web':
+            await notificationController.sendToTeachersInternal(notificationPayload);
+            break;
+          case 'mobile':
+            await notificationController.sendToStudentsInternal(notificationPayload);
+            break;
+          case 'web_and_mobile':
+            await notificationController.sendToAllInternal(notificationPayload);
+            break;
+        }
+
+        console.log(`✅ Notification sent for news type: ${data.newsType}`);
+      } catch (notifyErr) {
+        console.warn('⚠️ Failed to send notification:', notifyErr);
+      }
 
       return res.status(201).json({
         success: true,
@@ -95,6 +130,7 @@ export class NewsController {
       });
     }
   }
+
 
   /**
    * جلب خبر واحد بالمعرف
