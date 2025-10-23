@@ -270,23 +270,38 @@ export class TeacherAssignmentController {
         );
       }
 
-      // Send notifications (basic)
+      // Send notifications (restricted to enrolled students)
       const notif = req.app.get('notificationService') as NotificationService;
       const baseMsg = `تم إنشاء واجب جديد: ${assignment.title}`;
       if (assignment.visibility === 'all_students') {
-        await notif.createAndSendNotification({
-          title: 'واجب جديد',
-          message: baseMsg,
-          type: 'assignment_due' as any,
-          priority: 'medium',
-          recipientType: 'students' as any,
-          data: {
-            assignmentId: assignment.id,
-            dueDate: assignment.due_date,
-            subType: 'homework',
-          },
-          createdBy: String(me.id),
-        });
+        try {
+          const qRecipients = `
+            SELECT u.id::text AS id
+            FROM course_bookings cb
+            JOIN users u ON u.id = cb.student_id AND u.user_type = 'student' AND u.deleted_at IS NULL
+            WHERE cb.course_id = $1 AND cb.teacher_id = $2 AND cb.status = 'confirmed' AND cb.is_deleted = false
+          `;
+          const r = await pool.query(qRecipients, [String(assignment.course_id), String(me.id)]);
+          const recipientIds = r.rows.map((row: any) => String(row.id));
+          if (recipientIds.length) {
+            await notif.createAndSendNotification({
+              title: 'واجب جديد',
+              message: baseMsg,
+              type: 'assignment_due' as any,
+              priority: 'medium',
+              recipientType: 'specific_students' as any,
+              recipientIds,
+              data: {
+                assignmentId: assignment.id,
+                dueDate: assignment.due_date,
+                subType: 'homework',
+              },
+              createdBy: String(me.id),
+            });
+          }
+        } catch (e) {
+          console.error('Error sending enrolled-only notifications (create):', e);
+        }
       } else if (
         assignment.visibility === 'specific_students' &&
         recipients?.studentIds?.length
@@ -464,19 +479,34 @@ export class TeacherAssignmentController {
         const notif = req.app.get('notificationService') as NotificationService;
         const baseMsg = `تم تعديل الواجب: ${updated.title}`;
         if (updated.visibility === 'all_students') {
-          await notif.createAndSendNotification({
-            title: 'تحديث واجب',
-            message: baseMsg,
-            type: 'assignment_due' as any,
-            priority: 'medium',
-            recipientType: 'students' as any,
-            data: {
-              assignmentId: updated.id,
-              dueDate: updated.due_date,
-              subType: 'homework',
-            },
-            createdBy: String(existing?.teacher_id ?? ''),
-          });
+          try {
+            const qRecipients = `
+              SELECT u.id::text AS id
+              FROM course_bookings cb
+              JOIN users u ON u.id = cb.student_id AND u.user_type = 'student' AND u.deleted_at IS NULL
+              WHERE cb.course_id = $1 AND cb.teacher_id = $2 AND cb.status = 'confirmed' AND cb.is_deleted = false
+            `;
+            const r = await pool.query(qRecipients, [String(updated.course_id), String(existing?.teacher_id ?? '')]);
+            const recipientIds = r.rows.map((row: any) => String(row.id));
+            if (recipientIds.length) {
+              await notif.createAndSendNotification({
+                title: 'تحديث واجب',
+                message: baseMsg,
+                type: 'assignment_due' as any,
+                priority: 'medium',
+                recipientType: 'specific_students' as any,
+                recipientIds,
+                data: {
+                  assignmentId: updated.id,
+                  dueDate: updated.due_date,
+                  subType: 'homework',
+                },
+                createdBy: String(existing?.teacher_id ?? ''),
+              });
+            }
+          } catch (e) {
+            console.error('Error sending enrolled-only notifications (update):', e);
+          }
         } else if (updated.visibility === 'specific_students') {
           const recipientIds = await AssignmentModel.getRecipientIds(
             updated.id

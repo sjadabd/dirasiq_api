@@ -529,7 +529,30 @@ export namespace StudentService {
         LIMIT 1
       `;
 
-      const [aTot, aSub, eTot, eGrd, attTot, attPres, nextSessionRes, nextExamRes] = await Promise.all([
+      const evaluationQ = `
+        WITH mapped AS (
+          SELECT
+            (
+              (CASE scientific_level WHEN 'excellent' THEN 100 WHEN 'very_good' THEN 80 WHEN 'good' THEN 60 WHEN 'fair' THEN 40 WHEN 'weak' THEN 20 ELSE 0 END) +
+              (CASE behavioral_level WHEN 'excellent' THEN 100 WHEN 'very_good' THEN 80 WHEN 'good' THEN 60 WHEN 'fair' THEN 40 WHEN 'weak' THEN 20 ELSE 0 END) +
+              (CASE attendance_level WHEN 'excellent' THEN 100 WHEN 'very_good' THEN 80 WHEN 'good' THEN 60 WHEN 'fair' THEN 40 WHEN 'weak' THEN 20 ELSE 0 END) +
+              (CASE homework_preparation WHEN 'excellent' THEN 100 WHEN 'very_good' THEN 80 WHEN 'good' THEN 60 WHEN 'fair' THEN 40 WHEN 'weak' THEN 20 ELSE 0 END) +
+              (CASE participation_level WHEN 'excellent' THEN 100 WHEN 'very_good' THEN 80 WHEN 'good' THEN 60 WHEN 'fair' THEN 40 WHEN 'weak' THEN 20 ELSE 0 END) +
+              (CASE instruction_following WHEN 'excellent' THEN 100 WHEN 'very_good' THEN 80 WHEN 'good' THEN 60 WHEN 'fair' THEN 40 WHEN 'weak' THEN 20 ELSE 0 END)
+            ) / 6.0 AS score,
+            eval_date_date
+          FROM student_evaluations
+          WHERE student_id = $1
+            AND eval_date_date >= CURRENT_DATE - INTERVAL '90 days'
+        )
+        SELECT
+          COALESCE(ROUND(AVG(score)::numeric, 0), 0)::int AS avg_percent,
+          COUNT(*)::int AS eval_count,
+          MAX(eval_date_date) AS last_eval_date
+        FROM mapped;
+      `;
+
+      const [aTot, aSub, eTot, eGrd, attTot, attPres, nextSessionRes, nextExamRes, evalRes] = await Promise.all([
         pool.query(assignmentsTotalQ, [studentId]),
         pool.query(assignmentsSubmittedQ, [studentId]),
         pool.query(examsTotalQ, [studentId]),
@@ -537,7 +560,8 @@ export namespace StudentService {
         pool.query(attendanceTotalQ, [studentId]),
         pool.query(attendancePresentQ, [studentId]),
         pool.query(nextSessionQ, [studentId]),
-        pool.query(nextMonthlyExamQ, [studentId])
+        pool.query(nextMonthlyExamQ, [studentId]),
+        pool.query(evaluationQ, [studentId])
       ]);
 
       const assignmentsTotal = aTot.rows[0]?.c ?? 0;
@@ -552,6 +576,13 @@ export namespace StudentService {
       const progressPercent = progressDen > 0 ? Math.round((progressNum / progressDen) * 100) : 0;
 
       const attendancePercent = attendanceTotal > 0 ? Math.round((attendancePresent / attendanceTotal) * 100) : 0;
+
+      const evalRow = evalRes.rows[0] as { avg_percent?: number; eval_count?: number; last_eval_date?: string } | undefined;
+      const evaluation = {
+        averagePercent: evalRow?.avg_percent ?? 0,
+        count: evalRow?.eval_count ?? 0,
+        lastEvaluationDate: evalRow?.last_eval_date ? new Date(evalRow.last_eval_date).toISOString() : null,
+      };
 
       const nextSession = nextSessionRes.rows[0]
         ? {
@@ -604,6 +635,7 @@ export namespace StudentService {
           attendancePercent,
           nextSession,
           nextMonthlyExam,
+          evaluation,
           breakdown: {
             assignmentsTotal,
             assignmentsSubmitted,
