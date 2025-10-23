@@ -1171,7 +1171,7 @@ export class AuthService {
       if (userType === 'teacher') {
         allowedFields = ['name', 'phone', 'bio', 'experience_years', 'latitude', 'longitude', 'address', 'formatted_address', 'country', 'city', 'state', 'zipcode', 'street_name', 'suburb', 'location_confidence'];
       } else if (userType === 'student') {
-        allowedFields = ['name', 'student_phone', 'parent_phone', 'school_name', 'gender', 'birth_date', 'address', 'latitude', 'longitude'];
+        allowedFields = ['name', 'student_phone', 'parent_phone', 'school_name', 'gender', 'birth_date', 'address', 'latitude', 'longitude', 'formatted_address', 'country', 'city', 'state', 'zipcode', 'street_name', 'suburb', 'location_confidence'];
       } else {
         return { success: false, message: 'نوع المستخدم غير مدعوم', errors: ['نوع المستخدم غير مدعوم'] };
       }
@@ -1181,6 +1181,66 @@ export class AuthService {
       for (const [key, value] of Object.entries(profileData)) {
         if (allowedFields.includes(key)) {
           filteredData[key] = value;
+        }
+      }
+
+      // ✅ دعم الحقول بصيغة camelCase القادمة من العميل عبر تحويلها إلى snake_case المتوقعة من الـ Model
+      const camelToSnakeMap: Record<string, string> = {
+        formattedAddress: 'formatted_address',
+        streetName: 'street_name',
+        locationConfidence: 'location_confidence',
+        birthDate: 'birth_date',
+        parentPhone: 'parent_phone',
+        studentPhone: 'student_phone',
+        schoolName: 'school_name',
+      };
+      for (const [camel, snake] of Object.entries(camelToSnakeMap)) {
+        if (profileData[camel] !== undefined && allowedFields.includes(snake)) {
+          filteredData[snake] = profileData[camel];
+        }
+      }
+
+      // ✅ إذا تم إرسال lat/lng ولم تُرسل تفاصيل العنوان، نجري Geocoding لملء الحقول
+      const hasLat = profileData.latitude !== undefined && profileData.latitude !== null;
+      const hasLng = profileData.longitude !== undefined && profileData.longitude !== null;
+      const hasAnyAddressField =
+        profileData.formatted_address !== undefined ||
+        profileData.formattedAddress !== undefined ||
+        profileData.country !== undefined ||
+        profileData.city !== undefined ||
+        profileData.state !== undefined ||
+        profileData.zipcode !== undefined ||
+        profileData.street_name !== undefined ||
+        profileData.streetName !== undefined ||
+        profileData.suburb !== undefined ||
+        profileData.location_confidence !== undefined ||
+        profileData.locationConfidence !== undefined ||
+        profileData.address !== undefined;
+
+      if (hasLat && hasLng && !hasAnyAddressField) {
+        try {
+          const geocodingService = new GeocodingService();
+          const latNum = Number(profileData.latitude);
+          const lngNum = Number(profileData.longitude);
+          const details = await geocodingService.getLocationDetails(latNum, lngNum);
+          if (details) {
+            filteredData['formatted_address'] = details.formattedAddress;
+            filteredData['country'] = details.country;
+            filteredData['city'] = details.city;
+            filteredData['state'] = details.state;
+            filteredData['zipcode'] = details.zipcode;
+            filteredData['street_name'] = details.streetName;
+            filteredData['suburb'] = details.suburb;
+            filteredData['location_confidence'] = details.confidence;
+            // العنوان النصي: إن وُجد في الطلب نفضّله، وإلا نضع formattedAddress
+            if (profileData.address !== undefined) {
+              filteredData['address'] = profileData.address;
+            } else if (details.formattedAddress) {
+              filteredData['address'] = details.formattedAddress;
+            }
+          }
+        } catch (geoErr) {
+          console.error('Geocoding on updateProfile failed:', geoErr);
         }
       }
 
