@@ -233,7 +233,7 @@ export class NotificationService {
 
       // Ensure studyYear is attached to data from active academic year if not provided
       const activeYear = await AcademicYearModel.getActive();
-      const enrichedData = {
+      const enrichedData: Record<string, any> = {
         ...notificationData.data,
         ...(activeYear && { studyYear: (notificationData.data?.['studyYear'] as any) || activeYear.year }),
         sender: {
@@ -242,6 +242,38 @@ export class NotificationService {
           name: senderName,
         },
       };
+
+      // Auto-attach deep-link for TEACHER web if not provided (data.url)
+      // Uses provided teacher routes list and available identifiers in data
+      const targetsTeachers = [RecipientType.TEACHERS, RecipientType.SPECIFIC_TEACHERS].includes(notificationData.recipientType);
+      if (targetsTeachers && !enrichedData['url']) {
+        const t = String(notificationData.type || '').toLowerCase();
+        const d = enrichedData || {};
+        const withId = (tpl: string, idKey: string) => {
+          const val = d[idKey];
+          if (val) return tpl.replace(`:${idKey}`, String(val));
+          return null;
+        };
+        let url: string | null = null;
+        if (t === 'assignment_due') {
+          url = '/teacher/assignments/assignment-overview';
+        } else if (t === 'grade_update') {
+          url = '/teacher/exams/manage-exams';
+        } else if (t === 'class_reminder' || t === 'course_update') {
+          url = d['courseId'] ? '/teacher/course/show-course' : '/teacher/sessions/manage-sessions';
+        } else if (t === 'payment_reminder') {
+          url = withId('/teacher/invoices/:invoiceId', 'invoiceId') || '/teacher/invoices/manage-invoices';
+        } else if (t === 'booking_status') {
+          url = withId('/teacher/payments/reservations/:bookingId', 'bookingId') || '/teacher/bookings/show-bookings';
+        } else if (t === 'teacher_message') {
+          url = '/teacher/notifications/show-notifications';
+        } else if (t === 'system_announcement') {
+          url = '/teacher/notifications/show-notifications';
+        }
+        if (url) {
+          enrichedData['url'] = url;
+        }
+      }
 
       const notification = await NotificationModel.create({
         ...notificationData,
