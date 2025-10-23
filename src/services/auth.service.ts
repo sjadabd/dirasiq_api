@@ -1171,7 +1171,7 @@ export class AuthService {
       if (userType === 'teacher') {
         allowedFields = ['name', 'phone', 'bio', 'experience_years', 'latitude', 'longitude', 'address', 'formatted_address', 'country', 'city', 'state', 'zipcode', 'street_name', 'suburb', 'location_confidence'];
       } else if (userType === 'student') {
-        allowedFields = ['name', 'student_phone', 'parent_phone', 'school_name', 'gender', 'birth_date', 'address'];
+        allowedFields = ['name', 'student_phone', 'parent_phone', 'school_name', 'gender', 'birth_date', 'address', 'latitude', 'longitude'];
       } else {
         return { success: false, message: 'نوع المستخدم غير مدعوم', errors: ['نوع المستخدم غير مدعوم'] };
       }

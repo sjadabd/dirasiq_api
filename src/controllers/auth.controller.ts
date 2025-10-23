@@ -744,7 +744,9 @@ export class AuthController {
           body('gradeIds').isArray({ min: 1 }).withMessage('معرف الصف مطلوب').run(req),
           body('gradeIds.*').isUUID().withMessage('الصف غير موجود').run(req),
           body('studyYear').notEmpty().matches(/^[0-9]{4}-[0-9]{4}$/).withMessage('تنسيق السنة الدراسية غير صحيح').run(req),
-          // باقي التحقق الخاص بالموقع...
+          // الموقع (اختياري)
+          body('latitude').optional().isFloat({ min: -90, max: 90 }).withMessage('خط العرض غير صحيح').run(req),
+          body('longitude').optional().isFloat({ min: -180, max: 180 }).withMessage('خط الطول غير صحيح').run(req),
         ]);
       } else if (userType === 'student') {
         await Promise.all([
@@ -754,6 +756,9 @@ export class AuthController {
           body('schoolName').notEmpty().withMessage('اسم المدرسة مطلوب').run(req),
           body('gender').isIn(['male', 'female']).withMessage('الجنس غير صحيح').run(req),
           body('birthDate').isISO8601().withMessage('تاريخ الميلاد غير صحيح').run(req),
+          // الموقع (اختياري)
+          body('latitude').optional().isFloat({ min: -90, max: 90 }).withMessage('خط العرض غير صحيح').run(req),
+          body('longitude').optional().isFloat({ min: -180, max: 180 }).withMessage('خط الطول غير صحيح').run(req),
         ]);
       }
 
