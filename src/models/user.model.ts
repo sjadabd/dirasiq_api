@@ -305,7 +305,13 @@ export class UserModel {
       'suburb',
       'location_confidence',
       'teacher_qr_image_path',
-      'profile_image_path'
+      'profile_image_path',
+      // Intro video fields
+      'intro_video_status',
+      'intro_video_manifest_path',
+      'intro_video_storage_dir',
+      'intro_video_thumbnail_path',
+      'intro_video_duration_seconds'
     ];
 
     const updates: string[] = [];
@@ -468,6 +474,11 @@ export class UserModel {
       suburb: dbUser.suburb,
       locationConfidence: dbUser.location_confidence,
       profileImagePath: dbUser.profile_image_path,
+      introVideoStatus: dbUser.intro_video_status,
+      introVideoManifestPath: dbUser.intro_video_manifest_path,
+      introVideoStorageDir: dbUser.intro_video_storage_dir,
+      introVideoThumbnailPath: dbUser.intro_video_thumbnail_path,
+      introVideoDurationSeconds: dbUser.intro_video_duration_seconds,
       createdAt: dbUser.created_at,
       updatedAt: dbUser.updated_at,
     };

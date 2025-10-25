@@ -1049,6 +1049,12 @@ export class AuthService {
             streetName: user.streetName,
             suburb: user.suburb,
             locationConfidence: user.locationConfidence
+          },
+          introVideo: {
+            status: (user as any).introVideoStatus || 'none',
+            manifestUrl: (user as any).introVideoManifestPath || null,
+            thumbnailUrl: (user as any).introVideoThumbnailPath || null,
+            durationSeconds: (user as any).introVideoDurationSeconds || null,
           }
         };
       } catch (error) {

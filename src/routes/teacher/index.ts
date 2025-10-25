@@ -15,6 +15,7 @@ import academicYearRoutes from './academic-year.routes';
 import expenseRoutes from './expense.routes';
 import reportRoutes from './report.routes';
 import dashboardRoutes from './dashboard.routes';
+import profileRoutes from './profile.routes';
 
 const router = Router();
 
@@ -36,6 +37,7 @@ router.use('/dashboard', dashboardRoutes);
 router.use('/academic-years', academicYearRoutes);
 router.use('/expenses', expenseRoutes);
 router.use('/reports', reportRoutes);
+router.use('/profile', profileRoutes);
 
 export default router;
 

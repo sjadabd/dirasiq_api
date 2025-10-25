@@ -52,6 +52,12 @@ export interface BaseUser {
   streetName?: string;
   suburb?: string;
   locationConfidence?: number;
+  profileImagePath?: string;
+  introVideoStatus?: 'none' | 'processing' | 'ready' | 'failed';
+  introVideoManifestPath?: string;
+  introVideoStorageDir?: string;
+  introVideoThumbnailPath?: string;
+  introVideoDurationSeconds?: number;
   createdAt: Date;
   updatedAt: Date;
 }
