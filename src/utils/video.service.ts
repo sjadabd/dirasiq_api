@@ -55,6 +55,12 @@ export class VideoService {
   static async transcodeToHLS(tempInputPath: string, userId: string): Promise<HlsResult> {
     const publicDir = path.join(process.cwd(), 'public');
     const storageDir = path.join(publicDir, 'uploads', 'intro_videos', userId);
+    // Hard-delete any previous video/thumbnail for this user, then recreate folder
+    if (fs.existsSync(storageDir)) {
+      try {
+        fs.rmSync(storageDir, { recursive: true, force: true });
+      } catch {}
+    }
     ensureDirSync(storageDir);
 
     // Master manifest target
@@ -66,9 +72,9 @@ export class VideoService {
     // Build filter_complex to split video into 3 renditions
     const filterComplex = [
       '[0:v]split=3[v0][v1][v2];',
-      '[v0]scale=w=640:h=360:force_original_aspect_ratio=decrease[v0out];',
-      '[v1]scale=w=426:h=240:force_original_aspect_ratio=decrease[v1out];',
-      '[v2]scale=w=256:h=144:force_original_aspect_ratio=decrease[v2out]'
+      '[v0]scale=w=-2:h=360[v0out];',
+      '[v1]scale=w=-2:h=240[v1out];',
+      '[v2]scale=w=-2:h=144[v2out]'
     ].join('');
 
     const buildArgs = (videoEncoder: 'libx264' | 'h264') => {
