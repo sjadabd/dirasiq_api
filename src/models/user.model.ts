@@ -166,7 +166,7 @@ export class UserModel {
           status = 'active'
       WHERE email = $1
         AND verification_code = $2
-        AND verification_code_expires > CURRENT_TIMESTAMP
+        AND verification_code_expires > (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
         AND user_type IN ('teacher', 'student')
     `;
 
