@@ -221,7 +221,7 @@ export class UserModel {
           password_reset_expires = NULL
       WHERE email = $2
         AND password_reset_code = $3
-        AND password_reset_expires > CURRENT_TIMESTAMP
+        AND password_reset_expires > (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
         AND deleted_at IS NULL
     `;
 
