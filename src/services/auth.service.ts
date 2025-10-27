@@ -1142,9 +1142,19 @@ export class AuthService {
           })
         );
 
+        // Ensure and include QR info
+        let qr: { imagePath: string; publicUrl: string } | null = null;
+        try {
+          const qrInfo = await QrService.ensureTeacherQr(user.id);
+          qr = { imagePath: qrInfo.imagePath, publicUrl: qrInfo.publicUrl };
+        } catch (e) {
+          console.error('Error ensuring teacher QR (enhanced):', e);
+        }
+
         return {
           ...sanitizedUser,
           teacherGrades: gradesWithDetails,
+          qr,
           // Include location data if available
           location: {
             latitude: user.latitude,
@@ -1158,12 +1168,6 @@ export class AuthService {
             streetName: user.streetName,
             suburb: user.suburb,
             locationConfidence: user.locationConfidence,
-          },
-          introVideo: {
-            status: (user as any).introVideoStatus || 'none',
-            manifestUrl: (user as any).introVideoManifestPath || null,
-            thumbnailUrl: (user as any).introVideoThumbnailPath || null,
-            durationSeconds: (user as any).introVideoDurationSeconds || null,
           },
         };
       } catch (error) {
