@@ -52,6 +52,32 @@ function ffprobeHasAudio(inputPath: string): Promise<boolean> {
 }
 
 export class VideoService {
+  static async trimSegment(inputPath: string, start: number, end?: number): Promise<string> {
+    const tempDir = path.join(process.cwd(), 'tmp', 'uploads');
+    ensureDirSync(tempDir);
+    const outPath = path.join(tempDir, `cut_${Date.now()}.mp4`);
+    const args: string[] = ['-y'];
+    if (Number.isFinite(start) && start >= 0) {
+      args.push('-ss', String(start));
+    }
+    if (Number.isFinite(end) && (end as number) > (start || 0)) {
+      args.push('-to', String(end));
+    }
+    args.push('-i', inputPath);
+    args.push('-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23');
+    args.push('-c:a', 'aac', '-b:a', '128k');
+    args.push(outPath);
+
+    await new Promise<void>((resolve, reject) => {
+      const p = spawn('ffmpeg', args);
+      let err = '';
+      p.stderr.on('data', (d) => (err += d.toString()));
+      p.on('close', (code) => (code === 0 ? resolve() : reject(new Error(err || 'ffmpeg trim failed'))));
+      p.on('error', (e) => reject(e));
+    });
+
+    return outPath;
+  }
   static async transcodeToHLS(tempInputPath: string, userId: string): Promise<HlsResult> {
     const publicDir = path.join(process.cwd(), 'public');
     const storageDir = path.join(publicDir, 'uploads', 'intro_videos', userId);
