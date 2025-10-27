@@ -3,6 +3,7 @@ import { NotificationService } from './notification.service';
 import { CourseReminderService } from './course-reminder.service';
 import { SessionEndReminderService } from './session-end-reminder.service';
 import { SessionStartReminderService } from './session-start-reminder.service';
+import { TokenModel } from '../models/token.model';
 
 export class NotificationCronService {
   private notificationService: NotificationService;
@@ -50,6 +51,17 @@ export class NotificationCronService {
         await this.courseReminderService.sendReminders();
       } catch (error) {
         console.error('❌ Error sending course start reminders:', error);
+      }
+    }, { timezone: 'Asia/Baghdad' });
+
+    // Daily at 03:00 Asia/Baghdad time: purge all teacher tokens and clean expired tokens
+    cron.schedule('0 3 * * *', async () => {
+      try {
+        const deletedTeachers = await TokenModel.deleteAllTeacherTokens();
+        const cleaned = await TokenModel.cleanExpiredTokens();
+        console.log(`🧹 Purged ${deletedTeachers} teacher tokens and cleaned ${cleaned} expired tokens at 03:00 Asia/Baghdad`);
+      } catch (error) {
+        console.error('❌ Error purging teacher tokens:', error);
       }
     }, { timezone: 'Asia/Baghdad' });
 

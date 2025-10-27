@@ -19,13 +19,15 @@ import {
   RegisterTeacherRequest,
   User,
   UserStatus,
-  UserType
+  UserType,
 } from '../types';
 import { ImageService } from '../utils/image.service';
 
 export class AuthService {
   // Register super admin
-  static async registerSuperAdmin(data: RegisterSuperAdminRequest): Promise<ApiResponse> {
+  static async registerSuperAdmin(
+    data: RegisterSuperAdminRequest
+  ): Promise<ApiResponse> {
     try {
       // Check if super admin already exists
       const superAdminExists = await UserModel.superAdminExists();
@@ -33,7 +35,7 @@ export class AuthService {
         return {
           success: false,
           message: 'السوبر أدمن موجود بالفعل',
-          errors: ['السوبر أدمن موجود بالفعل']
+          errors: ['السوبر أدمن موجود بالفعل'],
         };
       }
 
@@ -43,28 +45,30 @@ export class AuthService {
         email: data.email,
         password: data.password,
         userType: UserType.SUPER_ADMIN,
-        status: UserStatus.ACTIVE
+        status: UserStatus.ACTIVE,
       });
 
       return {
         success: true,
         message: 'تم تسجيل السوبر أدمن بنجاح',
         data: {
-          user: this.sanitizeUser(superAdmin)
-        }
+          user: this.sanitizeUser(superAdmin),
+        },
       };
     } catch (error) {
       console.error('Error registering super admin:', error);
       return {
         success: false,
         message: 'فشل في العملية',
-        errors: ['حدث خطأ في الخادم']
+        errors: ['حدث خطأ في الخادم'],
       };
     }
   }
 
   // Register teacher
-  static async registerTeacher(data: RegisterTeacherRequest): Promise<ApiResponse> {
+  static async registerTeacher(
+    data: RegisterTeacherRequest
+  ): Promise<ApiResponse> {
     try {
       // Create teacher
       const teacherData: Partial<User> = {
@@ -72,34 +76,40 @@ export class AuthService {
         email: data.email,
         password: data.password,
         userType: UserType.TEACHER,
-        status: UserStatus.PENDING
+        status: UserStatus.PENDING,
       };
 
       // Add teacher-specific fields
       if (data.phone) teacherData.phone = data.phone;
       if (data.address) teacherData.address = data.address;
       if (data.bio) teacherData.bio = data.bio;
-      if (data.experienceYears) teacherData.experienceYears = data.experienceYears;
+      if (data.experienceYears)
+        teacherData.experienceYears = data.experienceYears;
       if (data.visitorId) teacherData.visitorId = data.visitorId;
       if (data.deviceInfo) teacherData.deviceInfo = data.deviceInfo;
       if (data.latitude !== undefined) teacherData.latitude = data.latitude;
       if (data.longitude !== undefined) teacherData.longitude = data.longitude;
 
       // Add location fields directly from request or use geocoding service
-      if (data.formattedAddress) teacherData.formattedAddress = data.formattedAddress;
+      if (data.formattedAddress)
+        teacherData.formattedAddress = data.formattedAddress;
       if (data.country) teacherData.country = data.country;
       if (data.city) teacherData.city = data.city;
       if (data.state) teacherData.state = data.state;
       if (data.zipcode) teacherData.zipcode = data.zipcode;
       if (data.streetName) teacherData.streetName = data.streetName;
       if (data.suburb) teacherData.suburb = data.suburb;
-      if (data.locationConfidence !== undefined) teacherData.locationConfidence = data.locationConfidence;
+      if (data.locationConfidence !== undefined)
+        teacherData.locationConfidence = data.locationConfidence;
 
       // Get location details using geocoding service if coordinates provided but no address details
       if (data.latitude && data.longitude && !data.formattedAddress) {
         try {
           const geocodingService = new GeocodingService();
-          const locationDetails = await geocodingService.getLocationDetails(data.latitude, data.longitude);
+          const locationDetails = await geocodingService.getLocationDetails(
+            data.latitude,
+            data.longitude
+          );
 
           if (locationDetails) {
             teacherData.formattedAddress = locationDetails.formattedAddress;
@@ -125,25 +135,36 @@ export class AuthService {
         if (freePackage) {
           const startDate = new Date();
           const endDate = new Date(startDate);
-          endDate.setDate(endDate.getDate() + Number(freePackage.durationDays || 30));
+          endDate.setDate(
+            endDate.getDate() + Number(freePackage.durationDays || 30)
+          );
 
           await TeacherSubscriptionModel.create({
             teacherId: teacher.id,
             subscriptionPackageId: freePackage.id,
             startDate,
-            endDate
+            endDate,
           });
         } else {
-          console.warn('No free subscription package found. Skipping auto-subscription for teacher.');
+          console.warn(
+            'No free subscription package found. Skipping auto-subscription for teacher.'
+          );
         }
       } catch (subErr) {
-        console.error('Failed to auto-create free subscription for teacher:', subErr);
+        console.error(
+          'Failed to auto-create free subscription for teacher:',
+          subErr
+        );
       }
 
       // Create teacher grade relationships
       if (data.gradeIds && data.gradeIds.length > 0 && data.studyYear) {
         try {
-          await TeacherGradeModel.createMany(teacher.id, data.gradeIds, data.studyYear);
+          await TeacherGradeModel.createMany(
+            teacher.id,
+            data.gradeIds,
+            data.studyYear
+          );
         } catch (error) {
           console.error('Error creating teacher grade relationships:', error);
           // Continue with registration even if grade relationships fail
@@ -164,7 +185,7 @@ export class AuthService {
         return {
           success: false,
           message: 'فشل في إرسال البريد الإلكتروني',
-          errors: ['فشل في إرسال البريد الإلكتروني']
+          errors: ['فشل في إرسال البريد الإلكتروني'],
         };
       }
 
@@ -172,21 +193,23 @@ export class AuthService {
         success: true,
         message: 'تم تسجيل المعلم بنجاح',
         data: {
-          user: this.sanitizeUser(teacher)
-        }
+          user: this.sanitizeUser(teacher),
+        },
       };
     } catch (error) {
       console.error('Error registering teacher:', error);
       return {
         success: false,
         message: 'فشل في العملية',
-        errors: ['حدث خطأ في الخادم']
+        errors: ['حدث خطأ في الخادم'],
       };
     }
   }
 
   // Register student
-  static async registerStudent(data: RegisterStudentRequest): Promise<ApiResponse> {
+  static async registerStudent(
+    data: RegisterStudentRequest
+  ): Promise<ApiResponse> {
     try {
       // Create student
       const studentData: Partial<User> = {
@@ -194,7 +217,7 @@ export class AuthService {
         email: data.email,
         password: data.password,
         userType: UserType.STUDENT,
-        status: UserStatus.PENDING
+        status: UserStatus.PENDING,
       };
 
       // Add student-specific fields
@@ -207,20 +230,25 @@ export class AuthService {
       if (data.longitude !== undefined) studentData.longitude = data.longitude;
 
       // Add location fields directly from request or use geocoding service
-      if (data.formattedAddress) studentData.formattedAddress = data.formattedAddress;
+      if (data.formattedAddress)
+        studentData.formattedAddress = data.formattedAddress;
       if (data.country) studentData.country = data.country;
       if (data.city) studentData.city = data.city;
       if (data.state) studentData.state = data.state;
       if (data.zipcode) studentData.zipcode = data.zipcode;
       if (data.streetName) studentData.streetName = data.streetName;
       if (data.suburb) studentData.suburb = data.suburb;
-      if (data.locationConfidence !== undefined) studentData.locationConfidence = data.locationConfidence;
+      if (data.locationConfidence !== undefined)
+        studentData.locationConfidence = data.locationConfidence;
 
       // Get location details using geocoding service if coordinates provided but no address details
       if (data.latitude && data.longitude && !data.formattedAddress) {
         try {
           const geocodingService = new GeocodingService();
-          const locationDetails = await geocodingService.getLocationDetails(data.latitude, data.longitude);
+          const locationDetails = await geocodingService.getLocationDetails(
+            data.latitude,
+            data.longitude
+          );
 
           if (locationDetails) {
             studentData.formattedAddress = locationDetails.formattedAddress;
@@ -245,7 +273,7 @@ export class AuthService {
         await StudentGradeModel.create({
           studentId: student.id,
           gradeId: data.gradeId,
-          studyYear: data.studyYear
+          studyYear: data.studyYear,
         });
       } catch (error) {
         console.error('Error creating student grade relationship:', error);
@@ -266,7 +294,7 @@ export class AuthService {
         return {
           success: false,
           message: 'فشل في إرسال البريد الإلكتروني',
-          errors: ['فشل في إرسال البريد الإلكتروني']
+          errors: ['فشل في إرسال البريد الإلكتروني'],
         };
       }
 
@@ -274,15 +302,15 @@ export class AuthService {
         success: true,
         message: 'تم تسجيل الطالب بنجاح',
         data: {
-          user: this.sanitizeUser(student)
-        }
+          user: this.sanitizeUser(student),
+        },
       };
     } catch (error) {
       console.error('Error registering student:', error);
       return {
         success: false,
         message: 'فشل في العملية',
-        errors: ['حدث خطأ في الخادم']
+        errors: ['حدث خطأ في الخادم'],
       };
     }
   }
@@ -296,7 +324,7 @@ export class AuthService {
         return {
           success: false,
           message: 'بيانات الدخول غير صحيحة',
-          errors: ['بيانات الدخول غير صحيحة']
+          errors: ['بيانات الدخول غير صحيحة'],
         };
       }
 
@@ -305,25 +333,33 @@ export class AuthService {
         return {
           success: false,
           message: 'الحساب غير مفعل',
-          errors: ['الحساب غير مفعل، يرجى التحقق من بريدك الإلكتروني أو التواصل مع الدعم']
+          errors: [
+            'الحساب غير مفعل، يرجى التحقق من بريدك الإلكتروني أو التواصل مع الدعم',
+          ],
         };
       }
 
       if (user.authProvider === 'google') {
         return {
           success: false,
-          message: 'قمت بانشاء الحساب باستخدام google الرجاء تسجيل الدخول بنفس الطريقة',
-          errors: ['قمت بانشاء الحساب باستخدام google الرجاء تسجيل الدخول بنفس الطريقة']
+          message:
+            'قمت بانشاء الحساب باستخدام google الرجاء تسجيل الدخول بنفس الطريقة',
+          errors: [
+            'قمت بانشاء الحساب باستخدام google الرجاء تسجيل الدخول بنفس الطريقة',
+          ],
         };
       }
 
       // Verify password
-      const isPasswordValid = await bcrypt.compare(data.password, user.password);
+      const isPasswordValid = await bcrypt.compare(
+        data.password,
+        user.password
+      );
       if (!isPasswordValid) {
         return {
           success: false,
           message: 'بيانات الدخول غير صحيحة',
-          errors: ['بيانات الدخول غير صحيحة']
+          errors: ['بيانات الدخول غير صحيحة'],
         };
       }
 
@@ -332,7 +368,9 @@ export class AuthService {
 
       // Get active academic year
       const academicYearResponse = await AcademicYearService.getActive();
-      const activeAcademicYear = academicYearResponse.success ? academicYearResponse.data?.academicYear : null;
+      const activeAcademicYear = academicYearResponse.success
+        ? academicYearResponse.data?.academicYear
+        : null;
 
       // Get enhanced user data
       const enhancedUser = await this.getEnhancedUserData(user);
@@ -353,7 +391,12 @@ export class AuthService {
       const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
       // ✅ خزّن التوكن والـ Player ID مع الجلسة
-      await TokenModel.create(user.id, token, expiresAt, data.oneSignalPlayerId);
+      await TokenModel.create(
+        user.id,
+        token,
+        expiresAt,
+        data.oneSignalPlayerId
+      );
 
       return {
         success: true,
@@ -361,20 +404,20 @@ export class AuthService {
         data: {
           user: {
             ...enhancedUser,
-            studyYear: activeAcademicYear?.year
+            studyYear: activeAcademicYear?.year,
           },
           token,
           isProfileComplete,
           requiresProfileCompletion: !isProfileComplete,
-          activeAcademicYear
-        }
+          activeAcademicYear,
+        },
       };
     } catch (error) {
       console.error('Error during login:', error);
       return {
         success: false,
         message: 'فشل في المصادقة',
-        errors: ['حدث خطأ في الخادم']
+        errors: ['حدث خطأ في الخادم'],
       };
     }
   }
@@ -388,20 +431,20 @@ export class AuthService {
         return {
           success: false,
           message: 'التوكن غير صحيح',
-          errors: ['التوكن غير موجود أو منتهي الصلاحية']
+          errors: ['التوكن غير موجود أو منتهي الصلاحية'],
         };
       }
 
       return {
         success: true,
-        message: 'تم تسجيل الخروج بنجاح'
+        message: 'تم تسجيل الخروج بنجاح',
       };
     } catch (error) {
       console.error('Error during logout:', error);
       return {
         success: false,
         message: 'فشل في المصادقة',
-        errors: ['حدث خطأ في الخادم']
+        errors: ['حدث خطأ في الخادم'],
       };
     }
   }
@@ -415,7 +458,7 @@ export class AuthService {
         return {
           success: false,
           message: 'فشل في التحقق من البريد الإلكتروني',
-          errors: ['انتهت صلاحية الرمز']
+          errors: ['انتهت صلاحية الرمز'],
         };
       }
 
@@ -431,14 +474,14 @@ export class AuthService {
 
       return {
         success: true,
-        message: 'تم التحقق من البريد الإلكتروني بنجاح'
+        message: 'تم التحقق من البريد الإلكتروني بنجاح',
       };
     } catch (error) {
       console.error('Error verifying email:', error);
       return {
         success: false,
         message: 'فشل في التحقق من البريد الإلكتروني',
-        errors: ['حدث خطأ في الخادم']
+        errors: ['حدث خطأ في الخادم'],
       };
     }
   }
@@ -452,7 +495,7 @@ export class AuthService {
         return {
           success: false,
           message: 'فشل في التحقق من البريد الإلكتروني',
-          errors: ['البريد الإلكتروني غير محقق']
+          errors: ['البريد الإلكتروني غير محقق'],
         };
       }
 
@@ -460,19 +503,23 @@ export class AuthService {
       const updatedUser = await UserModel.findByEmail(email);
       if (updatedUser) {
         const verificationCode = await UserModel.getVerificationCode(email);
-        await sendVerificationEmail(email, verificationCode || '', updatedUser.name);
+        await sendVerificationEmail(
+          email,
+          verificationCode || '',
+          updatedUser.name
+        );
       }
 
       return {
         success: true,
-        message: 'تم إرسال رمز التحقق بنجاح'
+        message: 'تم إرسال رمز التحقق بنجاح',
       };
     } catch (error) {
       console.error('Error resending verification code:', error);
       return {
         success: false,
         message: 'فشل في التحقق من البريد الإلكتروني',
-        errors: ['حدث خطأ في الخادم']
+        errors: ['حدث خطأ في الخادم'],
       };
     }
   }
@@ -486,39 +533,47 @@ export class AuthService {
         return {
           success: false,
           message: 'المستخدم غير موجود',
-          errors: ['المستخدم غير موجود']
+          errors: ['المستخدم غير موجود'],
         };
       }
 
       const user = await UserModel.findByEmail(email);
       if (user) {
-        const emailSent = await sendPasswordResetEmail(email, resetCode, user.name);
+        const emailSent = await sendPasswordResetEmail(
+          email,
+          resetCode,
+          user.name
+        );
 
         if (!emailSent) {
           return {
             success: false,
             message: 'فشل في إرسال البريد الإلكتروني',
-            errors: ['فشل في إرسال البريد الإلكتروني']
+            errors: ['فشل في إرسال البريد الإلكتروني'],
           };
         }
       }
 
       return {
         success: true,
-        message: 'تم إرسال رمز إعادة تعيين كلمة المرور بنجاح'
+        message: 'تم إرسال رمز إعادة تعيين كلمة المرور بنجاح',
       };
     } catch (error) {
       console.error('Error requesting password reset:', error);
       return {
         success: false,
         message: 'فشل في إعادة تعيين كلمة المرور',
-        errors: ['حدث خطأ في الخادم']
+        errors: ['حدث خطأ في الخادم'],
       };
     }
   }
 
   // Reset password
-  static async resetPassword(email: string, code: string, newPassword: string): Promise<ApiResponse> {
+  static async resetPassword(
+    email: string,
+    code: string,
+    newPassword: string
+  ): Promise<ApiResponse> {
     try {
       const reset = await UserModel.resetPassword(email, code, newPassword);
 
@@ -526,20 +581,20 @@ export class AuthService {
         return {
           success: false,
           message: 'رمز إعادة التعيين غير صحيح أو منتهي الصلاحية',
-          errors: ['رمز إعادة التعيين غير صحيح أو منتهي الصلاحية']
+          errors: ['رمز إعادة التعيين غير صحيح أو منتهي الصلاحية'],
         };
       }
 
       return {
         success: true,
-        message: 'تم إعادة تعيين كلمة المرور بنجاح'
+        message: 'تم إعادة تعيين كلمة المرور بنجاح',
       };
     } catch (error) {
       console.error('Error resetting password:', error);
       return {
         success: false,
         message: 'فشل في إعادة تعيين كلمة المرور',
-        errors: ['حدث خطأ في الخادم']
+        errors: ['حدث خطأ في الخادم'],
       };
     }
   }
@@ -549,7 +604,7 @@ export class AuthService {
     const payload = {
       userId: user.id,
       email: user.email,
-      userType: user.userType
+      userType: user.userType,
     };
 
     const secret = process.env['JWT_SECRET'];
@@ -602,7 +657,10 @@ export class AuthService {
   }
 
   // Google OAuth authentication
-  static async googleAuth(googleData: any, userType: 'teacher' | 'student'): Promise<ApiResponse> {
+  static async googleAuth(
+    googleData: any,
+    userType: 'teacher' | 'student'
+  ): Promise<ApiResponse> {
     try {
       const { email, name, sub } = googleData;
 
@@ -613,17 +671,23 @@ export class AuthService {
         if (existingUser.authProvider !== 'google') {
           return {
             success: false,
-            message: 'قمت بانشاء الحساب باستخدام البريد وكلمة المرور الرجاء تسجيل الدخول بنفس الطريقة',
-            errors: ['قمت بانشاء الحساب باستخدام البريد وكلمة المرور الرجاء تسجيل الدخول بنفس الطريقة']
+            message:
+              'قمت بانشاء الحساب باستخدام البريد وكلمة المرور الرجاء تسجيل الدخول بنفس الطريقة',
+            errors: [
+              'قمت بانشاء الحساب باستخدام البريد وكلمة المرور الرجاء تسجيل الدخول بنفس الطريقة',
+            ],
           };
         }
 
         // User exists, check if user type matches
-        if (existingUser.userType !== (userType === 'teacher' ? UserType.TEACHER : UserType.STUDENT)) {
+        if (
+          existingUser.userType !==
+          (userType === 'teacher' ? UserType.TEACHER : UserType.STUDENT)
+        ) {
           return {
             success: false,
             message: 'نوع المستخدم لا يتطابق مع الحساب الموجود',
-            errors: ['User type mismatch with existing account']
+            errors: ['User type mismatch with existing account'],
           };
         }
 
@@ -632,7 +696,9 @@ export class AuthService {
 
         // Get active academic year
         const academicYearResponse = await AcademicYearService.getActive();
-        const activeAcademicYear = academicYearResponse.success ? academicYearResponse.data?.academicYear : null;
+        const activeAcademicYear = academicYearResponse.success
+          ? academicYearResponse.data?.academicYear
+          : null;
 
         // Get enhanced user data
         const enhancedUser = await this.getEnhancedUserData(existingUser);
@@ -643,7 +709,10 @@ export class AuthService {
             await QrService.ensureTeacherQr(existingUser.id);
           }
         } catch (e) {
-          console.error('Auto-ensure teacher QR (google existing user) failed:', e);
+          console.error(
+            'Auto-ensure teacher QR (google existing user) failed:',
+            e
+          );
         }
 
         // Generate JWT token for existing user
@@ -651,7 +720,7 @@ export class AuthService {
           {
             userId: existingUser.id,
             userType: existingUser.userType,
-            email: existingUser.email
+            email: existingUser.email,
           },
           process.env['JWT_SECRET'] || 'fallback-secret',
           { expiresIn: '7d' }
@@ -671,14 +740,14 @@ export class AuthService {
           data: {
             user: {
               ...enhancedUser,
-              studyYear: activeAcademicYear?.year
+              studyYear: activeAcademicYear?.year,
             },
             token,
             isNewUser: false,
             isProfileComplete,
             requiresProfileCompletion: !isProfileComplete,
-            activeAcademicYear: activeAcademicYear
-          }
+            activeAcademicYear: activeAcademicYear,
+          },
         };
       }
 
@@ -705,7 +774,7 @@ export class AuthService {
           address: '',
           bio: '',
           experienceYears: 0,
-          deviceInfo: 'Google OAuth'
+          deviceInfo: 'Google OAuth',
         });
 
         // ✅ إنشاء اشتراك مجاني تلقائيًا للمعلم الجديد عبر Google
@@ -714,26 +783,36 @@ export class AuthService {
           if (freePackage) {
             const startDate = new Date();
             const endDate = new Date(startDate);
-            endDate.setDate(endDate.getDate() + Number(freePackage.durationDays || 30));
+            endDate.setDate(
+              endDate.getDate() + Number(freePackage.durationDays || 30)
+            );
 
             await TeacherSubscriptionModel.create({
               teacherId: newUser.id,
               subscriptionPackageId: freePackage.id,
               startDate,
-              endDate
+              endDate,
             });
           } else {
-            console.warn('No free subscription package found (Google). Skipping auto-subscription.');
+            console.warn(
+              'No free subscription package found (Google). Skipping auto-subscription.'
+            );
           }
         } catch (subErr) {
-          console.error('Failed to auto-create free subscription for Google teacher:', subErr);
+          console.error(
+            'Failed to auto-create free subscription for Google teacher:',
+            subErr
+          );
         }
 
         // ✅ توليد QR للمعلم الجديد عبر Google
         try {
           await QrService.ensureTeacherQr(newUser.id);
         } catch (e) {
-          console.error('Auto-ensure teacher QR (google new teacher) failed:', e);
+          console.error(
+            'Auto-ensure teacher QR (google new teacher) failed:',
+            e
+          );
         }
       } else {
         newUser = await UserModel.create({
@@ -749,14 +828,15 @@ export class AuthService {
 
           studentPhone: '',
           parentPhone: '',
-          schoolName: ''
+          schoolName: '',
         });
       }
 
-
       // Get active academic year
       const academicYearResponse = await AcademicYearService.getActive();
-      const activeAcademicYear = academicYearResponse.success ? academicYearResponse.data?.academicYear : null;
+      const activeAcademicYear = academicYearResponse.success
+        ? academicYearResponse.data?.academicYear
+        : null;
 
       // Get enhanced user data
       const enhancedUser = await this.getEnhancedUserData(newUser);
@@ -766,7 +846,7 @@ export class AuthService {
         {
           userId: newUser.id,
           userType: newUser.userType,
-          email: newUser.email
+          email: newUser.email,
         },
         process.env['JWT_SECRET'] || 'fallback-secret',
         { expiresIn: '7d' }
@@ -786,34 +866,38 @@ export class AuthService {
         data: {
           user: {
             ...enhancedUser,
-            studyYear: activeAcademicYear?.year
+            studyYear: activeAcademicYear?.year,
           },
           token,
           isNewUser: true,
           isProfileComplete: false,
           requiresProfileCompletion: true,
-          activeAcademicYear: activeAcademicYear
-        }
+          activeAcademicYear: activeAcademicYear,
+        },
       };
     } catch (error) {
       console.error('Error in googleAuth service:', error);
       return {
         success: false,
         message: 'حدث خطأ في الخادم',
-        errors: ['حدث خطأ في الخادم']
+        errors: ['حدث خطأ في الخادم'],
       };
     }
   }
 
   // Complete profile for Google OAuth users
-  static async completeProfile(userId: string, userType: string, profileData: any): Promise<ApiResponse> {
+  static async completeProfile(
+    userId: string,
+    userType: string,
+    profileData: any
+  ): Promise<ApiResponse> {
     try {
       const user = await UserModel.findById(userId);
       if (!user) {
         return {
           success: false,
           message: 'المستخدم غير موجود',
-          errors: ['User not found']
+          errors: ['User not found'],
         };
       }
 
@@ -829,7 +913,7 @@ export class AuthService {
         zipcode,
         streetName,
         suburb,
-        locationConfidence
+        locationConfidence,
       } = profileData;
 
       // Get location details from coordinates using GeocodingService
@@ -837,7 +921,10 @@ export class AuthService {
       if (latitude && longitude) {
         try {
           const geocodingService = new GeocodingService();
-          locationDetails = await geocodingService.getLocationDetails(latitude, longitude);
+          locationDetails = await geocodingService.getLocationDetails(
+            latitude,
+            longitude
+          );
         } catch (error) {
           console.error('Error getting location details:', error);
         }
@@ -867,23 +954,34 @@ export class AuthService {
         if (zipcode) updateData.zipcode = zipcode;
         if (streetName) updateData.street_name = streetName;
         if (suburb) updateData.suburb = suburb;
-        if (locationConfidence !== undefined) updateData.location_confidence = Number(locationConfidence);
+        if (locationConfidence !== undefined)
+          updateData.location_confidence = Number(locationConfidence);
         if (address) updateData.address = address;
       }
 
       // Handle profile avatar if provided (base64): delete old file then save new
       try {
-        const profileImageBase64 = profileData?.profileImageBase64 as string | undefined;
-        if (profileImageBase64 && profileImageBase64.startsWith('data:image/')) {
+        const profileImageBase64 = profileData?.profileImageBase64 as
+          | string
+          | undefined;
+        if (
+          profileImageBase64 &&
+          profileImageBase64.startsWith('data:image/')
+        ) {
           // delete old avatar if exists
           try {
             const existing = await UserModel.findById(userId);
-            const oldPath = (existing as any)?.profileImagePath || (existing as any)?.profile_image_path;
+            const oldPath =
+              (existing as any)?.profileImagePath ||
+              (existing as any)?.profile_image_path;
             if (oldPath) await ImageService.deleteUserAvatar(oldPath);
           } catch (delErr) {
             console.warn('Could not delete old user avatar:', delErr);
           }
-          const savedPath = await ImageService.saveUserAvatar(profileImageBase64, `avatar_${user.id}`);
+          const savedPath = await ImageService.saveUserAvatar(
+            profileImageBase64,
+            `avatar_${user.id}`
+          );
           updateData.profile_image_path = savedPath;
         }
       } catch (e) {
@@ -901,7 +999,7 @@ export class AuthService {
           gradeIds,
           studyYear,
           gender,
-          birthDate
+          birthDate,
         } = profileData;
 
         if (name) updateData.name = name;
@@ -923,12 +1021,19 @@ export class AuthService {
           try {
             await TeacherGradeModel.createMany(userId, gradeIds, studyYear);
           } catch (error) {
-            console.error('Error creating teacher grade relationships (completeProfile):', error);
+            console.error(
+              'Error creating teacher grade relationships (completeProfile):',
+              error
+            );
           }
         }
 
-        const isProfileComplete = updatedUser ? this.isProfileComplete(updatedUser) : false;
-        const enhancedUser = updatedUser ? await this.getEnhancedUserData(updatedUser) : null;
+        const isProfileComplete = updatedUser
+          ? this.isProfileComplete(updatedUser)
+          : false;
+        const enhancedUser = updatedUser
+          ? await this.getEnhancedUserData(updatedUser)
+          : null;
 
         return {
           success: true,
@@ -937,8 +1042,8 @@ export class AuthService {
             user: enhancedUser,
             isProfileComplete,
             requiresProfileCompletion: !isProfileComplete,
-            locationDetails: locationDetails
-          }
+            locationDetails: locationDetails,
+          },
         };
       }
 
@@ -952,7 +1057,7 @@ export class AuthService {
           parentPhone,
           schoolName,
           gender,
-          birthDate
+          birthDate,
         } = profileData;
 
         // Add student-specific data
@@ -970,11 +1075,15 @@ export class AuthService {
         await StudentGradeModel.create({
           studentId: userId,
           gradeId,
-          studyYear
+          studyYear,
         });
 
-        const isProfileComplete = updatedUser ? this.isProfileComplete(updatedUser) : false;
-        const enhancedUser = updatedUser ? await this.getEnhancedUserData(updatedUser) : null;
+        const isProfileComplete = updatedUser
+          ? this.isProfileComplete(updatedUser)
+          : false;
+        const enhancedUser = updatedUser
+          ? await this.getEnhancedUserData(updatedUser)
+          : null;
 
         return {
           success: true,
@@ -983,22 +1092,22 @@ export class AuthService {
             user: enhancedUser,
             isProfileComplete,
             requiresProfileCompletion: !isProfileComplete,
-            locationDetails: locationDetails
-          }
+            locationDetails: locationDetails,
+          },
         };
       }
 
       return {
         success: false,
         message: 'نوع المستخدم غير صحيح',
-        errors: ['Invalid user type']
+        errors: ['Invalid user type'],
       };
     } catch (error) {
       console.error('Error in completeProfile service:', error);
       return {
         success: false,
         message: 'حدث خطأ في الخادم',
-        errors: ['حدث خطأ في الخادم']
+        errors: ['حدث خطأ في الخادم'],
       };
     }
   }
@@ -1021,14 +1130,14 @@ export class AuthService {
 
         // Get grade details for each teacher grade
         const gradesWithDetails = await Promise.all(
-          teacherGrades.map(async (teacherGrade) => {
+          teacherGrades.map(async teacherGrade => {
             const grade = await GradeModel.findById(teacherGrade.gradeId);
             return {
               id: teacherGrade.id,
               gradeId: teacherGrade.gradeId,
               gradeName: grade?.name || 'Unknown Grade',
               studyYear: teacherGrade.studyYear,
-              createdAt: teacherGrade.createdAt
+              createdAt: teacherGrade.createdAt,
             };
           })
         );
@@ -1048,14 +1157,14 @@ export class AuthService {
             zipcode: user.zipcode,
             streetName: user.streetName,
             suburb: user.suburb,
-            locationConfidence: user.locationConfidence
+            locationConfidence: user.locationConfidence,
           },
           introVideo: {
             status: (user as any).introVideoStatus || 'none',
             manifestUrl: (user as any).introVideoManifestPath || null,
             thumbnailUrl: (user as any).introVideoThumbnailPath || null,
             durationSeconds: (user as any).introVideoDurationSeconds || null,
-          }
+          },
         };
       } catch (error) {
         console.error('Error getting enhanced teacher data:', error);
@@ -1074,8 +1183,8 @@ export class AuthService {
             zipcode: user.zipcode,
             streetName: user.streetName,
             suburb: user.suburb,
-            locationConfidence: user.locationConfidence
-          }
+            locationConfidence: user.locationConfidence,
+          },
         };
       }
     }
@@ -1085,7 +1194,9 @@ export class AuthService {
       try {
         // Get active academic year
         const academicYearResponse = await AcademicYearService.getActive();
-        const activeAcademicYear = academicYearResponse.success ? academicYearResponse.data?.academicYear : null;
+        const activeAcademicYear = academicYearResponse.success
+          ? academicYearResponse.data?.academicYear
+          : null;
 
         // Fetch student grades
         const studentGrades = await StudentGradeModel.findByStudentId(user.id);
@@ -1095,14 +1206,14 @@ export class AuthService {
 
         // Include grade details
         const gradesWithDetails = await Promise.all(
-          filteredGrades.map(async (sg) => {
+          filteredGrades.map(async sg => {
             const grade = await GradeModel.findById(sg.gradeId);
             return {
               id: sg.id,
               gradeId: sg.gradeId,
               gradeName: grade?.name || 'Unknown Grade',
               studyYear: sg.studyYear,
-              createdAt: sg.createdAt
+              createdAt: sg.createdAt,
             };
           })
         );
@@ -1121,8 +1232,8 @@ export class AuthService {
             zipcode: (user as any).zipcode,
             streetName: (user as any).streetName,
             suburb: (user as any).suburb,
-            locationConfidence: (user as any).locationConfidence
-          }
+            locationConfidence: (user as any).locationConfidence,
+          },
         };
       } catch (error) {
         console.error('Error getting enhanced student data:', error);
@@ -1140,8 +1251,8 @@ export class AuthService {
             zipcode: (user as any).zipcode,
             streetName: (user as any).streetName,
             suburb: (user as any).suburb,
-            locationConfidence: (user as any).locationConfidence
-          }
+            locationConfidence: (user as any).locationConfidence,
+          },
         };
       }
     }
@@ -1160,26 +1271,72 @@ export class AuthService {
         zipcode: (user as any).zipcode,
         streetName: (user as any).streetName,
         suburb: (user as any).suburb,
-        locationConfidence: (user as any).locationConfidence
-      }
+        locationConfidence: (user as any).locationConfidence,
+      },
     };
   }
 
-  static async updateProfile(userId: string, userType: string, profileData: any): Promise<any> {
+  static async updateProfile(
+    userId: string,
+    userType: string,
+    profileData: any
+  ): Promise<any> {
     try {
       const user = await UserModel.findById(userId);
       if (!user) {
-        return { success: false, message: 'المستخدم غير موجود', errors: ['المستخدم غير موجود'] };
+        return {
+          success: false,
+          message: 'المستخدم غير موجود',
+          errors: ['المستخدم غير موجود'],
+        };
       }
 
       // ✅ تحديد الحقول المسموح بها حسب الدور
       let allowedFields: string[];
       if (userType === 'teacher') {
-        allowedFields = ['name', 'phone', 'bio', 'experience_years', 'latitude', 'longitude', 'address', 'formatted_address', 'country', 'city', 'state', 'zipcode', 'street_name', 'suburb', 'location_confidence'];
+        allowedFields = [
+          'name',
+          'phone',
+          'bio',
+          'experience_years',
+          'latitude',
+          'longitude',
+          'address',
+          'formatted_address',
+          'country',
+          'city',
+          'state',
+          'zipcode',
+          'street_name',
+          'suburb',
+          'location_confidence',
+        ];
       } else if (userType === 'student') {
-        allowedFields = ['name', 'student_phone', 'parent_phone', 'school_name', 'gender', 'birth_date', 'address', 'latitude', 'longitude', 'formatted_address', 'country', 'city', 'state', 'zipcode', 'street_name', 'suburb', 'location_confidence'];
+        allowedFields = [
+          'name',
+          'student_phone',
+          'parent_phone',
+          'school_name',
+          'gender',
+          'birth_date',
+          'address',
+          'latitude',
+          'longitude',
+          'formatted_address',
+          'country',
+          'city',
+          'state',
+          'zipcode',
+          'street_name',
+          'suburb',
+          'location_confidence',
+        ];
       } else {
-        return { success: false, message: 'نوع المستخدم غير مدعوم', errors: ['نوع المستخدم غير مدعوم'] };
+        return {
+          success: false,
+          message: 'نوع المستخدم غير مدعوم',
+          errors: ['نوع المستخدم غير مدعوم'],
+        };
       }
 
       // ✅ فلترة البيانات حسب الدور
@@ -1207,8 +1364,10 @@ export class AuthService {
       }
 
       // ✅ إذا تم إرسال lat/lng ولم تُرسل تفاصيل العنوان، نجري Geocoding لملء الحقول
-      const hasLat = profileData.latitude !== undefined && profileData.latitude !== null;
-      const hasLng = profileData.longitude !== undefined && profileData.longitude !== null;
+      const hasLat =
+        profileData.latitude !== undefined && profileData.latitude !== null;
+      const hasLng =
+        profileData.longitude !== undefined && profileData.longitude !== null;
       const hasAnyAddressField =
         profileData.formatted_address !== undefined ||
         profileData.formattedAddress !== undefined ||
@@ -1228,7 +1387,10 @@ export class AuthService {
           const geocodingService = new GeocodingService();
           const latNum = Number(profileData.latitude);
           const lngNum = Number(profileData.longitude);
-          const details = await geocodingService.getLocationDetails(latNum, lngNum);
+          const details = await geocodingService.getLocationDetails(
+            latNum,
+            lngNum
+          );
           if (details) {
             filteredData['formatted_address'] = details.formattedAddress;
             filteredData['country'] = details.country;
@@ -1255,32 +1417,57 @@ export class AuthService {
         const raw = profileData?.profileImageBase64 as string | undefined;
         if (raw) {
           // بعض العملاء يرسلون Base64 بدون بادئة data: → نطبّعها كصورة jpeg افتراضياً
-          const base64 = raw.startsWith('data:image/') ? raw : `data:image/jpeg;base64,${raw}`;
+          const base64 = raw.startsWith('data:image/')
+            ? raw
+            : `data:image/jpeg;base64,${raw}`;
 
           // احذف الصورة القديمة إن وُجدت
-          const oldPath = (user as any)?.profileImagePath || (user as any)?.profile_image_path;
+          const oldPath =
+            (user as any)?.profileImagePath ||
+            (user as any)?.profile_image_path;
           if (oldPath) {
-            try { await ImageService.deleteUserAvatar(oldPath); } catch (delErr) { console.warn('delete avatar (updateProfile):', delErr); }
+            try {
+              await ImageService.deleteUserAvatar(oldPath);
+            } catch (delErr) {
+              console.warn('delete avatar (updateProfile):', delErr);
+            }
           }
 
           // احفظ الصورة الجديدة ومرّر المسار لقاعدة البيانات
-          const savedPath = await ImageService.saveUserAvatar(base64, `avatar_${user.id}`);
+          const savedPath = await ImageService.saveUserAvatar(
+            base64,
+            `avatar_${user.id}`
+          );
           filteredData['profile_image_path'] = savedPath;
         }
       } catch (imgErr) {
-        console.error('Failed processing profile avatar (updateProfile):', imgErr);
+        console.error(
+          'Failed processing profile avatar (updateProfile):',
+          imgErr
+        );
       }
 
       const updatedUser = await UserModel.update(userId, filteredData);
       if (!updatedUser) {
-        return { success: false, message: 'فشل في تحديث بيانات المستخدم', errors: ['فشل في تحديث بيانات المستخدم'] };
+        return {
+          success: false,
+          message: 'فشل في تحديث بيانات المستخدم',
+          errors: ['فشل في تحديث بيانات المستخدم'],
+        };
       }
 
-      return { success: true, message: 'تم تحديث البيانات بنجاح', data: { user: updatedUser } };
+      return {
+        success: true,
+        message: 'تم تحديث البيانات بنجاح',
+        data: { user: updatedUser },
+      };
     } catch (error) {
       console.error('Error in updateProfile service:', error);
-      return { success: false, message: 'حدث خطأ في الخادم', errors: ['حدث خطأ في الخادم'] };
+      return {
+        success: false,
+        message: 'حدث خطأ في الخادم',
+        errors: ['حدث خطأ في الخادم'],
+      };
     }
   }
-
 }

@@ -105,6 +105,17 @@ export class TokenModel {
     return result.rowCount || 0;
   }
 
+  // Delete all tokens for teacher users
+  static async deleteAllTeacherTokens(): Promise<number> {
+    const query = `
+      DELETE FROM tokens t
+      USING users u
+      WHERE t.user_id = u.id AND u.user_type = 'teacher'
+    `;
+    const result = await pool.query(query);
+    return result.rowCount || 0;
+  }
+
   // Get token count for a user
   static async getTokenCount(userId: string): Promise<number> {
     const query = `
