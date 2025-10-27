@@ -1143,10 +1143,10 @@ export class AuthService {
         );
 
         // Ensure and include QR info
-        let qr: { imagePath: string; publicUrl: string } | null = null;
+        let qr: string | null = null;
         try {
           const qrInfo = await QrService.ensureTeacherQr(user.id);
-          qr = { imagePath: qrInfo.imagePath, publicUrl: qrInfo.publicUrl };
+          qr = qrInfo.publicUrl;
         } catch (e) {
           console.error('Error ensuring teacher QR (enhanced):', e);
         }
