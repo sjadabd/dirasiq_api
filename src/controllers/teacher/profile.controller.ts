@@ -30,21 +30,6 @@ export class TeacherProfileController {
         return;
       }
 
-      // Parse trimming parameters
-      const startRaw = (req.body?.['start'] ?? req.query?.['start']) as any;
-      const endRaw = (req.body?.['end'] ?? req.query?.['end']) as any;
-      const start = startRaw !== undefined && startRaw !== null && startRaw !== '' ? Number(startRaw) : 0;
-      const end = endRaw !== undefined && endRaw !== null && endRaw !== '' ? Number(endRaw) : undefined;
-
-      if (!Number.isFinite(start) || start < 0) {
-        res.status(400).json({ success: false, message: 'قيمة البدء غير صحيحة', errors: ['start يجب أن يكون رقمًا أكبر أو يساوي 0'] });
-        return;
-      }
-      if (end !== undefined && (!Number.isFinite(end) || (end as number) <= start)) {
-        res.status(400).json({ success: false, message: 'قيمة النهاية غير صحيحة', errors: ['end يجب أن يكون رقمًا أكبر من start'] });
-        return;
-      }
-
       // Mark as processing
       await UserModel.update(user.id, {
         intro_video_status: 'processing',
@@ -52,17 +37,10 @@ export class TeacherProfileController {
 
       // Use uploaded temp file path from multer
       const tempPath = file.path;
-      let cutPath: string | undefined;
 
       try {
-        // If trimming is requested, cut the segment first
-        if ((start && start > 0) || (end !== undefined)) {
-          cutPath = await VideoService.trimSegment(tempPath, start, end);
-        }
-
-        const inputForHls = cutPath || tempPath;
-        // Transcode to HLS for the selected segment (or full video)
-        const result = await VideoService.transcodeToHLS(inputForHls, user.id);
+        // Transcode full uploaded video to HLS
+        const result = await VideoService.transcodeToHLS(tempPath, user.id);
 
         // Persist in DB
         const updated = await UserModel.update(user.id, {
@@ -100,9 +78,6 @@ export class TeacherProfileController {
         try {
           fs.unlinkSync(tempPath);
         } catch {}
-        if (cutPath) {
-          try { fs.unlinkSync(cutPath); } catch {}
-        }
       }
     } catch (error) {
       res
