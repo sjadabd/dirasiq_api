@@ -54,6 +54,116 @@ export class AuthController {
       });
     }
   }
+  // Apple web redirect callback: /auth/apple/callback?code=...&state=...
+  static async appleCallback(req: Request, res: Response): Promise<void> {
+    try {
+      const code = req.query['code'] as string | undefined;
+      const state = req.query['state'] as string | undefined;
+      // Allow passing userType via state or query for web flows
+      const userTypeParam =
+        (req.query['userType'] as string | undefined) || state;
+
+      if (!code) {
+        res.status(400).json({
+          success: false,
+          message: 'رمز المصادقة من Apple غير موجود',
+          errors: ['Missing authorization code'],
+        });
+        return;
+      }
+
+      if (!userTypeParam || !['teacher', 'student'].includes(userTypeParam)) {
+        res.status(400).json({
+          success: false,
+          message: 'نوع المستخدم غير صحيح أو غير مزود',
+          errors: ['userType must be teacher or student'],
+        });
+        return;
+      }
+
+      // Apple requires redirect_uri to match Services ID configuration exactly
+      const redirectUri = 'https://api.mulhimiq.com/api/auth/apple-redirect';
+      const exchange = await AppleAuthService.exchangeAuthorizationCode(
+        code,
+        redirectUri
+      );
+      if (!exchange.success || !exchange.data) {
+        res.status(400).json({
+          success: false,
+          message: 'فشل تبادل كود Apple',
+          errors: [exchange.error || 'Apple code exchange failed'],
+        });
+        return;
+      }
+
+      const idToken = exchange.data.id_token as string | undefined;
+      if (!idToken) {
+        res.status(400).json({
+          success: false,
+          message: 'لم يتم إرجاع id_token من Apple',
+          errors: ['Missing id_token in Apple response'],
+        });
+        return;
+      }
+
+      const verification = await AppleAuthService.verifyIdentityToken(idToken);
+      if (!verification.success || !verification.payload) {
+        res.status(400).json({
+          success: false,
+          message: 'فشل في التحقق من رمز Apple',
+          errors: [verification.error || 'Invalid Apple token'],
+        });
+        return;
+      }
+
+      const payload: any = verification.payload;
+      const email = payload.email;
+      const name = payload.name || (email ? email.split('@')[0] : undefined);
+      const sub = payload.sub;
+
+      if (!sub) {
+        res.status(400).json({
+          success: false,
+          message: 'بيانات Apple ناقصة',
+          errors: ['Missing Apple subject (sub)'],
+        });
+        return;
+      }
+
+      if (!email) {
+        res.status(400).json({
+          success: false,
+          message:
+            'لم يتم توفير بريد إلكتروني من Apple. الرجاء استخدام طريقة أخرى',
+          errors: ['Apple did not provide email'],
+        });
+        return;
+      }
+
+      const appleData: any = {
+        sub,
+        email,
+        name: name || email.split('@')[0],
+      };
+
+      const result = await AuthService.appleAuth(
+        appleData,
+        userTypeParam as 'teacher' | 'student'
+      );
+      if (result.success) {
+        res.status(200).json(result);
+      } else {
+        res.status(400).json(result);
+      }
+    } catch (error) {
+      console.error('Error in appleCallback controller:', error);
+      res.status(500).json({
+        success: false,
+        message: 'حدث خطأ في الخادم',
+        errors: ['حدث خطأ في الخادم'],
+      });
+    }
+  }
 
   // Apple Sign-in authentication
   static async appleAuth(req: Request, res: Response): Promise<void> {

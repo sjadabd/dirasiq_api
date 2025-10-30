@@ -45,6 +45,9 @@ router.get('/google/callback', async (req, res) => {
   });
 });
 
+// ✅ Apple Sign In redirect (للتوافق مع إعدادات Apple Services ID الجديدة)
+router.get('/apple-redirect', AuthController.appleCallback);
+
 
 // Protected routes (authentication required)
 router.post('/logout', authenticateToken, AuthController.logout);
