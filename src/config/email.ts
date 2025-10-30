@@ -17,16 +17,20 @@ const transporter = nodemailer.createTransport({
 export default transporter;
 
 // Send verification email
-export async function sendVerificationEmail(to: string, code: string, name: string): Promise<boolean> {
+export async function sendVerificationEmail(
+  to: string,
+  code: string,
+  name: string
+): Promise<boolean> {
   try {
     const mailOptions = {
       from: process.env['EMAIL_USER'],
       to,
-      subject: 'تحقق من بريدك الإلكتروني - Dirasiq',
+      subject: 'تحقق من بريدك الإلكتروني - MulhimIQ',
       html: `
         <div dir="rtl" style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
           <h2 style="color: #333;">مرحباً ${name}</h2>
-          <p>شكراً لك على التسجيل في منصة دراسيق التعليمية.</p>
+          <p>شكراً لك على التسجيل في منصة MulhimIQ التعليمية.</p>
           <p>رمز التحقق الخاص بك هو:</p>
           <div style="background-color: #f4f4f4; padding: 20px; text-align: center; margin: 20px 0;">
             <h1 style="color: #007bff; font-size: 32px; margin: 0;">${code}</h1>
@@ -34,9 +38,9 @@ export async function sendVerificationEmail(to: string, code: string, name: stri
           <p>هذا الرمز صالح لمدة 10 دقائق فقط.</p>
           <p>إذا لم تقم بالتسجيل، يمكنك تجاهل هذا البريد الإلكتروني.</p>
           <hr>
-          <p style="color: #666; font-size: 12px;">هذا البريد الإلكتروني تم إرساله تلقائياً من منصة دراسيق التعليمية.</p>
+          <p style="color: #666; font-size: 12px;">هذا البريد الإلكتروني تم إرساله تلقائياً من منصة MulhimIQ التعليمية.</p>
         </div>
-      `
+      `,
     };
 
     await transporter.sendMail(mailOptions);
@@ -48,12 +52,16 @@ export async function sendVerificationEmail(to: string, code: string, name: stri
 }
 
 // Send password reset email
-export async function sendPasswordResetEmail(to: string, code: string, name: string): Promise<boolean> {
+export async function sendPasswordResetEmail(
+  to: string,
+  code: string,
+  name: string
+): Promise<boolean> {
   try {
     const mailOptions = {
       from: process.env['EMAIL_USER'],
       to,
-      subject: 'إعادة تعيين كلمة المرور - Dirasiq',
+      subject: 'إعادة تعيين كلمة المرور - MulhimIQ',
       html: `
         <div dir="rtl" style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
           <h2 style="color: #333;">مرحباً ${name}</h2>
@@ -65,9 +73,9 @@ export async function sendPasswordResetEmail(to: string, code: string, name: str
           <p>هذا الرمز صالح لمدة 10 دقائق فقط.</p>
           <p>إذا لم تطلب إعادة تعيين كلمة المرور، يمكنك تجاهل هذا البريد الإلكتروني.</p>
           <hr>
-          <p style="color: #666; font-size: 12px;">هذا البريد الإلكتروني تم إرساله تلقائياً من منصة دراسيق التعليمية.</p>
+          <p style="color: #666; font-size: 12px;">هذا البريد الإلكتروني تم إرساله تلقائياً من منصة MulhimIQ التعليمية.</p>
         </div>
-      `
+      `,
     };
 
     await transporter.sendMail(mailOptions);

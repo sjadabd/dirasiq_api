@@ -1,7 +1,7 @@
 {
-  "name": "dirasiq-api",
+  "name": "mulhimiq-api",
   "version": "1.0.0",
-  "description": "Professional API for Dirasiq platform",
+  "description": "Professional API for Mulhimiq platform",
   "main": "dist/index.js",
   "scripts": {
     "dev": "nodemon src/index.ts",
@@ -21,7 +21,7 @@
     "typescript",
     "postgresql"
   ],
-  "author": "Dirasiq Team",
+  "author": "Mulhimiq Team",
   "license": "MIT",
   "dependencies": {
     "@prisma/client": "6.15.0",

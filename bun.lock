@@ -2,7 +2,7 @@
   "lockfileVersion": 1,
   "workspaces": {
     "": {
-      "name": "dirasiq-api",
+      "name": "mulhimiq-api",
       "dependencies": {
         "@prisma/client": "6.15.0",
         "@types/node-cron": "3.0.11",

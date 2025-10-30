@@ -8,6 +8,7 @@
 ## [Unreleased]
 
 ### Added
+
 - Initial project setup with TypeScript
 - PostgreSQL database integration
 - User authentication system with JWT
@@ -27,6 +28,7 @@
   - **UPDATED**: Location fields are now part of the main users table creation migration
 
 ### Security
+
 - JWT token management with database storage
 - Password hashing with bcrypt
 - Input validation and sanitization
@@ -37,7 +39,8 @@
 ## [1.0.0] - 2024-01-01
 
 ### Added
-- Initial release of Dirasiq API
+
+- Initial release of Mulhimiq API
 - Complete authentication system
 - Database migrations
 - API endpoints for user management
@@ -47,6 +50,7 @@
 - Health check endpoint
 
 ### Technical Details
+
 - Node.js with TypeScript
 - Express.js framework
 - PostgreSQL database
