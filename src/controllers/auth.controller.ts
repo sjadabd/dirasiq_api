@@ -1,8 +1,9 @@
 import { Request, Response } from 'express';
 import { body, validationResult } from 'express-validator';
+import { AppleAuthService } from '../services/apple-auth.service';
 import { AuthService } from '../services/auth.service';
 import { GoogleAuthService } from '../services/google-auth.service';
-import { AcademicYearService } from "../services/super_admin/academic-year.service";
+import { AcademicYearService } from '../services/super_admin/academic-year.service';
 import { SubscriptionPackageService } from '../services/super_admin/subscription-package.service';
 import { TeacherSubscriptionService } from '../services/teacher-subscription.service';
 
@@ -19,7 +20,7 @@ export class AuthController {
           .withMessage('كلمة المرور يجب أن تكون 8 أحرف على الأقل')
           .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/)
           .withMessage('كلمة المرور يجب أن تحتوي على حرف كبير وحرف صغير ورقم')
-          .run(req)
+          .run(req),
       ]);
 
       const errors = validationResult(req);
@@ -27,13 +28,17 @@ export class AuthController {
         res.status(400).json({
           success: false,
           message: 'فشل في التحقق من البيانات',
-          errors: errors.array().map(err => err.msg)
+          errors: errors.array().map(err => err.msg),
         });
         return;
       }
 
       const { name, email, password } = req.body;
-      const result = await AuthService.registerSuperAdmin({ name, email, password });
+      const result = await AuthService.registerSuperAdmin({
+        name,
+        email,
+        password,
+      });
 
       if (result.success) {
         res.status(201).json(result);
@@ -45,7 +50,106 @@ export class AuthController {
       res.status(500).json({
         success: false,
         message: 'حدث خطأ في الخادم',
-        errors: ['حدث خطأ في الخادم']
+        errors: ['حدث خطأ في الخادم'],
+      });
+    }
+  }
+
+  // Apple Sign-in authentication
+  static async appleAuth(req: Request, res: Response): Promise<void> {
+    try {
+      await Promise.all([
+        body('identityToken')
+          .isString()
+          .withMessage('identityToken is required')
+          .run(req),
+        body('authorizationCode')
+          .optional()
+          .isString()
+          .withMessage('authorizationCode must be a string')
+          .run(req),
+        body('userType')
+          .isIn(['teacher', 'student'])
+          .withMessage('User type must be teacher or student')
+          .run(req),
+        body('firstName').optional().isString().run(req),
+        body('lastName').optional().isString().run(req),
+        body('oneSignalPlayerId').optional().isString().run(req),
+      ]);
+
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        res.status(400).json({
+          success: false,
+          message: 'فشل في التحقق من البيانات',
+          errors: errors.array().map(e => e.msg),
+        });
+        return;
+      }
+
+      const {
+        identityToken,
+        userType,
+        firstName,
+        lastName,
+        oneSignalPlayerId,
+      } = req.body;
+
+      const verification =
+        await AppleAuthService.verifyIdentityToken(identityToken);
+      if (!verification.success || !verification.payload) {
+        res.status(400).json({
+          success: false,
+          message: 'فشل في التحقق من بيانات Apple',
+          errors: [verification.error || 'Invalid Apple token'],
+        });
+        return;
+      }
+
+      const payload: any = verification.payload;
+      const email = payload.email;
+      const name =
+        payload.name || [firstName, lastName].filter(Boolean).join(' ').trim();
+      const sub = payload.sub;
+
+      if (!sub) {
+        res.status(400).json({
+          success: false,
+          message: 'بيانات Apple ناقصة',
+          errors: ['Missing Apple subject (sub)'],
+        });
+        return;
+      }
+
+      if (!email) {
+        res.status(400).json({
+          success: false,
+          message: 'البريد الإلكتروني من Apple غير متاح',
+          errors: ['Apple did not provide email'],
+        });
+        return;
+      }
+
+      const appleData: any = {
+        sub,
+        email,
+        name: name || email.split('@')[0],
+        oneSignalPlayerId,
+      };
+
+      const result = await AuthService.appleAuth(appleData, userType);
+
+      if (result.success) {
+        res.status(200).json(result);
+      } else {
+        res.status(400).json(result);
+      }
+    } catch (error) {
+      console.error('Error in appleAuth controller:', error);
+      res.status(500).json({
+        success: false,
+        message: 'حدث خطأ في الخادم',
+        errors: ['حدث خطأ في الخادم'],
       });
     }
   }
@@ -58,27 +162,79 @@ export class AuthController {
         body('name').notEmpty().withMessage('الاسم مطلوب').run(req),
         body('email').isEmail().withMessage('البريد الإلكتروني مطلوب').run(req),
         body('password')
-          .isLength({ min: 8 }).withMessage('كلمة المرور يجب أن تكون 8 أحرف على الأقل')
+          .isLength({ min: 8 })
+          .withMessage('كلمة المرور يجب أن تكون 8 أحرف على الأقل')
           .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/)
-          .withMessage('كلمة المرور يجب أن تحتوي على حرف كبير وحرف صغير ورقم').run(req),
+          .withMessage('كلمة المرور يجب أن تحتوي على حرف كبير وحرف صغير ورقم')
+          .run(req),
         body('phone').notEmpty().withMessage('رقم الهاتف مطلوب').run(req),
         body('address').notEmpty().withMessage('العنوان مطلوب').run(req),
         body('bio').notEmpty().withMessage('النبذة الشخصية مطلوبة').run(req),
-        body('experienceYears').isInt({ min: 0 }).withMessage('سنوات الخبرة مطلوبة').run(req),
-        body('gradeIds').isArray({ min: 1 }).withMessage('معرف الصف مطلوب').run(req),
+        body('experienceYears')
+          .isInt({ min: 0 })
+          .withMessage('سنوات الخبرة مطلوبة')
+          .run(req),
+        body('gradeIds')
+          .isArray({ min: 1 })
+          .withMessage('معرف الصف مطلوب')
+          .run(req),
         body('gradeIds.*').isUUID().withMessage('الصف غير موجود').run(req),
-        body('studyYear').notEmpty().withMessage('السنة الدراسية مطلوبة')
-          .matches(/^[0-9]{4}-[0-9]{4}$/).withMessage('تنسيق السنة الدراسية غير صحيح').run(req),
-        body('latitude').optional().isFloat({ min: -90, max: 90 }).withMessage('خط العرض غير صحيح').run(req),
-        body('longitude').optional().isFloat({ min: -180, max: 180 }).withMessage('خط الطول غير صحيح').run(req),
-        body('formattedAddress').optional().isLength({ max: 1000 }).withMessage('العنوان طويل جداً').run(req),
-        body('country').optional().isLength({ max: 100 }).withMessage('اسم البلد طويل جداً').run(req),
-        body('city').optional().isLength({ max: 100 }).withMessage('اسم المدينة طويل جداً').run(req),
-        body('state').optional().isLength({ max: 100 }).withMessage('اسم المحافظة طويل جداً').run(req),
-        body('zipcode').optional().isLength({ max: 20 }).withMessage('الرمز البريدي طويل جداً').run(req),
-        body('streetName').optional().isLength({ max: 255 }).withMessage('اسم الشارع طويل جداً').run(req),
-        body('suburb').optional().isLength({ max: 100 }).withMessage('اسم الحي طويل جداً').run(req),
-        body('locationConfidence').optional().isFloat({ min: 0, max: 1 }).withMessage('ثقة الموقع غير صحيحة').run(req),
+        body('studyYear')
+          .notEmpty()
+          .withMessage('السنة الدراسية مطلوبة')
+          .matches(/^[0-9]{4}-[0-9]{4}$/)
+          .withMessage('تنسيق السنة الدراسية غير صحيح')
+          .run(req),
+        body('latitude')
+          .optional()
+          .isFloat({ min: -90, max: 90 })
+          .withMessage('خط العرض غير صحيح')
+          .run(req),
+        body('longitude')
+          .optional()
+          .isFloat({ min: -180, max: 180 })
+          .withMessage('خط الطول غير صحيح')
+          .run(req),
+        body('formattedAddress')
+          .optional()
+          .isLength({ max: 1000 })
+          .withMessage('العنوان طويل جداً')
+          .run(req),
+        body('country')
+          .optional()
+          .isLength({ max: 100 })
+          .withMessage('اسم البلد طويل جداً')
+          .run(req),
+        body('city')
+          .optional()
+          .isLength({ max: 100 })
+          .withMessage('اسم المدينة طويل جداً')
+          .run(req),
+        body('state')
+          .optional()
+          .isLength({ max: 100 })
+          .withMessage('اسم المحافظة طويل جداً')
+          .run(req),
+        body('zipcode')
+          .optional()
+          .isLength({ max: 20 })
+          .withMessage('الرمز البريدي طويل جداً')
+          .run(req),
+        body('streetName')
+          .optional()
+          .isLength({ max: 255 })
+          .withMessage('اسم الشارع طويل جداً')
+          .run(req),
+        body('suburb')
+          .optional()
+          .isLength({ max: 100 })
+          .withMessage('اسم الحي طويل جداً')
+          .run(req),
+        body('locationConfidence')
+          .optional()
+          .isFloat({ min: 0, max: 1 })
+          .withMessage('ثقة الموقع غير صحيحة')
+          .run(req),
       ]);
 
       const errors = validationResult(req);
@@ -93,14 +249,41 @@ export class AuthController {
 
       // 2) Build teacher data
       const {
-        name, email, password, phone, address, bio, experienceYears,
-        visitorId, deviceInfo, gradeIds, studyYear,
-        latitude, longitude, formattedAddress, country, city, state, zipcode, streetName, suburb, locationConfidence,
+        name,
+        email,
+        password,
+        phone,
+        address,
+        bio,
+        experienceYears,
+        visitorId,
+        deviceInfo,
+        gradeIds,
+        studyYear,
+        latitude,
+        longitude,
+        formattedAddress,
+        country,
+        city,
+        state,
+        zipcode,
+        streetName,
+        suburb,
+        locationConfidence,
       } = req.body;
 
       const teacherData: any = {
-        name, email, password, phone, address, bio, experienceYears,
-        visitorId, deviceInfo, gradeIds, studyYear,
+        name,
+        email,
+        password,
+        phone,
+        address,
+        bio,
+        experienceYears,
+        visitorId,
+        deviceInfo,
+        gradeIds,
+        studyYear,
       };
       if (latitude) teacherData.latitude = Number(latitude);
       if (longitude) teacherData.longitude = Number(longitude);
@@ -111,7 +294,8 @@ export class AuthController {
       if (zipcode) teacherData.zipcode = zipcode;
       if (streetName) teacherData.streetName = streetName;
       if (suburb) teacherData.suburb = suburb;
-      if (locationConfidence !== undefined) teacherData.locationConfidence = Number(locationConfidence);
+      if (locationConfidence !== undefined)
+        teacherData.locationConfidence = Number(locationConfidence);
 
       // 3) Register teacher (Service)
       const result = await AuthService.registerTeacher(teacherData);
@@ -145,7 +329,9 @@ export class AuthController {
 
       // 5) Create teacher subscription based on package duration
       const startDate = new Date();
-      const endDate = new Date(startDate.getTime() + pkg.durationDays * 24 * 60 * 60 * 1000);
+      const endDate = new Date(
+        startDate.getTime() + pkg.durationDays * 24 * 60 * 60 * 1000
+      );
 
       const teacherSubscription = await TeacherSubscriptionService.create({
         teacherId: result.data?.user?.id ?? result.data?.teacherId, // وفق بنية استجابتك
@@ -191,40 +377,68 @@ export class AuthController {
     try {
       // ✅ التحقق من الفاليديشن (بدون studyYear)
       await Promise.all([
-        body("name").notEmpty().withMessage("الاسم مطلوب").run(req),
-        body("email").isEmail().withMessage("البريد الإلكتروني غير صحيح").run(req),
-        body("password")
+        body('name').notEmpty().withMessage('الاسم مطلوب').run(req),
+        body('email')
+          .isEmail()
+          .withMessage('البريد الإلكتروني غير صحيح')
+          .run(req),
+        body('password')
           .isLength({ min: 8 })
-          .withMessage("كلمة المرور يجب أن تكون 8 أحرف على الأقل")
+          .withMessage('كلمة المرور يجب أن تكون 8 أحرف على الأقل')
           .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/)
-          .withMessage("كلمة المرور يجب أن تحتوي على حرف كبير وحرف صغير ورقم")
+          .withMessage('كلمة المرور يجب أن تحتوي على حرف كبير وحرف صغير ورقم')
           .run(req),
-        body("studentPhone")
+        body('studentPhone')
           .optional()
           .isLength({ min: 10, max: 15 })
-          .withMessage("رقم هاتف الطالب يجب أن يحتوي على 10 إلى 15 رقم")
+          .withMessage('رقم هاتف الطالب يجب أن يحتوي على 10 إلى 15 رقم')
           .run(req),
-        body("parentPhone")
+        body('parentPhone')
           .optional()
           .isLength({ min: 10, max: 15 })
-          .withMessage("رقم هاتف ولي الأمر يجب أن يحتوي على 10 إلى 15 رقم")
+          .withMessage('رقم هاتف ولي الأمر يجب أن يحتوي على 10 إلى 15 رقم')
           .run(req),
-        body("schoolName").optional().isLength({ max: 255 }).withMessage("اسم المدرسة طويل جداً").run(req),
-        body("gender").optional().isIn(["male", "female"]).withMessage("الجنس غير صحيح").run(req),
-        body("birthDate").optional().isISO8601().withMessage("تنسيق تاريخ الميلاد غير صحيح").run(req),
-        body("gradeId").notEmpty().withMessage("معرف الصف مطلوب").isUUID().withMessage("الصف غير موجود").run(req),
-        body("latitude").optional().isFloat({ min: -90, max: 90 }).withMessage("خط العرض غير صحيح").run(req),
-        body("longitude").optional().isFloat({ min: -180, max: 180 }).withMessage("خط الطول غير صحيح").run(req),
+        body('schoolName')
+          .optional()
+          .isLength({ max: 255 })
+          .withMessage('اسم المدرسة طويل جداً')
+          .run(req),
+        body('gender')
+          .optional()
+          .isIn(['male', 'female'])
+          .withMessage('الجنس غير صحيح')
+          .run(req),
+        body('birthDate')
+          .optional()
+          .isISO8601()
+          .withMessage('تنسيق تاريخ الميلاد غير صحيح')
+          .run(req),
+        body('gradeId')
+          .notEmpty()
+          .withMessage('معرف الصف مطلوب')
+          .isUUID()
+          .withMessage('الصف غير موجود')
+          .run(req),
+        body('latitude')
+          .optional()
+          .isFloat({ min: -90, max: 90 })
+          .withMessage('خط العرض غير صحيح')
+          .run(req),
+        body('longitude')
+          .optional()
+          .isFloat({ min: -180, max: 180 })
+          .withMessage('خط الطول غير صحيح')
+          .run(req),
       ]);
 
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        console.error("❌ Validation errors:", errors.array()); // 👈 اطبع الأخطاء
+        console.error('❌ Validation errors:', errors.array()); // 👈 اطبع الأخطاء
 
         res.status(400).json({
           success: false,
-          message: "فشل في التحقق من البيانات",
-          errors: errors.array().map((err) => err.msg),
+          message: 'فشل في التحقق من البيانات',
+          errors: errors.array().map(err => err.msg),
         });
         return;
       }
@@ -248,7 +462,7 @@ export class AuthController {
       if (!activeYearResult.success || !activeYearResult.data) {
         res.status(400).json({
           success: false,
-          message: "لا توجد سنة دراسية مفعّلة حالياً",
+          message: 'لا توجد سنة دراسية مفعّلة حالياً',
         });
         return;
       }
@@ -282,15 +496,14 @@ export class AuthController {
         res.status(400).json(result);
       }
     } catch (error) {
-      console.error("Error in registerStudent controller:", error);
+      console.error('Error in registerStudent controller:', error);
       res.status(500).json({
         success: false,
-        message: "حدث خطأ في الخادم",
-        errors: ["حدث خطأ في الخادم"],
+        message: 'حدث خطأ في الخادم',
+        errors: ['حدث خطأ في الخادم'],
       });
     }
   }
-
 
   // Login user
   static async login(req: Request, res: Response): Promise<void> {
@@ -307,12 +520,18 @@ export class AuthController {
 
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        res.status(400).json({ success: false, errors: errors.array().map(e => e.msg) });
+        res
+          .status(400)
+          .json({ success: false, errors: errors.array().map(e => e.msg) });
         return;
       }
 
       const { email, password, oneSignalPlayerId } = req.body;
-      const result = await AuthService.login({ email, password, oneSignalPlayerId });
+      const result = await AuthService.login({
+        email,
+        password,
+        oneSignalPlayerId,
+      });
 
       if (result.success) {
         res.status(200).json(result);
@@ -335,7 +554,7 @@ export class AuthController {
         res.status(400).json({
           success: false,
           message: 'رمز المصادقة مطلوب',
-          errors: ['لم يتم توفير رمز المصادقة']
+          errors: ['لم يتم توفير رمز المصادقة'],
         });
         return;
       }
@@ -352,7 +571,7 @@ export class AuthController {
       res.status(500).json({
         success: false,
         message: 'حدث خطأ في الخادم',
-        errors: ['حدث خطأ في الخادم']
+        errors: ['حدث خطأ في الخادم'],
       });
     }
   }
@@ -363,8 +582,16 @@ export class AuthController {
       // Validate request body
       await Promise.all([
         body('email').isEmail().withMessage('البريد الإلكتروني مطلوب').run(req),
-        body('code').optional().isLength({ min: 6, max: 6 }).withMessage('رمز التحقق يجب أن يكون 6 أرقام').run(req),
-        body('verificationToken').optional().isLength({ min: 6, max: 6 }).withMessage('رمز التحقق يجب أن يكون 6 أرقام').run(req)
+        body('code')
+          .optional()
+          .isLength({ min: 6, max: 6 })
+          .withMessage('رمز التحقق يجب أن يكون 6 أرقام')
+          .run(req),
+        body('verificationToken')
+          .optional()
+          .isLength({ min: 6, max: 6 })
+          .withMessage('رمز التحقق يجب أن يكون 6 أرقام')
+          .run(req),
       ]);
 
       const errors = validationResult(req);
@@ -372,7 +599,7 @@ export class AuthController {
         res.status(400).json({
           success: false,
           message: 'فشل في التحقق من البيانات',
-          errors: errors.array().map(err => err.msg)
+          errors: errors.array().map(err => err.msg),
         });
         return;
       }
@@ -386,7 +613,7 @@ export class AuthController {
         res.status(400).json({
           success: false,
           message: 'فشل في التحقق من البيانات',
-          errors: ['رمز التحقق مطلوب']
+          errors: ['رمز التحقق مطلوب'],
         });
         return;
       }
@@ -403,23 +630,29 @@ export class AuthController {
       res.status(500).json({
         success: false,
         message: 'حدث خطأ في الخادم',
-        errors: ['حدث خطأ في الخادم']
+        errors: ['حدث خطأ في الخادم'],
       });
     }
   }
 
   // Resend verification code
-  static async resendVerificationCode(req: Request, res: Response): Promise<void> {
+  static async resendVerificationCode(
+    req: Request,
+    res: Response
+  ): Promise<void> {
     try {
       // Validate request body
-      await body('email').isEmail().withMessage('البريد الإلكتروني مطلوب').run(req);
+      await body('email')
+        .isEmail()
+        .withMessage('البريد الإلكتروني مطلوب')
+        .run(req);
 
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
         res.status(400).json({
           success: false,
           message: 'فشل في التحقق من البيانات',
-          errors: errors.array().map(err => err.msg)
+          errors: errors.array().map(err => err.msg),
         });
         return;
       }
@@ -437,23 +670,29 @@ export class AuthController {
       res.status(500).json({
         success: false,
         message: 'حدث خطأ في الخادم',
-        errors: ['حدث خطأ في الخادم']
+        errors: ['حدث خطأ في الخادم'],
       });
     }
   }
 
   // Request password reset
-  static async requestPasswordReset(req: Request, res: Response): Promise<void> {
+  static async requestPasswordReset(
+    req: Request,
+    res: Response
+  ): Promise<void> {
     try {
       // Validate request body
-      await body('email').isEmail().withMessage('البريد الإلكتروني مطلوب').run(req);
+      await body('email')
+        .isEmail()
+        .withMessage('البريد الإلكتروني مطلوب')
+        .run(req);
 
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
         res.status(400).json({
           success: false,
           message: 'فشل في التحقق من البيانات',
-          errors: errors.array().map(err => err.msg)
+          errors: errors.array().map(err => err.msg),
         });
         return;
       }
@@ -471,7 +710,7 @@ export class AuthController {
       res.status(500).json({
         success: false,
         message: 'حدث خطأ في الخادم',
-        errors: ['حدث خطأ في الخادم']
+        errors: ['حدث خطأ في الخادم'],
       });
     }
   }
@@ -482,14 +721,22 @@ export class AuthController {
       // Validate request body
       await Promise.all([
         body('email').isEmail().withMessage('البريد الإلكتروني مطلوب').run(req),
-        body('code').optional().isLength({ min: 6, max: 6 }).withMessage('رمز إعادة التعيين يجب أن يكون 6 أرقام').run(req),
-        body('resetToken').optional().isLength({ min: 6, max: 6 }).withMessage('رمز إعادة التعيين يجب أن يكون 6 أرقام').run(req),
+        body('code')
+          .optional()
+          .isLength({ min: 6, max: 6 })
+          .withMessage('رمز إعادة التعيين يجب أن يكون 6 أرقام')
+          .run(req),
+        body('resetToken')
+          .optional()
+          .isLength({ min: 6, max: 6 })
+          .withMessage('رمز إعادة التعيين يجب أن يكون 6 أرقام')
+          .run(req),
         body('newPassword')
           .isLength({ min: 8 })
           .withMessage('كلمة المرور يجب أن تكون 8 أحرف على الأقل')
           .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/)
           .withMessage('كلمة المرور يجب أن تحتوي على حرف كبير وحرف صغير ورقم')
-          .run(req)
+          .run(req),
       ]);
 
       const errors = validationResult(req);
@@ -497,7 +744,7 @@ export class AuthController {
         res.status(400).json({
           success: false,
           message: 'فشل في التحقق من البيانات',
-          errors: errors.array().map(err => err.msg)
+          errors: errors.array().map(err => err.msg),
         });
         return;
       }
@@ -511,12 +758,16 @@ export class AuthController {
         res.status(400).json({
           success: false,
           message: 'فشل في التحقق من البيانات',
-          errors: ['رمز إعادة التعيين مطلوب']
+          errors: ['رمز إعادة التعيين مطلوب'],
         });
         return;
       }
 
-      const result = await AuthService.resetPassword(email, resetCode, newPassword);
+      const result = await AuthService.resetPassword(
+        email,
+        resetCode,
+        newPassword
+      );
 
       if (result.success) {
         res.status(200).json(result);
@@ -528,7 +779,7 @@ export class AuthController {
       res.status(500).json({
         success: false,
         message: 'حدث خطأ في الخادم',
-        errors: ['حدث خطأ في الخادم']
+        errors: ['حدث خطأ في الخادم'],
       });
     }
   }
@@ -538,9 +789,20 @@ export class AuthController {
     try {
       // Validate request body
       await Promise.all([
-        body('googleToken').optional().isString().withMessage('Google token must be a string').run(req),
-        body('googleData').optional().isObject().withMessage('Google data is required').run(req),
-        body('userType').isIn(['teacher', 'student']).withMessage('User type must be teacher or student').run(req)
+        body('googleToken')
+          .optional()
+          .isString()
+          .withMessage('Google token must be a string')
+          .run(req),
+        body('googleData')
+          .optional()
+          .isObject()
+          .withMessage('Google data is required')
+          .run(req),
+        body('userType')
+          .isIn(['teacher', 'student'])
+          .withMessage('User type must be teacher or student')
+          .run(req),
       ]);
 
       const errors = validationResult(req);
@@ -548,7 +810,7 @@ export class AuthController {
         res.status(400).json({
           success: false,
           message: 'فشل في التحقق من البيانات',
-          errors: errors.array().map(err => err.msg)
+          errors: errors.array().map(err => err.msg),
         });
         return;
       }
@@ -559,13 +821,14 @@ export class AuthController {
 
       // Method 1: Verify Google JWT token (recommended)
       if (googleToken) {
-        const verification = await GoogleAuthService.verifyGoogleToken(googleToken);
+        const verification =
+          await GoogleAuthService.verifyGoogleToken(googleToken);
 
         if (!verification.success) {
           res.status(400).json({
             success: false,
             message: 'فشل في التحقق من بيانات Google',
-            errors: [verification.error || 'Invalid Google token']
+            errors: [verification.error || 'Invalid Google token'],
           });
           return;
         }
@@ -574,40 +837,45 @@ export class AuthController {
       }
       // Method 2: Validate provided Google data (fallback)
       else if (googleData) {
-        const validation = await GoogleAuthService.verifyGoogleDataWithSecurity(googleData);
+        const validation =
+          await GoogleAuthService.verifyGoogleDataWithSecurity(googleData);
 
         if (!validation.success) {
           res.status(400).json({
             success: false,
             message: 'بيانات Google غير صحيحة',
-            errors: validation.errors
+            errors: validation.errors,
           });
           return;
         }
 
         verifiedGoogleData = validation.data;
-      }
-      else {
+      } else {
         res.status(400).json({
           success: false,
           message: 'مطلوب إما Google token أو Google data',
-          errors: ['Either googleToken or googleData is required']
+          errors: ['Either googleToken or googleData is required'],
         });
         return;
       }
 
       // Validate required fields
-      if (!verifiedGoogleData.email || !verifiedGoogleData.name || !verifiedGoogleData.sub) {
+      if (
+        !verifiedGoogleData.email ||
+        !verifiedGoogleData.name ||
+        !verifiedGoogleData.sub
+      ) {
         res.status(400).json({
           success: false,
           message: 'بيانات Google ناقصة',
-          errors: ['Missing required Google data fields']
+          errors: ['Missing required Google data fields'],
         });
         return;
       }
 
       // 👇 ضيف oneSignalPlayerId لو موجود بالـ request
-      const oneSignalPlayerId = googleData?.oneSignalPlayerId || req.body.oneSignalPlayerId;
+      const oneSignalPlayerId =
+        googleData?.oneSignalPlayerId || req.body.oneSignalPlayerId;
       if (oneSignalPlayerId) {
         verifiedGoogleData.oneSignalPlayerId = oneSignalPlayerId;
       }
@@ -624,7 +892,7 @@ export class AuthController {
       res.status(500).json({
         success: false,
         message: 'حدث خطأ في الخادم',
-        errors: ['حدث خطأ في الخادم']
+        errors: ['حدث خطأ في الخادم'],
       });
     }
   }
@@ -650,46 +918,175 @@ export class AuthController {
           body('name').notEmpty().withMessage('الاسم مطلوب').run(req),
           body('phone').notEmpty().withMessage('رقم الهاتف مطلوب').run(req),
           body('bio').notEmpty().withMessage('النبذة الشخصية مطلوبة').run(req),
-          body('experienceYears').isInt({ min: 0 }).withMessage('سنوات الخبرة مطلوبة').run(req),
-          body('gradeIds').isArray({ min: 1 }).withMessage('معرف الصف مطلوب').run(req),
+          body('experienceYears')
+            .isInt({ min: 0 })
+            .withMessage('سنوات الخبرة مطلوبة')
+            .run(req),
+          body('gradeIds')
+            .isArray({ min: 1 })
+            .withMessage('معرف الصف مطلوب')
+            .run(req),
           body('gradeIds.*').isUUID().withMessage('الصف غير موجود').run(req),
-          body('studyYear').notEmpty().withMessage('السنة الدراسية مطلوبة')
-            .matches(/^[0-9]{4}-[0-9]{4}$/).withMessage('تنسيق السنة الدراسية غير صحيح').run(req),
-          body('latitude').isFloat({ min: -90, max: 90 }).withMessage('خط العرض غير صحيح').run(req),
-          body('longitude').isFloat({ min: -180, max: 180 }).withMessage('خط الطول غير صحيح').run(req),
-          body('address').optional().isLength({ max: 1000 }).withMessage('العنوان طويل جداً').run(req),
-          body('formattedAddress').optional().isLength({ max: 1000 }).withMessage('العنوان المنسق طويل جداً').run(req),
-          body('country').optional().isLength({ max: 100 }).withMessage('اسم البلد طويل جداً').run(req),
-          body('city').optional().isLength({ max: 100 }).withMessage('اسم المدينة طويل جداً').run(req),
-          body('state').optional().isLength({ max: 100 }).withMessage('اسم المحافظة طويل جداً').run(req),
-          body('zipcode').optional().isLength({ max: 20 }).withMessage('الرمز البريدي طويل جداً').run(req),
-          body('streetName').optional().isLength({ max: 255 }).withMessage('اسم الشارع طويل جداً').run(req),
-          body('suburb').optional().isLength({ max: 100 }).withMessage('اسم الحي طويل جداً').run(req),
-          body('locationConfidence').optional().isFloat({ min: 0, max: 1 }).withMessage('ثقة الموقع غير صحيحة').run(req),
-          body('gender').optional().isIn(['male', 'female']).withMessage('الجنس غير صحيح').run(req),
-          body('birthDate').optional().isISO8601().withMessage('تنسيق تاريخ الميلاد غير صحيح').run(req)
+          body('studyYear')
+            .notEmpty()
+            .withMessage('السنة الدراسية مطلوبة')
+            .matches(/^[0-9]{4}-[0-9]{4}$/)
+            .withMessage('تنسيق السنة الدراسية غير صحيح')
+            .run(req),
+          body('latitude')
+            .isFloat({ min: -90, max: 90 })
+            .withMessage('خط العرض غير صحيح')
+            .run(req),
+          body('longitude')
+            .isFloat({ min: -180, max: 180 })
+            .withMessage('خط الطول غير صحيح')
+            .run(req),
+          body('address')
+            .optional()
+            .isLength({ max: 1000 })
+            .withMessage('العنوان طويل جداً')
+            .run(req),
+          body('formattedAddress')
+            .optional()
+            .isLength({ max: 1000 })
+            .withMessage('العنوان المنسق طويل جداً')
+            .run(req),
+          body('country')
+            .optional()
+            .isLength({ max: 100 })
+            .withMessage('اسم البلد طويل جداً')
+            .run(req),
+          body('city')
+            .optional()
+            .isLength({ max: 100 })
+            .withMessage('اسم المدينة طويل جداً')
+            .run(req),
+          body('state')
+            .optional()
+            .isLength({ max: 100 })
+            .withMessage('اسم المحافظة طويل جداً')
+            .run(req),
+          body('zipcode')
+            .optional()
+            .isLength({ max: 20 })
+            .withMessage('الرمز البريدي طويل جداً')
+            .run(req),
+          body('streetName')
+            .optional()
+            .isLength({ max: 255 })
+            .withMessage('اسم الشارع طويل جداً')
+            .run(req),
+          body('suburb')
+            .optional()
+            .isLength({ max: 100 })
+            .withMessage('اسم الحي طويل جداً')
+            .run(req),
+          body('locationConfidence')
+            .optional()
+            .isFloat({ min: 0, max: 1 })
+            .withMessage('ثقة الموقع غير صحيحة')
+            .run(req),
+          body('gender')
+            .optional()
+            .isIn(['male', 'female'])
+            .withMessage('الجنس غير صحيح')
+            .run(req),
+          body('birthDate')
+            .optional()
+            .isISO8601()
+            .withMessage('تنسيق تاريخ الميلاد غير صحيح')
+            .run(req),
         ]);
       } else if (userType === 'student') {
         await Promise.all([
-          body('gradeId').notEmpty().withMessage('معرف الصف مطلوب').isUUID().withMessage('الصف غير موجود').run(req),
-          body('studyYear').notEmpty().withMessage('السنة الدراسية مطلوبة')
-            .matches(/^[0-9]{4}-[0-9]{4}$/).withMessage('تنسيق السنة الدراسية غير صحيح').run(req),
-          body('latitude').isFloat({ min: -90, max: 90 }).withMessage('خط العرض غير صحيح').run(req),
-          body('longitude').isFloat({ min: -180, max: 180 }).withMessage('خط الطول غير صحيح').run(req),
-          body('studentPhone').notEmpty().withMessage('رقم الهاتف مطلوب').run(req),
-          body('parentPhone').notEmpty().withMessage('رقم الهاتف مطلوب').run(req),
-          body('schoolName').optional().isLength({ max: 255 }).withMessage('اسم المدرسة طويل جداً').run(req),
-          body('gender').optional().isIn(['male', 'female']).withMessage('الجنس غير صحيح').run(req),
-          body('birthDate').optional().isISO8601().withMessage('تنسيق تاريخ الميلاد غير صحيح').run(req),
-          body('address').optional().isLength({ max: 1000 }).withMessage('العنوان طويل جداً').run(req),
-          body('formattedAddress').optional().isLength({ max: 1000 }).withMessage('العنوان المنسق طويل جداً').run(req),
-          body('country').optional().isLength({ max: 100 }).withMessage('اسم البلد طويل جداً').run(req),
-          body('city').optional().isLength({ max: 100 }).withMessage('اسم المدينة طويل جداً').run(req),
-          body('state').optional().isLength({ max: 100 }).withMessage('اسم المحافظة طويل جداً').run(req),
-          body('zipcode').optional().isLength({ max: 20 }).withMessage('الرمز البريدي طويل جداً').run(req),
-          body('streetName').optional().isLength({ max: 255 }).withMessage('اسم الشارع طويل جداً').run(req),
-          body('suburb').optional().isLength({ max: 100 }).withMessage('اسم الحي طويل جداً').run(req),
-          body('locationConfidence').optional().isFloat({ min: 0, max: 1 }).withMessage('ثقة الموقع غير صحيحة').run(req)
+          body('gradeId')
+            .notEmpty()
+            .withMessage('معرف الصف مطلوب')
+            .isUUID()
+            .withMessage('الصف غير موجود')
+            .run(req),
+          body('studyYear')
+            .notEmpty()
+            .withMessage('السنة الدراسية مطلوبة')
+            .matches(/^[0-9]{4}-[0-9]{4}$/)
+            .withMessage('تنسيق السنة الدراسية غير صحيح')
+            .run(req),
+          body('latitude')
+            .isFloat({ min: -90, max: 90 })
+            .withMessage('خط العرض غير صحيح')
+            .run(req),
+          body('longitude')
+            .isFloat({ min: -180, max: 180 })
+            .withMessage('خط الطول غير صحيح')
+            .run(req),
+          body('studentPhone')
+            .notEmpty()
+            .withMessage('رقم الهاتف مطلوب')
+            .run(req),
+          body('parentPhone')
+            .notEmpty()
+            .withMessage('رقم الهاتف مطلوب')
+            .run(req),
+          body('schoolName')
+            .optional()
+            .isLength({ max: 255 })
+            .withMessage('اسم المدرسة طويل جداً')
+            .run(req),
+          body('gender')
+            .optional()
+            .isIn(['male', 'female'])
+            .withMessage('الجنس غير صحيح')
+            .run(req),
+          body('birthDate')
+            .optional()
+            .isISO8601()
+            .withMessage('تنسيق تاريخ الميلاد غير صحيح')
+            .run(req),
+          body('address')
+            .optional()
+            .isLength({ max: 1000 })
+            .withMessage('العنوان طويل جداً')
+            .run(req),
+          body('formattedAddress')
+            .optional()
+            .isLength({ max: 1000 })
+            .withMessage('العنوان المنسق طويل جداً')
+            .run(req),
+          body('country')
+            .optional()
+            .isLength({ max: 100 })
+            .withMessage('اسم البلد طويل جداً')
+            .run(req),
+          body('city')
+            .optional()
+            .isLength({ max: 100 })
+            .withMessage('اسم المدينة طويل جداً')
+            .run(req),
+          body('state')
+            .optional()
+            .isLength({ max: 100 })
+            .withMessage('اسم المحافظة طويل جداً')
+            .run(req),
+          body('zipcode')
+            .optional()
+            .isLength({ max: 20 })
+            .withMessage('الرمز البريدي طويل جداً')
+            .run(req),
+          body('streetName')
+            .optional()
+            .isLength({ max: 255 })
+            .withMessage('اسم الشارع طويل جداً')
+            .run(req),
+          body('suburb')
+            .optional()
+            .isLength({ max: 100 })
+            .withMessage('اسم الحي طويل جداً')
+            .run(req),
+          body('locationConfidence')
+            .optional()
+            .isFloat({ min: 0, max: 1 })
+            .withMessage('ثقة الموقع غير صحيحة')
+            .run(req),
         ]);
       }
 
@@ -698,12 +1095,16 @@ export class AuthController {
         res.status(400).json({
           success: false,
           message: 'فشل في التحقق من البيانات',
-          errors: errors.array().map(err => err.msg)
+          errors: errors.array().map(err => err.msg),
         });
         return;
       }
 
-      const result = await AuthService.completeProfile(userId, userType, req.body);
+      const result = await AuthService.completeProfile(
+        userId,
+        userType,
+        req.body
+      );
 
       if (result.success) {
         res.status(200).json(result);
@@ -715,7 +1116,7 @@ export class AuthController {
       res.status(500).json({
         success: false,
         message: 'حدث خطأ في الخادم',
-        errors: ['حدث خطأ في الخادم']
+        errors: ['حدث خطأ في الخادم'],
       });
     }
   }
@@ -740,25 +1141,66 @@ export class AuthController {
           body('name').notEmpty().withMessage('الاسم مطلوب').run(req),
           body('phone').notEmpty().withMessage('رقم الهاتف مطلوب').run(req),
           body('bio').notEmpty().withMessage('النبذة الشخصية مطلوبة').run(req),
-          body('experienceYears').isInt({ min: 0 }).withMessage('سنوات الخبرة مطلوبة').run(req),
-          body('gradeIds').isArray({ min: 1 }).withMessage('معرف الصف مطلوب').run(req),
+          body('experienceYears')
+            .isInt({ min: 0 })
+            .withMessage('سنوات الخبرة مطلوبة')
+            .run(req),
+          body('gradeIds')
+            .isArray({ min: 1 })
+            .withMessage('معرف الصف مطلوب')
+            .run(req),
           body('gradeIds.*').isUUID().withMessage('الصف غير موجود').run(req),
-          body('studyYear').notEmpty().matches(/^[0-9]{4}-[0-9]{4}$/).withMessage('تنسيق السنة الدراسية غير صحيح').run(req),
+          body('studyYear')
+            .notEmpty()
+            .matches(/^[0-9]{4}-[0-9]{4}$/)
+            .withMessage('تنسيق السنة الدراسية غير صحيح')
+            .run(req),
           // الموقع (اختياري)
-          body('latitude').optional().isFloat({ min: -90, max: 90 }).withMessage('خط العرض غير صحيح').run(req),
-          body('longitude').optional().isFloat({ min: -180, max: 180 }).withMessage('خط الطول غير صحيح').run(req),
+          body('latitude')
+            .optional()
+            .isFloat({ min: -90, max: 90 })
+            .withMessage('خط العرض غير صحيح')
+            .run(req),
+          body('longitude')
+            .optional()
+            .isFloat({ min: -180, max: 180 })
+            .withMessage('خط الطول غير صحيح')
+            .run(req),
         ]);
       } else if (userType === 'student') {
         await Promise.all([
           body('name').notEmpty().withMessage('الاسم مطلوب').run(req),
-          body('studentPhone').notEmpty().withMessage('رقم الطالب مطلوب').run(req),
-          body('parentPhone').notEmpty().withMessage('رقم ولي الأمر مطلوب').run(req),
-          body('schoolName').notEmpty().withMessage('اسم المدرسة مطلوب').run(req),
-          body('gender').isIn(['male', 'female']).withMessage('الجنس غير صحيح').run(req),
-          body('birthDate').isISO8601().withMessage('تاريخ الميلاد غير صحيح').run(req),
+          body('studentPhone')
+            .notEmpty()
+            .withMessage('رقم الطالب مطلوب')
+            .run(req),
+          body('parentPhone')
+            .notEmpty()
+            .withMessage('رقم ولي الأمر مطلوب')
+            .run(req),
+          body('schoolName')
+            .notEmpty()
+            .withMessage('اسم المدرسة مطلوب')
+            .run(req),
+          body('gender')
+            .isIn(['male', 'female'])
+            .withMessage('الجنس غير صحيح')
+            .run(req),
+          body('birthDate')
+            .isISO8601()
+            .withMessage('تاريخ الميلاد غير صحيح')
+            .run(req),
           // الموقع (اختياري)
-          body('latitude').optional().isFloat({ min: -90, max: 90 }).withMessage('خط العرض غير صحيح').run(req),
-          body('longitude').optional().isFloat({ min: -180, max: 180 }).withMessage('خط الطول غير صحيح').run(req),
+          body('latitude')
+            .optional()
+            .isFloat({ min: -90, max: 90 })
+            .withMessage('خط العرض غير صحيح')
+            .run(req),
+          body('longitude')
+            .optional()
+            .isFloat({ min: -180, max: 180 })
+            .withMessage('خط الطول غير صحيح')
+            .run(req),
         ]);
       }
 
@@ -767,13 +1209,17 @@ export class AuthController {
         res.status(400).json({
           success: false,
           message: 'فشل في التحقق من البيانات',
-          errors: errors.array().map(err => err.msg)
+          errors: errors.array().map(err => err.msg),
         });
         return;
       }
 
       // ✅ استدعاء الخدمة
-      const result = await AuthService.updateProfile(userId, userType, req.body);
+      const result = await AuthService.updateProfile(
+        userId,
+        userType,
+        req.body
+      );
 
       if (result.success) {
         res.status(200).json(result);
@@ -785,9 +1231,8 @@ export class AuthController {
       res.status(500).json({
         success: false,
         message: 'حدث خطأ في الخادم',
-        errors: ['حدث خطأ في الخادم']
+        errors: ['حدث خطأ في الخادم'],
       });
     }
   }
-
 }

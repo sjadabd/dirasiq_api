@@ -40,7 +40,7 @@ export interface BaseUser {
   userType: UserType;
   status: UserStatus;
   // Auth provider tracking
-  authProvider?: 'email' | 'google';
+  authProvider?: 'email' | 'google' | 'apple';
   oauthProviderId?: string;
   latitude?: number;
   longitude?: number;

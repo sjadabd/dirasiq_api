@@ -1,5 +1,6 @@
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import { randomUUID } from 'crypto';
 import { sendPasswordResetEmail, sendVerificationEmail } from '../config/email';
 import { GradeModel } from '../models/grade.model';
 import { StudentGradeModel } from '../models/student-grade.model';
@@ -60,6 +61,226 @@ export class AuthService {
       return {
         success: false,
         message: 'فشل في العملية',
+        errors: ['حدث خطأ في الخادم'],
+      };
+    }
+  }
+
+  // Apple Sign-in authentication
+  static async appleAuth(
+    appleData: any,
+    userType: 'teacher' | 'student'
+  ): Promise<ApiResponse> {
+    try {
+      const { email, name, sub } = appleData;
+
+      // Check if user already exists
+      const existingUser = await UserModel.findByEmail(email);
+
+      if (existingUser) {
+        if (existingUser.authProvider !== 'apple') {
+          return {
+            success: false,
+            message:
+              'قمت بانشاء الحساب باستخدام طريقة أخرى الرجاء تسجيل الدخول بنفس الطريقة',
+            errors: [
+              'قمت بانشاء الحساب باستخدام البريد/Google الرجاء تسجيل الدخول بنفس الطريقة',
+            ],
+          };
+        }
+
+        // User exists, check user type
+        if (
+          existingUser.userType !==
+          (userType === 'teacher' ? UserType.TEACHER : UserType.STUDENT)
+        ) {
+          return {
+            success: false,
+            message: 'نوع المستخدم لا يتطابق مع الحساب الموجود',
+            errors: ['User type mismatch with existing account'],
+          };
+        }
+
+        // Check profile completeness
+        const isProfileComplete = this.isProfileComplete(existingUser);
+
+        // Active academic year
+        const academicYearResponse = await AcademicYearService.getActive();
+        const activeAcademicYear = academicYearResponse.success
+          ? academicYearResponse.data?.academicYear
+          : null;
+
+        // Enhanced user
+        const enhancedUser = await this.getEnhancedUserData(existingUser);
+
+        // Ensure teacher QR
+        try {
+          if (existingUser.userType === UserType.TEACHER) {
+            await QrService.ensureTeacherQr(existingUser.id);
+          }
+        } catch (e) {
+          console.error(
+            'Auto-ensure teacher QR (apple existing user) failed:',
+            e
+          );
+        }
+
+        // Generate JWT and store token with OneSignal playerId
+        const jwtSecret = process.env['JWT_SECRET'];
+        if (!jwtSecret) console.warn('⚠️ Missing JWT_SECRET in environment!');
+        const token = jwt.sign(
+          {
+            userId: existingUser.id,
+            userType: existingUser.userType,
+            email: existingUser.email,
+          },
+          jwtSecret || 'fallback-secret',
+          { expiresIn: '7d' }
+        );
+
+        await TokenModel.create(
+          existingUser.id,
+          token,
+          new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+          appleData.oneSignalPlayerId
+        );
+
+        return {
+          success: true,
+          message: 'تم تسجيل الدخول بنجاح',
+          data: {
+            user: {
+              ...enhancedUser,
+              studyYear: activeAcademicYear?.year,
+            },
+            token,
+            isNewUser: false,
+            isProfileComplete,
+            requiresProfileCompletion: !isProfileComplete,
+            activeAcademicYear,
+          },
+        };
+      }
+
+      // Create new user
+      const tempPassword = `apple_${sub}_${randomUUID()}`;
+      const hashedPassword = await bcrypt.hash(tempPassword, 12);
+
+      let newUser: User;
+      if (userType === 'teacher') {
+        newUser = await UserModel.create({
+          name,
+          email,
+          password: hashedPassword,
+          userType: UserType.TEACHER,
+          status: UserStatus.ACTIVE,
+
+          authProvider: 'apple',
+          oauthProviderId: sub,
+
+          phone: '',
+          address: '',
+          bio: '',
+          experienceYears: 0,
+          deviceInfo: 'Apple SignIn',
+        });
+
+        // Auto-create free subscription and QR
+        try {
+          const freePackage = await SubscriptionPackageModel.getFreePackage();
+          if (freePackage) {
+            const startDate = new Date();
+            const endDate = new Date(startDate);
+            endDate.setDate(
+              endDate.getDate() + Number(freePackage.durationDays || 30)
+            );
+
+            await TeacherSubscriptionModel.create({
+              teacherId: newUser.id,
+              subscriptionPackageId: freePackage.id,
+              startDate,
+              endDate,
+            });
+          }
+        } catch (subErr) {
+          console.error(
+            'Failed to auto-create free subscription for Apple teacher:',
+            subErr
+          );
+        }
+
+        try {
+          await QrService.ensureTeacherQr(newUser.id);
+        } catch (e) {
+          console.error(
+            'Auto-ensure teacher QR (apple new teacher) failed:',
+            e
+          );
+        }
+      } else {
+        newUser = await UserModel.create({
+          name,
+          email,
+          password: hashedPassword,
+          userType: UserType.STUDENT,
+          status: UserStatus.ACTIVE,
+
+          authProvider: 'apple',
+          oauthProviderId: sub,
+
+          studentPhone: '',
+          parentPhone: '',
+          schoolName: '',
+        });
+      }
+
+      // Active academic year
+      const academicYearResponse = await AcademicYearService.getActive();
+      const activeAcademicYear = academicYearResponse.success
+        ? academicYearResponse.data?.academicYear
+        : null;
+
+      const enhancedUser = await this.getEnhancedUserData(newUser);
+
+      const jwtSecret2 = process.env['JWT_SECRET'];
+      if (!jwtSecret2) console.warn('⚠️ Missing JWT_SECRET in environment!');
+      const token = jwt.sign(
+        {
+          userId: newUser.id,
+          userType: newUser.userType,
+          email: newUser.email,
+        },
+        jwtSecret2 || 'fallback-secret',
+        { expiresIn: '7d' }
+      );
+
+      await TokenModel.create(
+        newUser.id,
+        token,
+        new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        appleData.oneSignalPlayerId
+      );
+
+      return {
+        success: true,
+        message: 'تم إنشاء الحساب وتسجيل الدخول بنجاح',
+        data: {
+          user: {
+            ...enhancedUser,
+            studyYear: activeAcademicYear?.year,
+          },
+          token,
+          isNewUser: true,
+          isProfileComplete: false,
+          requiresProfileCompletion: true,
+          activeAcademicYear,
+        },
+      };
+    } catch (error) {
+      console.error('Error in appleAuth service:', error);
+      return {
+        success: false,
+        message: 'حدث خطأ في الخادم',
         errors: ['حدث خطأ في الخادم'],
       };
     }
@@ -339,13 +560,13 @@ export class AuthService {
         };
       }
 
-      if (user.authProvider === 'google') {
+      if (user.authProvider && user.authProvider !== 'email') {
         return {
           success: false,
           message:
-            'قمت بانشاء الحساب باستخدام google الرجاء تسجيل الدخول بنفس الطريقة',
+            'قمت بإنشاء الحساب باستخدام مزود خارجي الرجاء تسجيل الدخول بنفس الطريقة',
           errors: [
-            'قمت بانشاء الحساب باستخدام google الرجاء تسجيل الدخول بنفس الطريقة',
+            'قمت بإنشاء الحساب باستخدام مزود خارجي الرجاء تسجيل الدخول بنفس الطريقة',
           ],
         };
       }

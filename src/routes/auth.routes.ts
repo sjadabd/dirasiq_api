@@ -11,6 +11,7 @@ router.post('/register/teacher', AuthController.registerTeacher);
 router.post('/register/student', AuthController.registerStudent);
 router.post('/login', AuthController.login);
 router.post('/google-auth', AuthController.googleAuth);
+router.post('/apple-auth', AuthController.appleAuth);
 router.post('/verify-email', AuthController.verifyEmail);
 router.post('/resend-verification', AuthController.resendVerificationCode);
 router.post('/request-password-reset', AuthController.requestPasswordReset);
