@@ -5,12 +5,14 @@ dotenv.config();
 
 // Create transporter
 const transporter = nodemailer.createTransport({
-  host: process.env['EMAIL_HOST'] || 'smtp.gmail.com',
-  port: parseInt(process.env['EMAIL_PORT'] || '587'),
-  secure: false, // true for 465, false for other ports
+  host: process.env['EMAIL_HOST'] || 'mail.lamassu-iq.com',
+  port: parseInt(process.env['EMAIL_PORT'] || '465'),
+  secure:
+    process.env['EMAIL_SECURE'] === 'true' ||
+    parseInt(process.env['EMAIL_PORT'] || '587') === 465, // true for 465, false for other ports
   auth: {
-    user: process.env['EMAIL_USER'],
-    pass: process.env['EMAIL_PASS'],
+    user: process.env['EMAIL_USER'] || 'mulhim@lamassu-iq.com',
+    pass: process.env['EMAIL_PASS'] || 'u1grc9ffjge1',
   },
 });
 
@@ -24,7 +26,7 @@ export async function sendVerificationEmail(
 ): Promise<boolean> {
   try {
     const mailOptions = {
-      from: process.env['EMAIL_USER'],
+      from: process.env['EMAIL_FROM'] || 'mulhim@lamassu-iq.com',
       to,
       subject: 'تحقق من بريدك الإلكتروني - MulhimIQ',
       html: `
@@ -59,7 +61,7 @@ export async function sendPasswordResetEmail(
 ): Promise<boolean> {
   try {
     const mailOptions = {
-      from: process.env['EMAIL_USER'],
+      from: process.env['EMAIL_FROM'] || 'mulhim@lamassu-iq.com',
       to,
       subject: 'إعادة تعيين كلمة المرور - MulhimIQ',
       html: `
