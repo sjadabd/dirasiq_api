@@ -10,6 +10,9 @@ import studentEvaluationRoutes from './student-evaluation.routes';
 import teacherRoutes from './teacher.routes';
 import dashboardRoutes from './dashboard.routes';
 import searchRoutes from './search.routes';
+import { authenticateToken } from '../../middleware/auth.middleware';
+import { UserType } from '../../types';
+import { UserModel } from '../../models/user.model';
 
 const router = Router();
 
@@ -26,6 +29,25 @@ router.use('/invoices', invoiceRoutes);
 router.use('/teachers', teacherRoutes);
 router.use('/dashboard', dashboardRoutes);
 router.use('/search', searchRoutes);
+
+router.delete('/account', authenticateToken, async (req, res) => {
+  try {
+    if (!req.user || req.user.userType !== UserType.STUDENT) {
+      res.status(403).json({ success: false, message: 'الوصول مرفوض', errors: ['مسموح للطلاب فقط'] });
+      return;
+    }
+
+    const ok = await UserModel.delete(req.user.id);
+    if (!ok) {
+      res.status(400).json({ success: false, message: 'فشل حذف الحساب', errors: ['تعذر حذف الحساب'] });
+      return;
+    }
+
+    res.status(200).json({ success: true, message: 'تم حذف الحساب بنجاح' });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'حدث خطأ في الخادم', errors: ['خطأ داخلي في الخادم'] });
+  }
+});
 
 export default router;
 
