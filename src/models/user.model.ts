@@ -1,6 +1,13 @@
 import bcrypt from 'bcryptjs';
 import pool from '../config/database';
-import { Student, SuperAdmin, Teacher, User, UserStatus, UserType } from '../types';
+import {
+  Student,
+  SuperAdmin,
+  Teacher,
+  User,
+  UserStatus,
+  UserType,
+} from '../types';
 
 export class UserModel {
   // Create a new user
@@ -47,19 +54,41 @@ export class UserModel {
         (userData as any).oauthProviderId || null,
 
         // Teacher fields
-        userData.userType === UserType.TEACHER ? (userData as Teacher).phone : null,
-        userData.userType === UserType.TEACHER ? (userData as Teacher).address : null,
-        userData.userType === UserType.TEACHER ? (userData as Teacher).bio : null,
-        userData.userType === UserType.TEACHER ? (userData as Teacher).experienceYears : null,
-        userData.userType === UserType.TEACHER ? (userData as Teacher).visitorId : null,
-        userData.userType === UserType.TEACHER ? (userData as Teacher).deviceInfo : null,
+        userData.userType === UserType.TEACHER
+          ? (userData as Teacher).phone
+          : null,
+        userData.userType === UserType.TEACHER
+          ? (userData as Teacher).address
+          : null,
+        userData.userType === UserType.TEACHER
+          ? (userData as Teacher).bio
+          : null,
+        userData.userType === UserType.TEACHER
+          ? (userData as Teacher).experienceYears
+          : null,
+        userData.userType === UserType.TEACHER
+          ? (userData as Teacher).visitorId
+          : null,
+        userData.userType === UserType.TEACHER
+          ? (userData as Teacher).deviceInfo
+          : null,
 
         // Student fields
-        userData.userType === UserType.STUDENT ? (userData as Student).studentPhone : null,
-        userData.userType === UserType.STUDENT ? (userData as Student).parentPhone : null,
-        userData.userType === UserType.STUDENT ? (userData as Student).schoolName : null,
-        userData.userType === UserType.STUDENT ? (userData as Student).gender : null,
-        userData.userType === UserType.STUDENT ? (userData as Student).birthDate : null,
+        userData.userType === UserType.STUDENT
+          ? (userData as Student).studentPhone
+          : null,
+        userData.userType === UserType.STUDENT
+          ? (userData as Student).parentPhone
+          : null,
+        userData.userType === UserType.STUDENT
+          ? (userData as Student).schoolName
+          : null,
+        userData.userType === UserType.STUDENT
+          ? (userData as Student).gender
+          : null,
+        userData.userType === UserType.STUDENT
+          ? (userData as Student).birthDate
+          : null,
 
         // Location fields
         userData.latitude || null,
@@ -75,10 +104,12 @@ export class UserModel {
 
         // Verification
         userData.userType === UserType.SUPER_ADMIN ? true : false,
-        userData.userType === UserType.TEACHER || userData.userType === UserType.STUDENT
+        userData.userType === UserType.TEACHER ||
+        userData.userType === UserType.STUDENT
           ? this.generateVerificationCode()
           : null,
-        userData.userType === UserType.TEACHER || userData.userType === UserType.STUDENT
+        userData.userType === UserType.TEACHER ||
+        userData.userType === UserType.STUDENT
           ? new Date(Date.now() + 10 * 60 * 1000)
           : null,
 
@@ -95,7 +126,6 @@ export class UserModel {
       const result = await client.query(query, values);
       await client.query('COMMIT');
       return this.mapDatabaseUserToUser(result.rows[0]);
-
     } catch (error) {
       await client.query('ROLLBACK');
       throw error;
@@ -104,11 +134,15 @@ export class UserModel {
     }
   }
 
-
   // Get verification code for a teacher or student
   static async getVerificationCode(email: string): Promise<string | null> {
-    const query = 'SELECT verification_code FROM users WHERE email = $1 AND user_type IN ($2, $3)';
-    const result = await pool.query(query, [email, UserType.TEACHER, UserType.STUDENT]);
+    const query =
+      'SELECT verification_code FROM users WHERE email = $1 AND user_type IN ($2, $3)';
+    const result = await pool.query(query, [
+      email,
+      UserType.TEACHER,
+      UserType.STUDENT,
+    ]);
 
     if (result.rows.length === 0) {
       return null;
@@ -130,8 +164,11 @@ export class UserModel {
   }
 
   // Get auth provider by email
-  static async getAuthProviderByEmail(email: string): Promise<'email' | 'google' | null> {
-    const query = 'SELECT auth_provider FROM users WHERE email = $1 AND deleted_at IS NULL';
+  static async getAuthProviderByEmail(
+    email: string
+  ): Promise<'email' | 'google' | null> {
+    const query =
+      'SELECT auth_provider FROM users WHERE email = $1 AND deleted_at IS NULL';
     const result = await pool.query(query, [email]);
     if (result.rows.length === 0) return null;
     return result.rows[0].auth_provider as 'email' | 'google';
@@ -151,7 +188,8 @@ export class UserModel {
 
   // Check if super admin exists
   static async superAdminExists(): Promise<boolean> {
-    const query = 'SELECT COUNT(*) FROM users WHERE user_type = $1 AND deleted_at IS NULL';
+    const query =
+      'SELECT COUNT(*) FROM users WHERE user_type = $1 AND deleted_at IS NULL';
     const result = await pool.query(query, [UserType.SUPER_ADMIN]);
     return parseInt(result.rows[0].count) > 0;
   }
@@ -188,7 +226,11 @@ export class UserModel {
         AND email_verified = false
     `;
 
-    const result = await pool.query(query, [verificationCode, expiresAt, email]);
+    const result = await pool.query(query, [
+      verificationCode,
+      expiresAt,
+      email,
+    ]);
     return (result.rowCount || 0) > 0;
   }
 
@@ -210,7 +252,11 @@ export class UserModel {
   }
 
   // Reset password with code
-  static async resetPassword(email: string, code: string, newPassword: string): Promise<boolean> {
+  static async resetPassword(
+    email: string,
+    code: string,
+    newPassword: string
+  ): Promise<boolean> {
     const saltRounds = parseInt(process.env['BCRYPT_ROUNDS'] || '12');
     const hashedPassword = await bcrypt.hash(newPassword, saltRounds);
 
@@ -241,7 +287,9 @@ export class UserModel {
     const limit = params.limit || 10;
     const offset = (page - 1) * limit;
 
-    let whereClause = params.deleted ? 'WHERE deleted_at IS NOT NULL' : 'WHERE deleted_at IS NULL';
+    let whereClause = params.deleted
+      ? 'WHERE deleted_at IS NOT NULL'
+      : 'WHERE deleted_at IS NULL';
     let searchClause = '';
     let searchValues: any[] = [];
 
@@ -270,18 +318,27 @@ export class UserModel {
     const countResult = await pool.query(countQuery, searchValues);
     const total = parseInt(countResult.rows[0].count);
 
-    const dataResult = await pool.query(dataQuery, [...searchValues, limit, offset]);
-    const users = dataResult.rows.map((row: any) => this.mapDatabaseUserToUser(row));
+    const dataResult = await pool.query(dataQuery, [
+      ...searchValues,
+      limit,
+      offset,
+    ]);
+    const users = dataResult.rows.map((row: any) =>
+      this.mapDatabaseUserToUser(row)
+    );
 
     return {
       users,
       total,
-      totalPages: Math.ceil(total / limit)
+      totalPages: Math.ceil(total / limit),
     };
   }
 
   // Update user
-  static async update(id: string, updateData: Partial<User>): Promise<User | null> {
+  static async update(
+    id: string,
+    updateData: Partial<User>
+  ): Promise<User | null> {
     const allowedFields = [
       'name',
       'phone',
@@ -311,7 +368,7 @@ export class UserModel {
       'intro_video_manifest_path',
       'intro_video_storage_dir',
       'intro_video_thumbnail_path',
-      'intro_video_duration_seconds'
+      'intro_video_duration_seconds',
     ];
 
     const updates: string[] = [];
@@ -350,7 +407,6 @@ export class UserModel {
 
     return this.mapDatabaseUserToUser(result.rows[0]);
   }
-
 
   // Soft delete user
   static async delete(id: string): Promise<boolean> {
@@ -404,7 +460,13 @@ export class UserModel {
       LIMIT $4 OFFSET $5
     `;
 
-    const result = await pool.query(query, [latitude, longitude, maxDistance, limit, offset]);
+    const result = await pool.query(query, [
+      latitude,
+      longitude,
+      maxDistance,
+      limit,
+      offset,
+    ]);
     return result.rows;
   }
 

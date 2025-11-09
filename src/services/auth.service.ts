@@ -1,6 +1,6 @@
 import bcrypt from 'bcryptjs';
-import jwt from 'jsonwebtoken';
 import { randomUUID } from 'crypto';
+import jwt from 'jsonwebtoken';
 import { sendPasswordResetEmail, sendVerificationEmail } from '../config/email';
 import { GradeModel } from '../models/grade.model';
 import { StudentGradeModel } from '../models/student-grade.model';
@@ -291,10 +291,28 @@ export class AuthService {
     data: RegisterTeacherRequest
   ): Promise<ApiResponse> {
     try {
+      // Normalize email and pre-check duplicates
+      const emailLower = (data.email || '').toLowerCase();
+      const existingProvider = await UserModel.getAuthProviderByEmail(emailLower);
+      if (existingProvider) {
+        return {
+          success: false,
+          message:
+            existingProvider === 'google'
+              ? 'هذا البريد مسجّل عبر Google، الرجاء تسجيل الدخول باستخدام Google'
+              : 'البريد الإلكتروني مستخدم مسبقاً',
+          errors: [
+            existingProvider === 'google'
+              ? 'Email already registered via Google'
+              : 'Email already exists',
+          ],
+        };
+      }
+
       // Create teacher
       const teacherData: Partial<User> = {
         name: data.name,
-        email: data.email,
+        email: emailLower,
         password: data.password,
         userType: UserType.TEACHER,
         status: UserStatus.PENDING,
@@ -393,7 +411,7 @@ export class AuthService {
       }
 
       // Get verification code from database
-      const verificationCode = await UserModel.getVerificationCode(data.email);
+      const verificationCode = await UserModel.getVerificationCode(emailLower);
 
       // Send verification email
       const emailSent = await sendVerificationEmail(
@@ -417,8 +435,15 @@ export class AuthService {
           user: this.sanitizeUser(teacher),
         },
       };
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error registering teacher:', error);
+      if (error instanceof Error && error.message === 'EMAIL_ALREADY_EXISTS') {
+        return {
+          success: false,
+          message: 'البريد الإلكتروني مستخدم مسبقاً',
+          errors: ['Email already exists'],
+        };
+      }
       return {
         success: false,
         message: 'فشل في العملية',
@@ -432,10 +457,28 @@ export class AuthService {
     data: RegisterStudentRequest
   ): Promise<ApiResponse> {
     try {
+      // Normalize email and pre-check duplicates
+      const emailLower = (data.email || '').toLowerCase();
+      const existingProvider = await UserModel.getAuthProviderByEmail(emailLower);
+      if (existingProvider) {
+        return {
+          success: false,
+          message:
+            existingProvider === 'google'
+              ? 'هذا البريد مسجّل عبر Google، الرجاء تسجيل الدخول باستخدام Google'
+              : 'البريد الإلكتروني مستخدم مسبقاً',
+          errors: [
+            existingProvider === 'google'
+              ? 'Email already registered via Google'
+              : 'Email already exists',
+          ],
+        };
+      }
+
       // Create student
       const studentData: Partial<User> = {
         name: data.name,
-        email: data.email,
+        email: emailLower,
         password: data.password,
         userType: UserType.STUDENT,
         status: UserStatus.PENDING,
@@ -502,7 +545,7 @@ export class AuthService {
       }
 
       // Get verification code from database
-      const verificationCode = await UserModel.getVerificationCode(data.email);
+      const verificationCode = await UserModel.getVerificationCode(emailLower);
 
       // Send verification email
       const emailSent = await sendVerificationEmail(
@@ -526,8 +569,15 @@ export class AuthService {
           user: this.sanitizeUser(student),
         },
       };
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error registering student:', error);
+      if (error instanceof Error && error.message === 'EMAIL_ALREADY_EXISTS') {
+        return {
+          success: false,
+          message: 'البريد الإلكتروني مستخدم مسبقاً',
+          errors: ['Email already exists'],
+        };
+      }
       return {
         success: false,
         message: 'فشل في العملية',

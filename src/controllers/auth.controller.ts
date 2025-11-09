@@ -16,10 +16,8 @@ export class AuthController {
         body('name').notEmpty().withMessage('الاسم مطلوب').run(req),
         body('email').isEmail().withMessage('البريد الإلكتروني مطلوب').run(req),
         body('password')
-          .isLength({ min: 8 })
-          .withMessage('كلمة المرور يجب أن تكون 8 أحرف على الأقل')
-          .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/)
-          .withMessage('كلمة المرور يجب أن تحتوي على حرف كبير وحرف صغير ورقم')
+          .isLength({ min: 6 })
+          .withMessage('كلمة المرور يجب أن تكون 6 أحرف على الأقل')
           .run(req),
       ]);
 
@@ -272,10 +270,8 @@ export class AuthController {
         body('name').notEmpty().withMessage('الاسم مطلوب').run(req),
         body('email').isEmail().withMessage('البريد الإلكتروني مطلوب').run(req),
         body('password')
-          .isLength({ min: 8 })
-          .withMessage('كلمة المرور يجب أن تكون 8 أحرف على الأقل')
-          .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/)
-          .withMessage('كلمة المرور يجب أن تحتوي على حرف كبير وحرف صغير ورقم')
+          .isLength({ min: 6 })
+          .withMessage('كلمة المرور يجب أن تكون 6 أحرف على الأقل')
           .run(req),
         body('phone').notEmpty().withMessage('رقم الهاتف مطلوب').run(req),
         body('address').notEmpty().withMessage('العنوان مطلوب').run(req),
@@ -493,10 +489,8 @@ export class AuthController {
           .withMessage('البريد الإلكتروني غير صحيح')
           .run(req),
         body('password')
-          .isLength({ min: 8 })
-          .withMessage('كلمة المرور يجب أن تكون 8 أحرف على الأقل')
-          .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/)
-          .withMessage('كلمة المرور يجب أن تحتوي على حرف كبير وحرف صغير ورقم')
+          .isLength({ min: 6 })
+          .withMessage('كلمة المرور يجب أن تكون 6 أحرف على الأقل')
           .run(req),
         body('studentPhone')
           .optional()
