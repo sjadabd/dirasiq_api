@@ -655,19 +655,29 @@ export class AuthService {
         console.error('Auto-ensure teacher QR on login failed:', e);
       }
 
-      // Generate token (JWT)
-      const token = await this.generateToken(user);
+      // حدد سياسة انتهاء الصلاحية حسب نوع المستخدم
+      const now = new Date();
+      let expiresAt: Date;
+      let expiresInSeconds: number;
+      if (user.userType === UserType.TEACHER) {
+        // المعلّم: انتهاء عند الساعة 4 صباحاً لليوم التالي
+        const tomorrow = new Date(now);
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        tomorrow.setHours(4, 0, 0, 0);
+        expiresAt = tomorrow;
+        expiresInSeconds = Math.max(60, Math.floor((expiresAt.getTime() - now.getTime()) / 1000));
+      } else {
+        // الطالب: مدة أطول (افتراضياً 7 أيام) ويمكن ضبطها عبر ENV
+        const days = parseInt(process.env['STUDENT_TOKEN_TTL_DAYS'] || '7', 10);
+        expiresAt = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
+        expiresInSeconds = days * 24 * 60 * 60;
+      }
 
-      // حساب وقت الانتهاء (مثلاً 7 أيام)
-      const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+      // إنشاء التوكن وفق مدة الصلاحية المحددة
+      const token = await this.generateToken(user, expiresInSeconds);
 
-      // ✅ خزّن التوكن والـ Player ID مع الجلسة
-      await TokenModel.create(
-        user.id,
-        token,
-        expiresAt,
-        data.oneSignalPlayerId
-      );
+      // ✅ خزّن التوكن والـ Player ID مع الجلسة مرة واحدة
+      await TokenModel.create(user.id, token, expiresAt, data.oneSignalPlayerId);
 
       return {
         success: true,
@@ -870,8 +880,8 @@ export class AuthService {
     }
   }
 
-  // Generate JWT token
-  private static async generateToken(user: User): Promise<string> {
+  // Generate JWT token (without saving to DB)
+  private static async generateToken(user: User, expiresInSeconds: number): Promise<string> {
     const payload = {
       userId: user.id,
       email: user.email,
@@ -883,19 +893,7 @@ export class AuthService {
       throw new Error('مفتاح JWT غير مُعد');
     }
 
-    const expiresIn = process.env['JWT_EXPIRES_IN'] || '4h';
-
-    const token = jwt.sign(payload, secret, { expiresIn } as jwt.SignOptions);
-
-    // Calculate expiration time (4 AM Iraq time)
-    const now = new Date();
-    const tomorrow = new Date(now);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    tomorrow.setHours(4, 0, 0, 0); // 4 AM
-
-    // Store token in database
-    await TokenModel.create(user.id, token, tomorrow);
-
+    const token = jwt.sign(payload, secret, { expiresIn: expiresInSeconds } as jwt.SignOptions);
     return token;
   }
 
