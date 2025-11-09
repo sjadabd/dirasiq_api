@@ -130,6 +130,7 @@ export class NotificationService {
    */
   async sendToSpecificUsers(userIds: string[], options: SendNotificationOptions): Promise<boolean> {
     try {
+      console.info(`👥 sendToSpecificUsers: targetUserIds=${JSON.stringify(userIds)}`);
       let allPlayerIds: string[] = [];
       for (const id of userIds) {
         const playerIds = await TokenModel.getPlayerIdsByUserId(id);
@@ -138,9 +139,7 @@ export class NotificationService {
 
       const uniquePlayerIds = Array.from(new Set(allPlayerIds));
 
-      console.info(
-        `🎯 Targeting specific users: users=${userIds.length}, resolvedDevices=${uniquePlayerIds.length}`
-      );
+      console.info(`🎯 Targeting specific users: users=${userIds.length}, resolvedDevices=${uniquePlayerIds.length}`);
 
       if (uniquePlayerIds.length === 0) {
         console.warn('⚠️ No valid player IDs found for users:', userIds);
@@ -160,6 +159,8 @@ export class NotificationService {
   async sendToUserTypes(userTypes: UserType[], options: SendNotificationOptions): Promise<boolean> {
     try {
       const users = await this.getUsersByTypes(userTypes);
+      const userIds = users.map(u => u.id);
+      console.info(`👥 sendToUserTypes: userTypes=${JSON.stringify(userTypes)}, targetUserIds=${JSON.stringify(userIds)}`);
 
       let allPlayerIds: string[] = [];
       for (const user of users) {
@@ -315,6 +316,7 @@ export class NotificationService {
             );
             const studentIds = studentGrades.map((sg) => sg.studentId);
             console.info(`👥 Filtered students count: ${studentIds.length}`);
+            console.info(`🧑‍🎓 Filtered studentIds=${JSON.stringify(studentIds)}`);
             if (studentIds.length > 0) {
               success = await this.sendToSpecificUsers(studentIds, sendOptions);
             }
