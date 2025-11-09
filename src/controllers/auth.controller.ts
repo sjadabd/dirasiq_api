@@ -4,8 +4,6 @@ import { AppleAuthService } from '../services/apple-auth.service';
 import { AuthService } from '../services/auth.service';
 import { GoogleAuthService } from '../services/google-auth.service';
 import { AcademicYearService } from '../services/super_admin/academic-year.service';
-import { SubscriptionPackageService } from '../services/super_admin/subscription-package.service';
-import { TeacherSubscriptionService } from '../services/teacher-subscription.service';
 
 export class AuthController {
   // Register super admin
@@ -409,65 +407,8 @@ export class AuthController {
         res.status(400).json(result);
         return;
       }
-
-      // 4) Get free package (20 طالب إن وُجد، وإن لا فأي باقة مجانية مفعّلة)
-      const freePkgResp = await SubscriptionPackageService.getFreePackage(); // لو دالتك تدعم maxStudents، ضفها
-      if (!freePkgResp.success || !freePkgResp.data) {
-        // رجّع نجاح تسجيل المعلّم مع تحذير بفشل إنشاء الاشتراك المجاني
-        res.status(201).json({
-          success: true,
-          message: 'تم التسجيل بنجاح',
-          data: {
-            user: result.data?.user ?? result.data, // حسب ما ترجّعه خدمتك
-            subscription: null,
-          },
-          errors: ['لا توجد باقة مجانية متاحة'],
-        });
-        return;
-      }
-
-      const pkg = freePkgResp.data;
-      // إن كنت تريد تقييدها بـ 20 طالب، تأكد من الشرط هنا:
-      if (pkg.maxStudents !== 20 || !pkg.isFree || !pkg.isActive) {
-        // إما تبحث عن واحدة بـ 20 طالب، أو تتعامل معها كتحذير
-        // هنا سنكمل بها فقط إذا كانت مجانية ومفعّلة (يمكنك تشديد الشرط كما تريد)
-      }
-
-      // 5) Create teacher subscription based on package duration
-      const startDate = new Date();
-      const endDate = new Date(
-        startDate.getTime() + pkg.durationDays * 24 * 60 * 60 * 1000
-      );
-
-      const teacherSubscription = await TeacherSubscriptionService.create({
-        teacherId: result.data?.user?.id ?? result.data?.teacherId, // وفق بنية استجابتك
-        subscriptionPackageId: pkg.id,
-        startDate,
-        endDate,
-      });
-
-      // 6) Return ONE response
-      if (teacherSubscription.success) {
-        res.status(201).json({
-          success: true,
-          message: 'تم التسجيل بنجاح',
-          data: {
-            user: result.data?.user ?? result.data,
-            subscription: teacherSubscription.data,
-          },
-        });
-      } else {
-        // سجلّناه كمعلّم، لكن الاشتراك فشل
-        res.status(201).json({
-          success: true,
-          message: 'تم التسجيل بنجاح',
-          data: {
-            user: result.data?.user ?? result.data,
-            subscription: null,
-          },
-          errors: ['فشل في إنشاء الاشتراك المجاني'],
-        });
-      }
+      // الاعتماد على الخدمة لإرجاع النتيجة كاملة (بما في ذلك الاشتراك المجاني إن تم إنشاؤه)
+      res.status(201).json(result);
     } catch (error) {
       console.error('Error in registerTeacher controller:', error);
       res.status(500).json({
