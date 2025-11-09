@@ -37,12 +37,18 @@ export class StudentCourseController {
 
       // Validate student location
       const locationResult = await StudentService.validateStudentLocation(studentId);
-      if (!locationResult.success) {
-        res.status(400).json(locationResult);
-        return;
-      }
 
       const studentGrades = gradesResult.data.grades;
+      // Fallback: if no location, return newest courses without location filter
+      if (!locationResult.success) {
+        const fallback = await StudentService.getSuggestedCoursesWithoutLocation(
+          studentId,
+          Number(page),
+          Number(limit)
+        );
+        res.status(fallback.success ? 200 : 400).json(fallback);
+        return;
+      }
       const studentLocation = locationResult.data.location;
 
       // Get courses based on student's grade and location

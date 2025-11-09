@@ -782,16 +782,37 @@ export namespace StudentService {
   ): Promise<ApiResponse> {
     try {
       const student = await UserModel.findById(studentId);
+      const offset = (page - 1) * limit;
+
+      // Fallback: no location -> alphabetical teachers
       if (!student || !student.latitude || !student.longitude) {
+        const [items, count] = await Promise.all([
+          UserModel.findTeachersAlphabetical(limit, offset, search),
+          UserModel.countTeachersAlphabetical(search),
+        ]);
         return {
-          success: false,
-          message: 'الموقع غير محدد',
-          errors: ['الموقع غير محدد'],
+          success: true,
+          message: 'تم العثور على المعلمين',
+          data: {
+            teachers: items.map((t: any) => ({
+              id: t.id,
+              name: t.name,
+              phone: t.phone,
+              address: t.address,
+              bio: t.bio,
+              experienceYears: t.experience_years,
+              latitude: t.latitude,
+              longitude: t.longitude,
+              profileImagePath: t.profile_image_path,
+              distance: null,
+            })),
+            count,
+          },
+          count,
         };
       }
 
-      const offset = (page - 1) * limit;
-
+      // With location -> nearby by distance
       // Build search filters
       let searchClause = '';
       const params: any[] = [
@@ -940,6 +961,35 @@ export namespace StudentService {
         message: 'فشلت العملية',
         errors: ['خطأ داخلي في الخادم'],
       };
+    }
+  }
+
+  // Helper: suggested courses without location (newest first)
+  export async function getSuggestedCoursesWithoutLocation(
+    studentId: string,
+    page: number = 1,
+    limit: number = 10
+  ): Promise<ApiResponse> {
+    try {
+      // Get student's active grades
+      const gradesRes = await StudentService.getActiveGrades(studentId);
+      if (!gradesRes.success || !gradesRes.data) {
+        return gradesRes;
+      }
+      const grades = gradesRes.data.grades as StudentGrade[];
+      const gradeIds = grades.map(g => g.gradeId);
+      const offset = (page - 1) * limit;
+
+      const courses = await CourseModel.findByGradesNewest(gradeIds, limit, offset);
+      return {
+        success: true,
+        message: 'تم العثور على الدورات',
+        data: { courses },
+        count: courses.length,
+      };
+    } catch (e) {
+      console.error('Error getting suggested courses without location:', e);
+      return { success: false, message: 'فشلت العملية', errors: ['خطأ داخلي في الخادم'] };
     }
   }
 }

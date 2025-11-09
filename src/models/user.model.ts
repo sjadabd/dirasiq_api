@@ -514,6 +514,50 @@ export class UserModel {
     return result.rows;
   }
 
+  // Find active teachers alphabetically (fallback when no location)
+  static async findTeachersAlphabetical(
+    limit: number,
+    offset: number,
+    search?: string
+  ): Promise<any[]> {
+    let query = `
+      SELECT u.*
+      FROM users u
+      WHERE u.user_type = 'teacher'
+        AND u.status = 'active'
+        AND u.deleted_at IS NULL
+    `;
+    const values: any[] = [];
+    let param = 1;
+    if (search && search.trim() !== '') {
+      query += ` AND (u.name ILIKE $${param})`;
+      values.push(`%${search.trim()}%`);
+      param++;
+    }
+    query += ` ORDER BY u.name ASC LIMIT $${param} OFFSET $${param + 1}`;
+    values.push(limit, offset);
+    const r = await pool.query(query, values);
+    return r.rows;
+  }
+
+  // Count active teachers matching optional search (for pagination)
+  static async countTeachersAlphabetical(search?: string): Promise<number> {
+    let query = `
+      SELECT COUNT(*)::int AS count
+      FROM users u
+      WHERE u.user_type = 'teacher'
+        AND u.status = 'active'
+        AND u.deleted_at IS NULL
+    `;
+    const values: any[] = [];
+    if (search && search.trim() !== '') {
+      query += ` AND (u.name ILIKE $1)`;
+      values.push(`%${search.trim()}%`);
+    }
+    const r = await pool.query(query, values);
+    return r.rows[0]?.count ?? 0;
+  }
+
   // Map database user to User interface
   private static mapDatabaseUserToUser(dbUser: any): User {
     const baseUser = {

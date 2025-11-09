@@ -426,4 +426,38 @@ export class CourseModel {
     const result = await pool.query(query, values);
     return result.rows;
   }
+
+  // Find courses by grades only (no location), newest first
+  static async findByGradesNewest(
+    gradeIds: string[],
+    limit: number = 10,
+    offset: number = 0
+  ): Promise<Course[]> {
+    const query = `
+      SELECT
+        c.*,
+        u.name as teacher_name,
+        u.phone as teacher_phone,
+        u.address as teacher_address,
+        u.bio as teacher_bio,
+        u.experience_years as teacher_experience_years,
+        u.profile_image_path as teacher_profile_image_path,
+        g.name as grade_name,
+        s.name as subject_name
+      FROM courses c
+      INNER JOIN users u ON c.teacher_id = u.id
+      INNER JOIN grades g ON c.grade_id = g.id
+      INNER JOIN subjects s ON c.subject_id = s.id
+      WHERE c.grade_id = ANY($1)
+        AND c.is_deleted = false
+        AND u.user_type = 'teacher'
+        AND u.status = 'active'
+      ORDER BY c.created_at DESC
+      LIMIT $2 OFFSET $3
+    `;
+
+    const values = [gradeIds, limit, offset];
+    const result = await pool.query(query, values);
+    return result.rows;
+  }
 }
