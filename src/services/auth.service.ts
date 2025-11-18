@@ -6,6 +6,7 @@ import { GradeModel } from '../models/grade.model';
 import { StudentGradeModel } from '../models/student-grade.model';
 import { SubscriptionPackageModel } from '../models/subscription-package.model';
 import { TeacherGradeModel } from '../models/teacher-grade.model';
+import { TeacherReferralModel } from '../models/teacher-referral.model';
 import { TeacherSubscriptionModel } from '../models/teacher-subscription.model';
 import { TokenModel } from '../models/token.model';
 import { UserModel } from '../models/user.model';
@@ -1060,6 +1061,35 @@ export class AuthService {
           experienceYears: 0,
           deviceInfo: 'Google OAuth',
         });
+
+        // 👉 ربط إحالة المعلم إن وُجد referralCode وتم إرساله من الفرونت
+        try {
+          const referralCode = (googleData as any).referralCode as
+            | string
+            | undefined;
+
+          if (referralCode && typeof referralCode === 'string') {
+            const referrer = await UserModel.findById(referralCode);
+
+            if (
+              referrer &&
+              referrer.userType === UserType.TEACHER &&
+              referrer.id !== newUser.id
+            ) {
+              await TeacherReferralModel.createPending({
+                referrerTeacherId: referrer.id,
+                referredTeacherId: newUser.id,
+                referralCodeUsed: referralCode,
+              });
+            }
+          }
+        } catch (refErr) {
+          console.error(
+            'Error creating teacher referral for Google auth:',
+            refErr
+          );
+          // لا نفشل إنشاء المستخدم بسبب مشكلة في الإحالة
+        }
 
         // ✅ إنشاء اشتراك مجاني تلقائيًا للمعلم الجديد عبر Google
         try {

@@ -848,6 +848,7 @@ export class AuthController {
           .isIn(['teacher', 'student'])
           .withMessage('User type must be teacher or student')
           .run(req),
+        body('referralCode').optional().isString().run(req),
       ]);
 
       const errors = validationResult(req);
@@ -860,7 +861,7 @@ export class AuthController {
         return;
       }
 
-      const { googleToken, googleData, userType } = req.body;
+      const { googleToken, googleData, userType, referralCode } = req.body;
 
       let verifiedGoogleData;
 
@@ -923,6 +924,11 @@ export class AuthController {
         googleData?.oneSignalPlayerId || req.body.oneSignalPlayerId;
       if (oneSignalPlayerId) {
         verifiedGoogleData.oneSignalPlayerId = oneSignalPlayerId;
+      }
+
+      // تمرير referralCode (إن وجد) إلى الخدمة عبر verifiedGoogleData بشكل آمن
+      if (referralCode && typeof referralCode === 'string') {
+        (verifiedGoogleData as any).referralCode = referralCode;
       }
 
       const result = await AuthService.googleAuth(verifiedGoogleData, userType);
