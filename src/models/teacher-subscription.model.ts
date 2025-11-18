@@ -205,9 +205,7 @@ export class TeacherSubscriptionModel {
   }
 
   // التحقق من إمكانية إضافة طالب جديد (التحقق من السعة)
-  static async canAddStudent(
-    teacherId: string
-  ): Promise<{
+  static async canAddStudent(teacherId: string): Promise<{
     canAdd: boolean;
     currentStudents: number;
     maxStudents: number;
@@ -230,7 +228,12 @@ export class TeacherSubscriptionModel {
         ) AS bonus_students
       FROM teacher_subscriptions ts
       JOIN subscription_packages sp ON ts.subscription_package_id = sp.id
-      WHERE ts.teacher_id = $1 AND ts.is_active = true AND ts.deleted_at IS NULL
+      WHERE ts.teacher_id = $1
+        AND ts.is_active = true
+        AND ts.deleted_at IS NULL
+        AND sp.deleted_at IS NULL
+      ORDER BY ts.end_date DESC, ts.created_at DESC
+      LIMIT 1
     `;
 
     const result = await pool.query(query, [teacherId]);
