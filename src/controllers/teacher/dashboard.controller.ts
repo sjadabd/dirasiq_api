@@ -10,7 +10,7 @@ export class TeacherDashboardController {
         res.status(401).json({
           success: false,
           message: 'المصادقة مطلوبة',
-          errors: ['المستخدم غير مصادق عليه']
+          errors: ['المستخدم غير مصادق عليه'],
         });
         return;
       }
@@ -67,18 +67,31 @@ export class TeacherDashboardController {
        `,
       } as const;
 
-      const [totalCoursesR, activeCoursesR, totalStudentsR, activeStudentsR, sessionsTodayR, depositsTotalsR, studentInvoicesTotalsR] = await Promise.all([
+      const [
+        totalCoursesR,
+        activeCoursesR,
+        totalStudentsR,
+        activeStudentsR,
+        sessionsTodayR,
+        depositsTotalsR,
+        studentInvoicesTotalsR,
+      ] = await Promise.all([
         pool.query(queries.totalCourses, [teacherId]),
         pool.query(queries.activeCourses, [teacherId]),
         pool.query(queries.totalStudents, [teacherId]),
-        pool.query(queries.activeStudents, [teacherId, BookingStatus.CONFIRMED]),
+        pool.query(queries.activeStudents, [
+          teacherId,
+          BookingStatus.CONFIRMED,
+        ]),
         pool.query(queries.sessionsToday, [teacherId]),
         pool.query(queries.depositsTotals, [teacherId]),
-        pool.query(queries.studentInvoicesTotals, [teacherId])
+        pool.query(queries.studentInvoicesTotals, [teacherId]),
       ]);
 
       const totalDeposit = Number(depositsTotalsR.rows[0]?.total_deposit ?? 0);
-      const receivedDeposit = Number(depositsTotalsR.rows[0]?.received_deposit ?? 0);
+      const receivedDeposit = Number(
+        depositsTotalsR.rows[0]?.received_deposit ?? 0
+      );
       const remainingDeposit = Math.max(0, totalDeposit - receivedDeposit);
 
       res.status(200).json({
@@ -100,30 +113,37 @@ export class TeacherDashboardController {
           },
           studentInvoices: {
             totalDue: Number(studentInvoicesTotalsR.rows[0]?.total_due ?? 0),
-            amountPaid: Number(studentInvoicesTotalsR.rows[0]?.amount_paid ?? 0),
-            amountRemaining: Number(studentInvoicesTotalsR.rows[0]?.amount_remaining ?? 0),
+            amountPaid: Number(
+              studentInvoicesTotalsR.rows[0]?.amount_paid ?? 0
+            ),
+            amountRemaining: Number(
+              studentInvoicesTotalsR.rows[0]?.amount_remaining ?? 0
+            ),
           },
-        }
+        },
       });
     } catch (error) {
       console.error('Error in TeacherDashboardController.getDashboard:', error);
       res.status(500).json({
         success: false,
         message: 'حدث خطأ في الخادم',
-        errors: ['حدث خطأ في الخادم']
+        errors: ['حدث خطأ في الخادم'],
       });
     }
   }
 
   // Get today's upcoming lessons (sessions) for the teacher
-  static async getTodayUpcomingSessions(req: Request, res: Response): Promise<void> {
+  static async getTodayUpcomingSessions(
+    req: Request,
+    res: Response
+  ): Promise<void> {
     try {
       const teacherId: string | undefined = req.user?.id;
       if (!teacherId) {
         res.status(401).json({
           success: false,
           message: 'المصادقة مطلوبة',
-          errors: ['المستخدم غير مصادق عليه']
+          errors: ['المستخدم غير مصادق عليه'],
         });
         return;
       }
@@ -156,8 +176,12 @@ export class TeacherDashboardController {
       today.setHours(0, 0, 0, 0);
 
       const items = r.rows.map((row: any) => {
-        const [sh, sm, ss] = String(row.start_time).split(':').map((x: string) => parseInt(x, 10));
-        const [eh, em, es] = String(row.end_time).split(':').map((x: string) => parseInt(x, 10));
+        const [sh, sm, ss] = String(row.start_time)
+          .split(':')
+          .map((x: string) => parseInt(x, 10));
+        const [eh, em, es] = String(row.end_time)
+          .split(':')
+          .map((x: string) => parseInt(x, 10));
 
         const startAt = new Date(today);
         startAt.setHours(sh || 0, sm || 0, ss || 0, 0);
@@ -184,11 +208,130 @@ export class TeacherDashboardController {
         count: items.length,
       });
     } catch (error) {
-      console.error('Error in TeacherDashboardController.getTodayUpcomingSessions:', error);
+      console.error(
+        'Error in TeacherDashboardController.getTodayUpcomingSessions:',
+        error
+      );
       res.status(500).json({
         success: false,
         message: 'حدث خطأ في الخادم',
-        errors: ['حدث خطأ في الخادم']
+        errors: ['حدث خطأ في الخادم'],
+      });
+    }
+  }
+
+  // Referral dashboard for teacher: invitations and bonus seats
+  static async getReferralStats(req: Request, res: Response): Promise<void> {
+    try {
+      const teacherId: string | undefined = req.user?.id;
+      if (!teacherId) {
+        res.status(401).json({
+          success: false,
+          message: 'المصادقة مطلوبة',
+          errors: ['المستخدم غير مصادق عليه'],
+        });
+        return;
+      }
+
+      // 1) Counts by status from teacher_referrals
+      const referralsByStatusQ = `
+        SELECT status, COUNT(*)::int AS count
+        FROM teacher_referrals
+        WHERE referrer_teacher_id = $1
+        GROUP BY status
+      `;
+
+      // 2) Total bonus seats from referrals for this teacher (as referrer)
+      const referralBonusesQ = `
+        SELECT COALESCE(SUM(b.bonus_value), 0)::int AS total_bonus
+        FROM teacher_subscription_bonuses b
+        JOIN teacher_subscriptions ts ON ts.id = b.teacher_subscription_id
+        WHERE ts.teacher_id = $1
+          AND b.bonus_type = 'referral_referrer'
+      `;
+
+      // 3) Active bonuses with expiry details
+      const activeBonusesQ = `
+        SELECT
+          b.id,
+          b.bonus_type,
+          b.bonus_value,
+          b.expires_at,
+          ts.id AS subscription_id,
+          ts.end_date
+        FROM teacher_subscription_bonuses b
+        JOIN teacher_subscriptions ts ON ts.id = b.teacher_subscription_id
+        WHERE ts.teacher_id = $1
+          AND (b.expires_at IS NULL OR b.expires_at > NOW())
+        ORDER BY b.created_at DESC
+      `;
+
+      const [referralsByStatusR, referralBonusesR, activeBonusesR] =
+        await Promise.all([
+          pool.query(referralsByStatusQ, [teacherId]),
+          pool.query(referralBonusesQ, [teacherId]),
+          pool.query(activeBonusesQ, [teacherId]),
+        ]);
+
+      // Build counts object
+      let pending = 0;
+      let completed = 0;
+      let rejected = 0;
+
+      for (const row of referralsByStatusR.rows) {
+        if (row.status === 'pending') pending = row.count;
+        else if (row.status === 'completed') completed = row.count;
+        else if (row.status === 'rejected') rejected = row.count;
+      }
+
+      const total = pending + completed + rejected;
+      const totalBonusSeats = referralBonusesR.rows[0]?.total_bonus ?? 0;
+
+      const activeBonuses = activeBonusesR.rows.map((row: any) => ({
+        id: row.id,
+        bonusType: row.bonus_type,
+        bonusValue: row.bonus_value,
+        expiresAt: row.expires_at,
+        subscriptionId: row.subscription_id,
+        subscriptionEndDate: row.end_date,
+      }));
+
+      // Referral code and link (مبدئيًا نستخدم teacherId ككود الدعوة)
+      const referralCode = teacherId;
+      const frontendBase = process.env['FRONTEND_BASE_URL'] || '';
+      const referralLink = frontendBase
+        ? `${frontendBase.replace(/\/$/, '')}/register/teacher?ref=${encodeURIComponent(
+            referralCode
+          )}`
+        : `/register/teacher?ref=${encodeURIComponent(referralCode)}`;
+
+      res.status(200).json({
+        success: true,
+        message: 'إحصائيات نظام الإحالات للمعلم',
+        data: {
+          referralCode,
+          referralLink,
+          referrals: {
+            pending,
+            completed,
+            rejected,
+            total,
+          },
+          bonuses: {
+            totalBonusSeats,
+            activeBonuses,
+          },
+        },
+      });
+    } catch (error) {
+      console.error(
+        'Error in TeacherDashboardController.getReferralStats:',
+        error
+      );
+      res.status(500).json({
+        success: false,
+        message: 'حدث خطأ في الخادم',
+        errors: ['حدث خطأ في الخادم'],
       });
     }
   }

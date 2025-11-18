@@ -293,7 +293,8 @@ export class AuthService {
     try {
       // Normalize email and pre-check duplicates
       const emailLower = (data.email || '').toLowerCase();
-      const existingProvider = await UserModel.getAuthProviderByEmail(emailLower);
+      const existingProvider =
+        await UserModel.getAuthProviderByEmail(emailLower);
       if (existingProvider) {
         return {
           success: false,
@@ -459,7 +460,8 @@ export class AuthService {
     try {
       // Normalize email and pre-check duplicates
       const emailLower = (data.email || '').toLowerCase();
-      const existingProvider = await UserModel.getAuthProviderByEmail(emailLower);
+      const existingProvider =
+        await UserModel.getAuthProviderByEmail(emailLower);
       if (existingProvider) {
         return {
           success: false,
@@ -665,7 +667,10 @@ export class AuthService {
         tomorrow.setDate(tomorrow.getDate() + 1);
         tomorrow.setHours(4, 0, 0, 0);
         expiresAt = tomorrow;
-        expiresInSeconds = Math.max(60, Math.floor((expiresAt.getTime() - now.getTime()) / 1000));
+        expiresInSeconds = Math.max(
+          60,
+          Math.floor((expiresAt.getTime() - now.getTime()) / 1000)
+        );
       } else {
         // الطالب: مدة أطول (افتراضياً 7 أيام) ويمكن ضبطها عبر ENV
         const days = parseInt(process.env['STUDENT_TOKEN_TTL_DAYS'] || '7', 10);
@@ -677,7 +682,12 @@ export class AuthService {
       const token = await this.generateToken(user, expiresInSeconds);
 
       // ✅ خزّن التوكن والـ Player ID مع الجلسة مرة واحدة
-      await TokenModel.create(user.id, token, expiresAt, data.oneSignalPlayerId);
+      await TokenModel.create(
+        user.id,
+        token,
+        expiresAt,
+        data.oneSignalPlayerId
+      );
 
       return {
         success: true,
@@ -881,7 +891,10 @@ export class AuthService {
   }
 
   // Generate JWT token (without saving to DB)
-  private static async generateToken(user: User, expiresInSeconds: number): Promise<string> {
+  private static async generateToken(
+    user: User,
+    expiresInSeconds: number
+  ): Promise<string> {
     const payload = {
       userId: user.id,
       email: user.email,
@@ -893,7 +906,9 @@ export class AuthService {
       throw new Error('مفتاح JWT غير مُعد');
     }
 
-    const token = jwt.sign(payload, secret, { expiresIn: expiresInSeconds } as jwt.SignOptions);
+    const token = jwt.sign(payload, secret, {
+      expiresIn: expiresInSeconds,
+    } as jwt.SignOptions);
     return token;
   }
 

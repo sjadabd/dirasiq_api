@@ -1,4 +1,6 @@
 import { SubscriptionPackageModel } from '../models/subscription-package.model';
+import { TeacherReferralModel } from '../models/teacher-referral.model';
+import { TeacherSubscriptionBonusModel } from '../models/teacher-subscription-bonus.model';
 import { TeacherSubscriptionModel } from '../models/teacher-subscription.model';
 import {
   ApiResponse,
@@ -225,6 +227,55 @@ export class TeacherSubscriptionService {
         startDate,
         endDate,
       });
+
+      // 4) إذا كانت هذه أول باقة مدفوعة لمعلم مدعو، نكمل الإحالة (Referral)
+      if (!pkg.isFree) {
+        try {
+          const referral =
+            await TeacherReferralModel.findPendingByReferredTeacherId(
+              teacherId
+            );
+
+          if (referral) {
+            await TeacherReferralModel.updateStatus(referral.id, 'completed');
+
+            // إضافة Bonus للمعلم الداعي (referrer) والمعلم المدعو (referred)
+            // مبدئيًا: 5 طلاب إضافيين للداعي، 2 للمدعو
+            try {
+              // Bonus للمعلم الداعي على اشتراكه النشط الحالي (إن وجد)
+              const referrerActive =
+                await TeacherSubscriptionModel.findActiveByTeacherId(
+                  referral.referrer_teacher_id
+                );
+
+              if (referrerActive) {
+                await TeacherSubscriptionBonusModel.create({
+                  teacherSubscriptionId: referrerActive.id,
+                  bonusType: 'referral_referrer',
+                  bonusValue: 5,
+                  expiresAt: referrerActive.endDate ?? null,
+                });
+              }
+
+              // Bonus للمعلم المدعو على الاشتراك الحالي الذي تم إنشاؤه للتو
+              await TeacherSubscriptionBonusModel.create({
+                teacherSubscriptionId: created.id,
+                bonusType: 'referral_referred',
+                bonusValue: 2,
+                expiresAt: created.endDate ?? null,
+              });
+            } catch (bonusErr) {
+              console.error('Error creating referral bonuses:', bonusErr);
+            }
+          }
+        } catch (refErr) {
+          console.error(
+            'Error completing teacher referral on subscription:',
+            refErr
+          );
+          // لا نفشل تفعيل الاشتراك بسبب مشكلة في الإحالة
+        }
+      }
 
       return {
         success: true,

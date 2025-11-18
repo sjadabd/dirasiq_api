@@ -1,21 +1,21 @@
 export enum UserType {
   SUPER_ADMIN = 'super_admin',
   TEACHER = 'teacher',
-  STUDENT = 'student'
+  STUDENT = 'student',
 }
 
 export enum UserStatus {
   PENDING = 'pending',
   ACTIVE = 'active',
   INACTIVE = 'inactive',
-  SUSPENDED = 'suspended'
+  SUSPENDED = 'suspended',
 }
 
 export enum ReservationStatus {
   PENDING = 'pending',
   PAID = 'paid',
   PARTIAL = 'partial',
-  REFUNDED = 'refunded'
+  REFUNDED = 'refunded',
 }
 
 export enum BookingStatus {
@@ -29,7 +29,7 @@ export enum BookingStatus {
 
 export enum Gender {
   MALE = 'male',
-  FEMALE = 'female'
+  FEMALE = 'female',
 }
 
 export interface BaseUser {
@@ -147,6 +147,7 @@ export interface RegisterTeacherRequest {
   streetName?: string;
   suburb?: string;
   locationConfidence?: number;
+  referralCode?: string;
 }
 
 export interface RegisterStudentRequest {
@@ -551,7 +552,7 @@ export enum EnrollmentRequestStatus {
   PENDING = 'pending',
   APPROVED = 'approved',
   REJECTED = 'rejected',
-  EXPIRED = 'expired'
+  EXPIRED = 'expired',
 }
 
 // Enrollment Status
@@ -560,7 +561,7 @@ export enum EnrollmentStatus {
   COMPLETED = 'completed',
   CANCELLED = 'cancelled',
   EXPIRED = 'expired',
-  SUSPENDED = 'suspended'
+  SUSPENDED = 'suspended',
 }
 
 // Invoice Status
@@ -569,7 +570,7 @@ export enum InvoiceStatus {
   PARTIAL = 'partial',
   PAID = 'paid',
   OVERDUE = 'overdue',
-  CANCELLED = 'cancelled'
+  CANCELLED = 'cancelled',
 }
 
 // Invoice Type
@@ -577,7 +578,7 @@ export enum InvoiceType {
   RESERVATION = 'reservation',
   COURSE = 'course',
   INSTALLMENT = 'installment',
-  PENALTY = 'penalty'
+  PENALTY = 'penalty',
 }
 
 // Installment Status
@@ -585,7 +586,7 @@ export enum InstallmentStatus {
   PENDING = 'pending',
   PARTIAL = 'partial',
   PAID = 'paid',
-  OVERDUE = 'overdue'
+  OVERDUE = 'overdue',
 }
 
 // Payment Method
@@ -593,7 +594,7 @@ export enum PaymentMethod {
   CASH = 'cash',
   BANK_TRANSFER = 'bank_transfer',
   CREDIT_CARD = 'credit_card',
-  MOBILE_PAYMENT = 'mobile_payment'
+  MOBILE_PAYMENT = 'mobile_payment',
 }
 
 // Course Enrollment Request
@@ -904,7 +905,7 @@ export interface BulkInvoiceCreationRequest {
       installmentAmount: number;
       dueDate: string;
     }[];
-  }
+  };
 }
 
 export interface BulkInvoiceCreationResponse {
@@ -955,7 +956,7 @@ export interface TeacherReservationPaymentsReportResponse {
 export enum NewsType {
   WEB = 'web',
   MOBILE = 'mobile',
-  WEB_AND_MOBILE = 'web_and_mobile'
+  WEB_AND_MOBILE = 'web_and_mobile',
 }
 
 export interface News {
