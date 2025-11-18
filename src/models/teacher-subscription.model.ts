@@ -248,9 +248,11 @@ export class TeacherSubscriptionModel {
     }
 
     const subscription = result.rows[0];
-    const currentStudents = subscription.current_students || 0;
-    const baseMaxStudents = subscription.max_students;
-    const bonusStudents = subscription.bonus_students || 0;
+
+    // قيم PostgreSQL من النوع numeric أو bigint تُعاد كسلاسل نصية غالباً
+    const currentStudents = Number(subscription.current_students) || 0;
+    const baseMaxStudents = Number(subscription.max_students) || 0;
+    const bonusStudents = Number(subscription.bonus_students) || 0;
     const maxStudents = baseMaxStudents + bonusStudents;
     const endDate = new Date(subscription.end_date);
 
