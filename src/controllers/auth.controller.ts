@@ -1044,7 +1044,37 @@ export class AuthController {
             .run(req),
           body('birthDate')
             .optional()
-            .isISO8601()
+            .custom((value, { req }) => {
+              if (!value) return true;
+
+              // 1) تحويل الأرقام العربية إلى إنكليزية
+              const normalizeArabicNumbers = (str: string) =>
+                str.replace(/[٠١٢٣٤٥٦٧٨٩]/g, d =>
+                  '٠١٢٣٤٥٦٧٨٩'.indexOf(d).toString()
+                );
+
+              let normalized = normalizeArabicNumbers(value);
+
+              // 2) تحويل صيغة dd/mm/yyyy → yyyy-mm-dd إن وجدت
+              if (normalized.includes('/')) {
+                const [day, month, year] = normalized.split('/');
+                if (day && month && year) {
+                  // مثال: 12 / 03 / 2005
+                  normalized = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+                }
+              }
+
+              // 3) تحقق هل التاريخ صالح باستخدام Date
+              const date = new Date(normalized);
+              if (isNaN(date.getTime())) {
+                throw new Error('تنسيق تاريخ الميلاد غير صحيح');
+              }
+
+              // 4) خزنه بصيغة ISO
+              req.body.birthDate = date.toISOString();
+
+              return true;
+            })
             .withMessage('تنسيق تاريخ الميلاد غير صحيح')
             .run(req),
         ]);
@@ -1090,9 +1120,40 @@ export class AuthController {
             .run(req),
           body('birthDate')
             .optional()
-            .isISO8601()
+            .custom((value, { req }) => {
+              if (!value) return true;
+
+              // 1) تحويل الأرقام العربية إلى إنكليزية
+              const normalizeArabicNumbers = (str: string) =>
+                str.replace(/[٠١٢٣٤٥٦٧٨٩]/g, d =>
+                  '٠١٢٣٤٥٦٧٨٩'.indexOf(d).toString()
+                );
+
+              let normalized = normalizeArabicNumbers(value);
+
+              // 2) تحويل صيغة dd/mm/yyyy → yyyy-mm-dd إن وجدت
+              if (normalized.includes('/')) {
+                const [day, month, year] = normalized.split('/');
+                if (day && month && year) {
+                  // مثال: 12 / 03 / 2005
+                  normalized = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+                }
+              }
+
+              // 3) تحقق هل التاريخ صالح باستخدام Date
+              const date = new Date(normalized);
+              if (isNaN(date.getTime())) {
+                throw new Error('تنسيق تاريخ الميلاد غير صحيح');
+              }
+
+              // 4) خزنه بصيغة ISO
+              req.body.birthDate = date.toISOString();
+
+              return true;
+            })
             .withMessage('تنسيق تاريخ الميلاد غير صحيح')
             .run(req),
+
           body('address')
             .optional()
             .isLength({ max: 1000 })
@@ -1238,9 +1299,41 @@ export class AuthController {
             .withMessage('الجنس غير صحيح')
             .run(req),
           body('birthDate')
-            .isISO8601()
-            .withMessage('تاريخ الميلاد غير صحيح')
+            .optional()
+            .custom((value, { req }) => {
+              if (!value) return true;
+
+              // 1) تحويل الأرقام العربية إلى إنكليزية
+              const normalizeArabicNumbers = (str: string) =>
+                str.replace(/[٠١٢٣٤٥٦٧٨٩]/g, d =>
+                  '٠١٢٣٤٥٦٧٨٩'.indexOf(d).toString()
+                );
+
+              let normalized = normalizeArabicNumbers(value);
+
+              // 2) تحويل صيغة dd/mm/yyyy → yyyy-mm-dd إن وجدت
+              if (normalized.includes('/')) {
+                const [day, month, year] = normalized.split('/');
+                if (day && month && year) {
+                  // مثال: 12 / 03 / 2005
+                  normalized = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+                }
+              }
+
+              // 3) تحقق هل التاريخ صالح باستخدام Date
+              const date = new Date(normalized);
+              if (isNaN(date.getTime())) {
+                throw new Error('تنسيق تاريخ الميلاد غير صحيح');
+              }
+
+              // 4) خزنه بصيغة ISO
+              req.body.birthDate = date.toISOString();
+
+              return true;
+            })
+            .withMessage('تنسيق تاريخ الميلاد غير صحيح')
             .run(req),
+
           // الموقع (اختياري)
           body('latitude')
             .optional()
