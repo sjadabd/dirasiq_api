@@ -12,9 +12,11 @@ import notificationRoutes from './routes/notification.routes';
 import publicNewsRoutes from './routes/public/news.routes';
 import studentRoutes from './routes/student';
 import academicYearRoutes from './routes/super_admin/academic-year.routes';
+import superAdminDashboardRoutes from './routes/super_admin/dashboard.routes';
 import gradeRoutes from './routes/super_admin/grade.routes';
 import newsRoutes from './routes/super_admin/news.routes';
 import subscriptionPackageRoutes from './routes/super_admin/subscription-package.routes';
+import superAdminTeacherRoutes from './routes/super_admin/teacher.routes';
 import teacherRoutes from './routes/teacher';
 import teacherSearchRoutes from './routes/teacher-search.routes';
 import courseRoutes from './routes/teacher/course.routes';
@@ -197,6 +199,8 @@ app.use('/api/teacher-search', teacherSearchRoutes);
 app.use('/api/subscription-packages', subscriptionPackageRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/user', userOnesignalRoutes);
+app.use('/api/super-admin/dashboard', superAdminDashboardRoutes);
+app.use('/api/super-admin/teachers', superAdminTeacherRoutes);
 
 // =====================================================
 // 🔹 Error Handling
