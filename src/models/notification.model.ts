@@ -463,6 +463,7 @@ export class NotificationModel {
         END AS is_read
       FROM notifications n
       LEFT JOIN users u ON u.id = $1
+      LEFT JOIN users t ON t.id = n.created_by
       LEFT JOIN user_notifications un ON un.notification_id = n.id AND un.user_id = $1
       WHERE (
         n.recipient_type = 'all' OR
@@ -479,13 +480,15 @@ export class NotificationModel {
       AND (
         n.type <> 'new_course_available'
         OR (
-          (
-            (n.data->'teacherLocation'->>'state') IS NULL OR (n.data->'teacherLocation'->>'state') = u.state
-          ) AND (
-            (n.data->'teacherLocation'->>'city') IS NULL OR (n.data->'teacherLocation'->>'city') = u.city
-          ) AND (
-            (n.data->'teacherLocation'->>'suburb') IS NULL OR (n.data->'teacherLocation'->>'suburb') = u.suburb
-          )
+          t.latitude IS NOT NULL AND t.longitude IS NOT NULL
+          AND u.latitude IS NOT NULL AND u.longitude IS NOT NULL
+          AND (
+            6371 * acos(
+              cos(radians(CAST(u.latitude AS double precision))) * cos(radians(CAST(t.latitude AS double precision))) *
+              cos(radians(CAST(t.longitude AS double precision)) - radians(CAST(u.longitude AS double precision))) +
+              sin(radians(CAST(u.latitude AS double precision))) * sin(radians(CAST(t.latitude AS double precision)))
+            )
+          ) <= 30
         )
       )
       AND n.deleted_at IS NULL
@@ -498,6 +501,7 @@ export class NotificationModel {
       SELECT COUNT(*)
       FROM notifications n
       LEFT JOIN users u ON u.id = $1
+      LEFT JOIN users t ON t.id = n.created_by
       WHERE (
         n.recipient_type = 'all' OR
         (n.recipient_type = 'teachers' AND u.user_type = 'teacher') OR
@@ -513,11 +517,15 @@ export class NotificationModel {
       AND (
         n.type <> 'new_course_available'
         OR (
-          (n.data->'teacherLocation'->>'state') IS NULL OR (n.data->'teacherLocation'->>'state') = u.state
-        ) AND (
-          (n.data->'teacherLocation'->>'city') IS NULL OR (n.data->'teacherLocation'->>'city') = u.city
-        ) AND (
-          (n.data->'teacherLocation'->>'suburb') IS NULL OR (n.data->'teacherLocation'->>'suburb') = u.suburb
+          t.latitude IS NOT NULL AND t.longitude IS NOT NULL
+          AND u.latitude IS NOT NULL AND u.longitude IS NOT NULL
+          AND (
+            6371 * acos(
+              cos(radians(CAST(u.latitude AS double precision))) * cos(radians(CAST(t.latitude AS double precision))) *
+              cos(radians(CAST(t.longitude AS double precision)) - radians(CAST(u.longitude AS double precision))) +
+              sin(radians(CAST(u.latitude AS double precision))) * sin(radians(CAST(t.latitude AS double precision)))
+            )
+          ) <= 30
         )
       )
       AND n.deleted_at IS NULL
