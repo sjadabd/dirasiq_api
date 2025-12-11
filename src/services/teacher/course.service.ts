@@ -14,7 +14,6 @@ import {
   UpdateCourseRequest,
 } from '../../types';
 import { ImageService } from '../../utils/image.service';
-import { AcademicYearService } from '../super_admin/academic-year.service';
 
 export class CourseService {
   // Create new course
@@ -132,7 +131,7 @@ export class CourseService {
         };
       }
 
-      // ✅ تحقق من وجود دورة مشابهة
+      // ✅ تحقق من وجود دورة مشابهة (غير محذوفة)
       const existingCourse = await CourseModel.courseExistsForTeacher(
         teacherId,
         data.study_year,
@@ -191,7 +190,7 @@ export class CourseService {
             courseId: course.id,
             gradeId: course.grade_id,
             studyYear: course.study_year,
-            // بيانات موقع المعلم لاستخدامها في فلترة الطلاب حسب الموقع
+            // بيانات موقع المعلم (تُستخدم في الفرونت فقط إن احتجت لاحقًا)
             teacherLocation: {
               state: teacher.state,
               city: teacher.city,
@@ -223,6 +222,7 @@ export class CourseService {
           createdBy: teacherId,
         });
       } catch (notifyErr) {
+        // فشل إرسال الإشعار لا يجب أن يُفشل إنشاء الدورة نفسها
         console.error('فشل إرسال الإشعار:', notifyErr);
       }
 
@@ -233,47 +233,20 @@ export class CourseService {
       };
     } catch (error) {
       console.error('Error creating course:', error);
-      return {
-        success: false,
-        message: 'فشلت العملية',
-        errors: ['خطأ داخلي في الخادم'],
-      };
-    }
-  }
-  static async listNamesForActiveYear(teacherId: string): Promise<ApiResponse> {
-    try {
-      const teacher = await UserModel.findById(teacherId);
-      if (!teacher || teacher.userType !== 'teacher') {
+      const pgError = error as any;
+      if (
+        pgError?.code === '23505' &&
+        pgError?.constraint === 'unique_course_per_teacher_year_grade_subject'
+      ) {
         return {
           success: false,
-          message: 'المعلم غير موجود',
-          errors: ['المعلم غير موجود'],
+          message:
+            'لا يمكن إنشاء الدورة لأن دورة بنفس الاسم والصف والمادة والسنة موجودة بالفعل لهذا المعلم',
+          errors: [
+            'الدورة موجودة بالفعل لهذا المعلم في نفس السنة الدراسية ونفس الصف والمادة',
+          ],
         };
       }
-
-      const active = await AcademicYearService.getActive();
-      const studyYear = active.success
-        ? active.data?.academicYear?.year
-        : undefined;
-      if (!studyYear) {
-        return {
-          success: false,
-          message: 'لا توجد سنة دراسية مفعلة',
-          errors: ['لا توجد سنة دراسية مفعلة'],
-        };
-      }
-
-      const rows = await CourseModel.findNamesByTeacherAndYear(
-        teacherId,
-        studyYear
-      );
-      return {
-        success: true,
-        message: 'تم جلب أسماء الدورات بنجاح',
-        data: rows.map(r => ({ id: r.id, name: r.course_name })),
-      };
-    } catch (error) {
-      console.error('Error listing course names:', error);
       return {
         success: false,
         message: 'فشلت العملية',
