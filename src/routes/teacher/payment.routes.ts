@@ -12,10 +12,23 @@ router.get('/reservations', TeacherPaymentController.getReservationPayments);
 
 // Summary report (totals)
 // GET /teacher/payments/reservations/report?studyYear=YYYY-YYYY
-router.get('/reservations/report', TeacherPaymentController.getReservationPaymentsReport);
+router.get(
+  '/reservations/report',
+  TeacherPaymentController.getReservationPaymentsReport
+);
 
 // Single booking payment detail
 // GET /teacher/payments/reservations/:bookingId
-router.get('/reservations/:bookingId', TeacherPaymentController.getReservationPaymentByBooking);
+router.get(
+  '/reservations/:bookingId',
+  TeacherPaymentController.getReservationPaymentByBooking
+);
+
+// Mark a specific reservation payment as paid
+// PATCH /teacher/payments/reservations/:bookingId/mark-paid
+router.patch(
+  '/reservations/:bookingId/mark-paid',
+  TeacherPaymentController.markReservationPaid
+);
 
 export default router;

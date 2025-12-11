@@ -5,7 +5,10 @@ import { ApiResponse, AuthenticatedRequest } from '../../types';
 
 export class TeacherPaymentController {
   // GET /teacher/payments/reservations
-  static async getReservationPayments(req: AuthenticatedRequest & Request, res: Response<ApiResponse>) {
+  static async getReservationPayments(
+    req: AuthenticatedRequest & Request,
+    res: Response<ApiResponse>
+  ) {
     try {
       const teacherId = req.user?.id as string;
       const studyYear = (req.query['studyYear'] as string) || '';
@@ -13,7 +16,9 @@ export class TeacherPaymentController {
       const limit = parseInt((req.query['limit'] as string) || '10', 10);
 
       if (!studyYear) {
-        return res.status(400).json({ success: false, message: 'studyYear is required' });
+        return res
+          .status(400)
+          .json({ success: false, message: 'studyYear is required' });
       }
 
       // List query with pagination
@@ -48,7 +53,7 @@ export class TeacherPaymentController {
       const [listR, countR, report] = await Promise.all([
         pool.query(listQ, [teacherId, studyYear, limit, offset]),
         pool.query(countQ, [teacherId, studyYear]),
-        ReservationPaymentModel.getTeacherReport(teacherId, studyYear)
+        ReservationPaymentModel.getTeacherReport(teacherId, studyYear),
       ]);
 
       const total = parseInt(countR.rows[0].count, 10) || 0;
@@ -63,11 +68,14 @@ export class TeacherPaymentController {
         status: row.status as 'pending' | 'paid',
         paidAt: row.paid_at || undefined,
         // Provide a link for a detailed booking payment report
-        reportLink: `/teacher/payments/reservations/${row.booking_id}`
+        reportLink: `/teacher/payments/reservations/${row.booking_id}`,
       }));
 
       // Build report totals (same logic as in getReservationPaymentsReport)
-      const totalAmount = report.items.reduce((sum: number, it: any) => sum + (it.amount || 0), 0);
+      const totalAmount = report.items.reduce(
+        (sum: number, it: any) => sum + (it.amount || 0),
+        0
+      );
       const totalPaidAmount = report.items
         .filter((it: any) => it.status === 'paid')
         .reduce((sum: number, it: any) => sum + (it.amount || 0), 0);
@@ -84,7 +92,7 @@ export class TeacherPaymentController {
             page,
             limit,
             total,
-            totalPages: Math.ceil(total / limit)
+            totalPages: Math.ceil(total / limit),
           },
           report: {
             teacherId: report.teacherId,
@@ -103,24 +111,40 @@ export class TeacherPaymentController {
         },
       });
     } catch (error: any) {
-      return res.status(500).json({ success: false, message: error.message || 'Failed to fetch reservation payments' });
+      return res
+        .status(500)
+        .json({
+          success: false,
+          message: error.message || 'Failed to fetch reservation payments',
+        });
     }
   }
 
   // GET /teacher/payments/reservations/report
-  static async getReservationPaymentsReport(req: AuthenticatedRequest & Request, res: Response<ApiResponse>) {
+  static async getReservationPaymentsReport(
+    req: AuthenticatedRequest & Request,
+    res: Response<ApiResponse>
+  ) {
     try {
       const teacherId = req.user?.id as string;
       const studyYear = (req.query['studyYear'] as string) || '';
 
       if (!studyYear) {
-        return res.status(400).json({ success: false, message: 'studyYear is required' });
+        return res
+          .status(400)
+          .json({ success: false, message: 'studyYear is required' });
       }
 
-      const report = await ReservationPaymentModel.getTeacherReport(teacherId, studyYear);
+      const report = await ReservationPaymentModel.getTeacherReport(
+        teacherId,
+        studyYear
+      );
 
       // Financial totals
-      const totalAmount = report.items.reduce((sum, it) => sum + (it.amount || 0), 0);
+      const totalAmount = report.items.reduce(
+        (sum, it) => sum + (it.amount || 0),
+        0
+      );
       const totalPaidAmount = report.items
         .filter(it => it.status === 'paid')
         .reduce((sum, it) => sum + (it.amount || 0), 0);
@@ -135,25 +159,33 @@ export class TeacherPaymentController {
           studyYear: report.studyYear,
           counts: {
             totalPaid: report.totalPaid,
-            totalPending: report.totalPending
+            totalPending: report.totalPending,
           },
           totals: {
             totalAmount,
             totalPaidAmount,
             discountAmount,
-            remainingAmount
+            remainingAmount,
           },
           // Provide a hyperlink to the list for quick access
-          listLink: '/teacher/payments/reservations'
-        }
+          listLink: '/teacher/payments/reservations',
+        },
       });
     } catch (error: any) {
-      return res.status(500).json({ success: false, message: error.message || 'Failed to build report' });
+      return res
+        .status(500)
+        .json({
+          success: false,
+          message: error.message || 'Failed to build report',
+        });
     }
   }
 
   // GET /teacher/payments/reservations/:bookingId
-  static async getReservationPaymentByBooking(req: AuthenticatedRequest & Request, res: Response<ApiResponse>) {
+  static async getReservationPaymentByBooking(
+    req: AuthenticatedRequest & Request,
+    res: Response<ApiResponse>
+  ) {
     try {
       const teacherId = req.user?.id as string;
       const { bookingId } = req.params as { bookingId: string };
@@ -175,7 +207,9 @@ export class TeacherPaymentController {
 
       const r = await pool.query(q, [bookingId, teacherId]);
       if (r.rows.length === 0) {
-        return res.status(404).json({ success: false, message: 'Payment not found' });
+        return res
+          .status(404)
+          .json({ success: false, message: 'Payment not found' });
       }
 
       const row = r.rows[0];
@@ -188,12 +222,72 @@ export class TeacherPaymentController {
         amount: Number(row.amount),
         status: row.status as 'pending' | 'paid',
         paidAt: row.paid_at || undefined,
-        studyYear: String(row.study_year)
+        studyYear: String(row.study_year),
       };
 
       return res.json({ success: true, message: 'Payment fetched', data });
     } catch (error: any) {
-      return res.status(500).json({ success: false, message: error.message || 'Failed to fetch payment' });
+      return res
+        .status(500)
+        .json({
+          success: false,
+          message: error.message || 'Failed to fetch payment',
+        });
+    }
+  }
+
+  // PATCH /teacher/payments/reservations/:bookingId/mark-paid
+  static async markReservationPaid(
+    req: AuthenticatedRequest & Request,
+    res: Response<ApiResponse>
+  ) {
+    try {
+      const teacherId = req.user?.id as string;
+      const { bookingId } = req.params as { bookingId: string };
+
+      if (!bookingId) {
+        return res
+          .status(400)
+          .json({ success: false, message: 'bookingId is required' });
+      }
+
+      // Verify that this payment belongs to the same teacher and that the booking is not deleted
+      const verifyQ = `
+        SELECT rp.booking_id
+        FROM reservation_payments rp
+        JOIN course_bookings cb ON cb.id = rp.booking_id
+        WHERE rp.booking_id = $1 AND rp.teacher_id = $2 AND cb.is_deleted = false
+        LIMIT 1
+      `;
+      const verifyR = await pool.query(verifyQ, [bookingId, teacherId]);
+      if (verifyR.rows.length === 0) {
+        return res
+          .status(404)
+          .json({
+            success: false,
+            message: 'Reservation payment not found or access denied',
+          });
+      }
+
+      const updated = await ReservationPaymentModel.markPaid(bookingId);
+      if (!updated) {
+        return res
+          .status(404)
+          .json({ success: false, message: 'Reservation payment not found' });
+      }
+
+      return res.json({
+        success: true,
+        message: 'Reservation payment marked as paid',
+        data: updated as any,
+      });
+    } catch (error: any) {
+      return res
+        .status(500)
+        .json({
+          success: false,
+          message: error.message || 'Failed to mark reservation as paid',
+        });
     }
   }
 }
