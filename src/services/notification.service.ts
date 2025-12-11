@@ -234,6 +234,8 @@ export class NotificationService {
       let senderType: 'system' | 'admin' | 'teacher' | 'student' | 'user' =
         'system';
       let senderId: string | null = null;
+      let senderLatitude: number | null = null;
+      let senderLongitude: number | null = null;
       try {
         const user = await UserModel.findById(
           String(notificationData.createdBy)
@@ -241,6 +243,8 @@ export class NotificationService {
         if (user) {
           senderId = String(user.id);
           const displayName = (user as any)?.name || '';
+          senderLatitude = (user as any)?.latitude ?? null;
+          senderLongitude = (user as any)?.longitude ?? null;
           switch (user.userType) {
             case UserType.SUPER_ADMIN:
               senderType = 'admin';
@@ -370,30 +374,32 @@ export class NotificationService {
                 notificationData.data['studyYear'] as any
               );
             const studentIds = studentGrades.map(sg => sg.studentId);
-
-            // فلترة إضافية حسب موقع المعلّم
-            const teacherLocation =
-              (notificationData.data as any)?.teacherLocation || {};
-            const locationFilter = {
-              state: teacherLocation.state || null,
-              city: teacherLocation.city || null,
-              suburb: teacherLocation.suburb || null,
-            };
-
             let finalStudentIds = studentIds;
+
             if (
-              locationFilter.state ||
-              locationFilter.city ||
-              locationFilter.suburb
+              notificationData.type === NotificationType.NEW_COURSE_AVAILABLE &&
+              senderLatitude !== null &&
+              senderLongitude !== null
             ) {
-              const studentsInLocation =
-                await UserModel.findStudentsByIdsAndLocation(
-                  studentIds,
-                  locationFilter
+              const students = await UserModel.findStudentsByIdsAndLocation(
+                studentIds,
+                {}
+              );
+              const nearbyStudents = students.filter((s: any) => {
+                const lat = (s as any)?.latitude;
+                const lon = (s as any)?.longitude;
+                if (lat == null || lon == null) return false;
+                const d = this.calculateDistanceKm(
+                  Number(senderLatitude),
+                  Number(senderLongitude),
+                  Number(lat),
+                  Number(lon)
                 );
-              finalStudentIds = studentsInLocation.map((s: any) => s.id);
+                return d <= 30;
+              });
+              finalStudentIds = nearbyStudents.map((s: any) => s.id);
               console.info(
-                `📍 Location filter applied for students: state=${locationFilter.state}, city=${locationFilter.city}, suburb=${locationFilter.suburb}, before=${studentIds.length}, after=${finalStudentIds.length}`
+                `📍 Distance filter applied for students: before=${studentIds.length}, after=${finalStudentIds.length}`
               );
             }
 
@@ -585,6 +591,27 @@ export class NotificationService {
       default:
         return 'normal';
     }
+  }
+
+  // Haversine formula to calculate distance (in km) between two lat/long points
+  private calculateDistanceKm(
+    lat1: number,
+    lon1: number,
+    lat2: number,
+    lon2: number
+  ): number {
+    const toRad = (v: number) => (v * Math.PI) / 180;
+    const R = 6371; // Earth radius in km
+    const dLat = toRad(lat2 - lat1);
+    const dLon = toRad(lon2 - lon1);
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(toRad(lat1)) *
+        Math.cos(toRad(lat2)) *
+        Math.sin(dLon / 2) *
+        Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
   }
 
   private replaceTemplateVariables(

@@ -5,10 +5,9 @@ async function backfillNewCourseNotifications() {
 
   const query = `
     UPDATE notifications
-    SET study_year = COALESCE(study_year, data->>'studyYear')
+    SET study_year = data->>'studyYear'
     WHERE type = 'new_course_available'
       AND deleted_at IS NULL
-      AND (study_year IS NULL OR study_year = '')
       AND (data->>'studyYear') IS NOT NULL
   `;
 
