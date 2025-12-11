@@ -535,6 +535,7 @@ export interface CourseBookingWithDetails extends CourseBooking {
     seatsCount: number;
     hasReservation?: boolean;
     reservationAmount?: number | null;
+    gradeName?: string;
   };
   teacher: {
     id: string;

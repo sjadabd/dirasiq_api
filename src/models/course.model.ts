@@ -3,7 +3,10 @@ import { Course, CreateCourseRequest, UpdateCourseRequest } from '../types';
 
 export class CourseModel {
   // Create new course
-  static async create(teacherId: string, data: CreateCourseRequest): Promise<Course> {
+  static async create(
+    teacherId: string,
+    data: CreateCourseRequest
+  ): Promise<Course> {
     const query = `
       INSERT INTO courses (
         teacher_id, study_year, grade_id, subject_id, course_name,
@@ -26,7 +29,7 @@ export class CourseModel {
       data.price,
       data.seats_count,
       data.has_reservation ?? false,
-      data.reservation_amount ?? null
+      data.reservation_amount ?? null,
     ];
     const result = await pool.query(query, values);
     return result.rows[0];
@@ -57,8 +60,12 @@ export class CourseModel {
   }
 
   // Get course by ID and teacher ID (for authorization)
-  static async findByIdAndTeacher(id: string, teacherId: string): Promise<Course | null> {
-    const query = 'SELECT * FROM courses WHERE id = $1 AND teacher_id = $2 AND is_deleted = false';
+  static async findByIdAndTeacher(
+    id: string,
+    teacherId: string
+  ): Promise<Course | null> {
+    const query =
+      'SELECT * FROM courses WHERE id = $1 AND teacher_id = $2 AND is_deleted = false';
     const result = await pool.query(query, [id, teacherId]);
     return result.rows[0] || null;
   }
@@ -73,9 +80,10 @@ export class CourseModel {
     gradeId?: string,
     subjectId?: string,
     deleted?: boolean
-  ): Promise<{ courses: Course[], total: number }> {
+  ): Promise<{ courses: Course[]; total: number }> {
     // Build base query based on deleted parameter
-    let baseWhereClause = 'WHERE teacher_id = $1';
+    // Use alias "c" for courses to allow joins while keeping count query simple
+    let baseWhereClause = 'WHERE c.teacher_id = $1';
     if (deleted === true) {
       baseWhereClause += ' AND is_deleted = true';
     } else if (deleted === false) {
@@ -83,14 +91,21 @@ export class CourseModel {
     }
     // If deleted is undefined, show all courses (both deleted and non-deleted)
 
-    let query = `SELECT * FROM courses ${baseWhereClause}`;
-    let countQuery = `SELECT COUNT(*) FROM courses ${baseWhereClause}`;
+    // Main query: join grades to return grade_name with each course
+    let query = `SELECT c.*, g.name AS grade_name FROM courses c LEFT JOIN grades g ON g.id = c.grade_id ${baseWhereClause}`;
+    // Count query: count courses only (no need to join grades)
+    let countQuery = `SELECT COUNT(*) FROM courses c ${baseWhereClause}`;
     const params: any[] = [teacherId];
     let paramIndex = 2;
     let whereConditions: string[] = [];
 
     // Add search condition if provided
-    if (search && search.trim() !== '' && search !== 'null' && search !== 'undefined') {
+    if (
+      search &&
+      search.trim() !== '' &&
+      search !== 'null' &&
+      search !== 'undefined'
+    ) {
       whereConditions.push(`course_name ILIKE $${paramIndex}`);
       params.push(`%${search.trim()}%`);
       paramIndex++;
@@ -135,17 +150,26 @@ export class CourseModel {
     // Execute queries
     const [result, countResult] = await Promise.all([
       pool.query(query, params),
-      pool.query(countQuery, whereConditions.length > 0 ? [teacherId, ...params.slice(1, whereConditions.length + 1)] : [teacherId])
+      pool.query(
+        countQuery,
+        whereConditions.length > 0
+          ? [teacherId, ...params.slice(1, whereConditions.length + 1)]
+          : [teacherId]
+      ),
     ]);
 
     return {
       courses: result.rows,
-      total: parseInt(countResult.rows[0].count)
+      total: parseInt(countResult.rows[0].count),
     };
   }
 
   // Update course
-  static async update(id: string, teacherId: string, data: UpdateCourseRequest): Promise<Course | null> {
+  static async update(
+    id: string,
+    teacherId: string,
+    data: UpdateCourseRequest
+  ): Promise<Course | null> {
     const fields: string[] = [];
     const values: any[] = [];
     let paramIndex = 1;
@@ -251,21 +275,29 @@ export class CourseModel {
 
   // Check if course exists
   static async exists(id: string): Promise<boolean> {
-    const query = 'SELECT EXISTS(SELECT 1 FROM courses WHERE id = $1 AND is_deleted = false)';
+    const query =
+      'SELECT EXISTS(SELECT 1 FROM courses WHERE id = $1 AND is_deleted = false)';
     const result = await pool.query(query, [id]);
     return result.rows[0].exists;
   }
 
   // Check if course name already exists for the same teacher in the same year
-  static async nameExistsForTeacher(teacherId: string, studyYear: string, courseName: string, excludeId?: string): Promise<boolean> {
+  static async nameExistsForTeacher(
+    teacherId: string,
+    studyYear: string,
+    courseName: string,
+    excludeId?: string
+  ): Promise<boolean> {
     let query: string;
     const params: any[] = [teacherId, studyYear, courseName];
 
     if (excludeId) {
-      query = 'SELECT EXISTS(SELECT 1 FROM courses WHERE teacher_id = $1 AND study_year = $2 AND course_name = $3 AND id != $4 AND is_deleted = false)';
+      query =
+        'SELECT EXISTS(SELECT 1 FROM courses WHERE teacher_id = $1 AND study_year = $2 AND course_name = $3 AND id != $4 AND is_deleted = false)';
       params.push(excludeId);
     } else {
-      query = 'SELECT EXISTS(SELECT 1 FROM courses WHERE teacher_id = $1 AND study_year = $2 AND course_name = $3 AND is_deleted = false)';
+      query =
+        'SELECT EXISTS(SELECT 1 FROM courses WHERE teacher_id = $1 AND study_year = $2 AND course_name = $3 AND is_deleted = false)';
     }
 
     const result = await pool.query(query, params);
@@ -282,13 +314,21 @@ export class CourseModel {
     excludeId?: string
   ): Promise<boolean> {
     let query: string;
-    const params: any[] = [teacherId, studyYear, courseName, gradeId, subjectId];
+    const params: any[] = [
+      teacherId,
+      studyYear,
+      courseName,
+      gradeId,
+      subjectId,
+    ];
 
     if (excludeId) {
-      query = 'SELECT EXISTS(SELECT 1 FROM courses WHERE teacher_id = $1 AND study_year = $2 AND course_name = $3 AND grade_id = $4 AND subject_id = $5 AND id != $6 AND is_deleted = false)';
+      query =
+        'SELECT EXISTS(SELECT 1 FROM courses WHERE teacher_id = $1 AND study_year = $2 AND course_name = $3 AND grade_id = $4 AND subject_id = $5 AND id != $6 AND is_deleted = false)';
       params.push(excludeId);
     } else {
-      query = 'SELECT EXISTS(SELECT 1 FROM courses WHERE teacher_id = $1 AND study_year = $2 AND course_name = $3 AND grade_id = $4 AND subject_id = $5 AND is_deleted = false)';
+      query =
+        'SELECT EXISTS(SELECT 1 FROM courses WHERE teacher_id = $1 AND study_year = $2 AND course_name = $3 AND grade_id = $4 AND subject_id = $5 AND is_deleted = false)';
     }
 
     const result = await pool.query(query, params);
@@ -296,7 +336,10 @@ export class CourseModel {
   }
 
   // Get course with related data (grade and subject names)
-  static async findByIdWithRelations(id: string, teacherId: string): Promise<any> {
+  static async findByIdWithRelations(
+    id: string,
+    teacherId: string
+  ): Promise<any> {
     const query = `
       SELECT
         c.*,
@@ -316,7 +359,7 @@ export class CourseModel {
     teacherId: string,
     page: number = 1,
     limit: number = 10
-  ): Promise<{ courses: Course[], total: number }> {
+  ): Promise<{ courses: Course[]; total: number }> {
     const offset = (page - 1) * limit;
 
     const query = `
@@ -344,12 +387,12 @@ export class CourseModel {
 
     const [result, countResult] = await Promise.all([
       pool.query(query, [teacherId, limit, offset]),
-      pool.query(countQuery, [teacherId])
+      pool.query(countQuery, [teacherId]),
     ]);
 
     return {
       courses: result.rows,
-      total: parseInt(countResult.rows[0].count)
+      total: parseInt(countResult.rows[0].count),
     };
   }
 
@@ -420,7 +463,7 @@ export class CourseModel {
       gradeIds,
       maxDistance,
       limit,
-      offset
+      offset,
     ];
 
     const result = await pool.query(query, values);

@@ -1,17 +1,27 @@
 import pool from '../config/database';
-import { BookingStatus, CourseBooking, CourseBookingWithDetails, CreateCourseBookingRequest, UpdateCourseBookingRequest } from '../types';
+import {
+  BookingStatus,
+  CourseBooking,
+  CourseBookingWithDetails,
+  CreateCourseBookingRequest,
+  UpdateCourseBookingRequest,
+} from '../types';
 import { BookingUsageLogModel } from './booking-usage-log.model';
 import { TeacherSubscriptionModel } from './teacher-subscription.model';
 
 export class CourseBookingModel {
   // Create new course booking
-  static async create(studentId: string, data: CreateCourseBookingRequest): Promise<CourseBooking> {
+  static async create(
+    studentId: string,
+    data: CreateCourseBookingRequest
+  ): Promise<CourseBooking> {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
 
       // First, get the course details to extract teacher_id and study_year
-      const courseQuery = 'SELECT teacher_id, study_year FROM courses WHERE id = $1 AND is_deleted = false';
+      const courseQuery =
+        'SELECT teacher_id, study_year FROM courses WHERE id = $1 AND is_deleted = false';
       const courseResult = await client.query(courseQuery, [data.courseId]);
 
       if (courseResult.rows.length === 0) {
@@ -22,8 +32,12 @@ export class CourseBookingModel {
       const studyYear = courseResult.rows[0].study_year;
 
       // Check if booking already exists
-      const existingBookingQuery = 'SELECT id FROM course_bookings WHERE student_id = $1 AND course_id = $2 AND is_deleted = false';
-      const existingBookingResult = await client.query(existingBookingQuery, [studentId, data.courseId]);
+      const existingBookingQuery =
+        'SELECT id FROM course_bookings WHERE student_id = $1 AND course_id = $2 AND is_deleted = false';
+      const existingBookingResult = await client.query(existingBookingQuery, [
+        studentId,
+        data.courseId,
+      ]);
 
       if (existingBookingResult.rows.length > 0) {
         const error = new Error('Booking already exists for this course');
@@ -46,7 +60,7 @@ export class CourseBookingModel {
         teacherId,
         studyYear,
         BookingStatus.PENDING,
-        data.studentMessage || null
+        data.studentMessage || null,
       ];
 
       const result = await client.query(query, values);
@@ -63,13 +77,18 @@ export class CourseBookingModel {
 
   // Get booking by ID
   static async findById(id: string): Promise<CourseBooking | null> {
-    const query = 'SELECT * FROM course_bookings WHERE id = $1 AND is_deleted = false';
+    const query =
+      'SELECT * FROM course_bookings WHERE id = $1 AND is_deleted = false';
     const result = await pool.query(query, [id]);
-    return result.rows[0] ? this.mapDatabaseBookingToBooking(result.rows[0]) : null;
+    return result.rows[0]
+      ? this.mapDatabaseBookingToBooking(result.rows[0])
+      : null;
   }
 
   // Get booking by ID with details
-  static async findByIdWithDetails(id: string): Promise<CourseBookingWithDetails | null> {
+  static async findByIdWithDetails(
+    id: string
+  ): Promise<CourseBookingWithDetails | null> {
     const query = `
       SELECT
         cb.*,
@@ -85,7 +104,9 @@ export class CourseBookingModel {
     `;
 
     const result = await pool.query(query, [id]);
-    return result.rows[0] ? this.mapDatabaseBookingWithDetails(result.rows[0]) : null;
+    return result.rows[0]
+      ? this.mapDatabaseBookingWithDetails(result.rows[0])
+      : null;
   }
 
   // Get all bookings for a student (with details)
@@ -96,8 +117,9 @@ export class CourseBookingModel {
     limit: number = 10,
     status?: BookingStatus,
     excludeStatus?: BookingStatus
-  ): Promise<{ bookings: CourseBookingWithDetails[], total: number }> {
-    let whereClause = 'WHERE cb.student_id = $1 AND cb.study_year = $2 AND cb.is_deleted = false';
+  ): Promise<{ bookings: CourseBookingWithDetails[]; total: number }> {
+    let whereClause =
+      'WHERE cb.student_id = $1 AND cb.study_year = $2 AND cb.is_deleted = false';
     let params: any[] = [studentId, studyYear];
     let paramIndex = 3;
 
@@ -134,7 +156,9 @@ export class CourseBookingModel {
     params.push(limit, offset);
     const result = await pool.query(query, params);
 
-    const bookings = result.rows.map(row => this.mapDatabaseBookingWithDetails(row));
+    const bookings = result.rows.map(row =>
+      this.mapDatabaseBookingWithDetails(row)
+    );
 
     return { bookings, total };
   }
@@ -146,8 +170,9 @@ export class CourseBookingModel {
     page: number = 1,
     limit: number = 10,
     status?: BookingStatus
-  ): Promise<{ bookings: CourseBookingWithDetails[], total: number }> {
-    let whereClause = 'WHERE cb.teacher_id = $1 AND cb.study_year = $2 AND cb.is_deleted = false';
+  ): Promise<{ bookings: CourseBookingWithDetails[]; total: number }> {
+    let whereClause =
+      'WHERE cb.teacher_id = $1 AND cb.study_year = $2 AND cb.is_deleted = false';
     let params: any[] = [teacherId, studyYear];
     let paramIndex = 3;
 
@@ -170,10 +195,12 @@ export class CourseBookingModel {
         cb.*,
         s.id as student_id, s.name as student_name, s.email as student_email,
         c.id as course_id, c.has_reservation, c.reservation_amount, c.course_name, c.course_images, c.description, c.start_date, c.end_date, c.price, c.seats_count,
+        g.name AS grade_name,
         t.id as teacher_id, t.name as teacher_name, t.email as teacher_email
       FROM course_bookings cb
       JOIN users s ON cb.student_id = s.id
       JOIN courses c ON cb.course_id = c.id
+      LEFT JOIN grades g ON g.id = c.grade_id
       JOIN users t ON cb.teacher_id = t.id
       ${whereClause}
       ORDER BY cb.created_at DESC
@@ -183,7 +210,9 @@ export class CourseBookingModel {
     params.push(limit, offset);
     const result = await pool.query(query, params);
 
-    const bookings = result.rows.map(row => this.mapDatabaseBookingWithDetails(row));
+    const bookings = result.rows.map(row =>
+      this.mapDatabaseBookingWithDetails(row)
+    );
 
     return { bookings, total };
   }
@@ -224,14 +253,18 @@ export class CourseBookingModel {
           throw new Error('الحجز مؤكد بالفعل');
         }
         // التحقق من السعة قبل التأكيد
-        const capacityCheck = await TeacherSubscriptionModel.canAddStudent(teacherId);
+        const capacityCheck =
+          await TeacherSubscriptionModel.canAddStudent(teacherId);
         if (!capacityCheck.canAdd) {
           throw new Error(capacityCheck.message || 'لا يمكن تأكيد الحجز');
         }
       }
 
       // منع تغيير status إلى rejected إذا كان بالفعل rejected
-      if (data.status === BookingStatus.REJECTED && currentStatus === BookingStatus.REJECTED) {
+      if (
+        data.status === BookingStatus.REJECTED &&
+        currentStatus === BookingStatus.REJECTED
+      ) {
         throw new Error('الحجز مرفوض بالفعل');
       }
 
@@ -301,9 +334,13 @@ export class CourseBookingModel {
       const result = await client.query(query, values);
 
       // تحديث عدد الطلاب الحاليين في الاشتراك وتسجيل الاستخدام (الآن على حالة confirmed)
-      if (data.status === BookingStatus.CONFIRMED && currentStatus !== BookingStatus.CONFIRMED) {
+      if (
+        data.status === BookingStatus.CONFIRMED &&
+        currentStatus !== BookingStatus.CONFIRMED
+      ) {
         // تأكيد حجز جديد - زيادة العدد
-        const capacityCheck = await TeacherSubscriptionModel.canAddStudent(teacherId);
+        const capacityCheck =
+          await TeacherSubscriptionModel.canAddStudent(teacherId);
         await TeacherSubscriptionModel.incrementCurrentStudents(teacherId);
 
         // تسجيل الاستخدام
@@ -319,9 +356,13 @@ export class CourseBookingModel {
           'teacher',
           data.teacherResponse
         );
-      } else if (data.status === BookingStatus.REJECTED && currentStatus === BookingStatus.CONFIRMED) {
+      } else if (
+        data.status === BookingStatus.REJECTED &&
+        currentStatus === BookingStatus.CONFIRMED
+      ) {
         // رفض حجز كان مؤكداً - تقليل العدد
-        const capacityCheck = await TeacherSubscriptionModel.canAddStudent(teacherId);
+        const capacityCheck =
+          await TeacherSubscriptionModel.canAddStudent(teacherId);
         await TeacherSubscriptionModel.decrementCurrentStudents(teacherId);
 
         // تسجيل الاستخدام
@@ -337,9 +378,13 @@ export class CourseBookingModel {
           'teacher',
           data.rejectionReason
         );
-      } else if (data.status === BookingStatus.CANCELLED && currentStatus === BookingStatus.CONFIRMED) {
+      } else if (
+        data.status === BookingStatus.CANCELLED &&
+        currentStatus === BookingStatus.CONFIRMED
+      ) {
         // إلغاء حجز كان مؤكداً - تقليل العدد
-        const capacityCheck = await TeacherSubscriptionModel.canAddStudent(teacherId);
+        const capacityCheck =
+          await TeacherSubscriptionModel.canAddStudent(teacherId);
         await TeacherSubscriptionModel.decrementCurrentStudents(teacherId);
 
         // تسجيل الاستخدام
@@ -355,9 +400,13 @@ export class CourseBookingModel {
           'teacher',
           data.cancellationReason
         );
-      } else if (data.status === BookingStatus.REJECTED && currentStatus !== BookingStatus.REJECTED) {
+      } else if (
+        data.status === BookingStatus.REJECTED &&
+        currentStatus !== BookingStatus.REJECTED
+      ) {
         // رفض حجز جديد (لم يكن معتمدًا)
-        const capacityCheck = await TeacherSubscriptionModel.canAddStudent(teacherId);
+        const capacityCheck =
+          await TeacherSubscriptionModel.canAddStudent(teacherId);
 
         // تسجيل الاستخدام
         await this.logBookingUsage(
@@ -374,14 +423,18 @@ export class CourseBookingModel {
         );
       }
 
-      if (data.status === BookingStatus.CONFIRMED && currentStatus === BookingStatus.PRE_APPROVED) {
+      if (
+        data.status === BookingStatus.CONFIRMED &&
+        currentStatus === BookingStatus.PRE_APPROVED
+      ) {
         const courseQ = `SELECT reservation_amount, has_reservation FROM courses WHERE id = $1`;
         const courseR = await client.query(courseQ, [currentBooking.course_id]);
 
         const course = courseR.rows[0];
         if (course && course.has_reservation && course.reservation_amount > 0) {
           // الحالة من المعلم
-          const paymentStatus = data.reservationPaid === true ? 'paid' : 'pending';
+          const paymentStatus =
+            data.reservationPaid === true ? 'paid' : 'pending';
 
           const insertPaymentQ = `
             INSERT INTO reservation_payments (booking_id, student_id, teacher_id, course_id, amount, status, paid_at)
@@ -429,7 +482,10 @@ export class CourseBookingModel {
         FROM course_bookings
         WHERE id = $1 AND student_id = $2 AND is_deleted = false
       `;
-      const bookingResult = await client.query(getBookingQuery, [id, studentId]);
+      const bookingResult = await client.query(getBookingQuery, [
+        id,
+        studentId,
+      ]);
 
       if (bookingResult.rows.length === 0) {
         throw new Error('Booking not found or access denied');
@@ -445,11 +501,18 @@ export class CourseBookingModel {
         RETURNING *
       `;
 
-      const result = await client.query(query, [BookingStatus.CANCELLED, new Date(), reason, id, studentId]);
+      const result = await client.query(query, [
+        BookingStatus.CANCELLED,
+        new Date(),
+        reason,
+        id,
+        studentId,
+      ]);
 
       // تحديث عدد الطلاب الحاليين إذا كان الحجز مؤكداً وتسجيل الاستخدام
       if (currentStatus === BookingStatus.CONFIRMED) {
-        const capacityCheck = await TeacherSubscriptionModel.canAddStudent(teacherId);
+        const capacityCheck =
+          await TeacherSubscriptionModel.canAddStudent(teacherId);
         await TeacherSubscriptionModel.decrementCurrentStudents(teacherId);
 
         // تسجيل الاستخدام
@@ -493,7 +556,10 @@ export class CourseBookingModel {
         FROM course_bookings
         WHERE id = $1 AND teacher_id = $2 AND is_deleted = false
       `;
-      const bookingResult = await client.query(getBookingQuery, [id, teacherId]);
+      const bookingResult = await client.query(getBookingQuery, [
+        id,
+        teacherId,
+      ]);
 
       if (bookingResult.rows.length === 0) {
         throw new Error('Booking not found or access denied');
@@ -508,11 +574,18 @@ export class CourseBookingModel {
         RETURNING *
       `;
 
-      const result = await client.query(query, [BookingStatus.CANCELLED, new Date(), reason, id, teacherId]);
+      const result = await client.query(query, [
+        BookingStatus.CANCELLED,
+        new Date(),
+        reason,
+        id,
+        teacherId,
+      ]);
 
       // تحديث عدد الطلاب الحاليين إذا كان الحجز مؤكداً وتسجيل الاستخدام
       if (currentStatus === BookingStatus.CONFIRMED) {
-        const capacityCheck = await TeacherSubscriptionModel.canAddStudent(teacherId);
+        const capacityCheck =
+          await TeacherSubscriptionModel.canAddStudent(teacherId);
         await TeacherSubscriptionModel.decrementCurrentStudents(teacherId);
 
         // تسجيل الاستخدام
@@ -579,11 +652,15 @@ export class CourseBookingModel {
       }
 
       if (booking.status === 'rejected') {
-        throw new Error('Cannot reactivate rejected bookings. Please create a new booking instead.');
+        throw new Error(
+          'Cannot reactivate rejected bookings. Please create a new booking instead.'
+        );
       }
 
       if (booking.status !== 'cancelled') {
-        throw new Error(`Cannot reactivate booking with status: ${booking.status}`);
+        throw new Error(
+          `Cannot reactivate booking with status: ${booking.status}`
+        );
       }
 
       if (booking.cancelled_by === 'teacher') {
@@ -624,11 +701,14 @@ export class CourseBookingModel {
       const result = await client.query(reactivateQuery, [new Date(), id]);
       await client.query('COMMIT');
 
-      const reactivatedBooking = this.mapDatabaseBookingToBooking(result.rows[0]);
+      const reactivatedBooking = this.mapDatabaseBookingToBooking(
+        result.rows[0]
+      );
 
       // Add note if course has ended
       if (courseEndDate < new Date()) {
-        (reactivatedBooking as any).courseEndedNote = 'تم إعادة تفعيل الحجز مع ملاحظة: الكورس انتهى، يرجى التواصل مع المعلم';
+        (reactivatedBooking as any).courseEndedNote =
+          'تم إعادة تفعيل الحجز مع ملاحظة: الكورس انتهى، يرجى التواصل مع المعلم';
         (reactivatedBooking as any).courseEndedWarning = true;
       }
 
@@ -642,7 +722,11 @@ export class CourseBookingModel {
   }
 
   // Soft delete booking
-  static async delete(id: string, userId: string, userType: string): Promise<void> {
+  static async delete(
+    id: string,
+    userId: string,
+    userType: string
+  ): Promise<void> {
     let whereClause: string;
     let params: any[];
 
@@ -691,12 +775,14 @@ export class CourseBookingModel {
       createdAt: row.created_at,
       updatedAt: row.updated_at,
       cancelledBy: row.cancelled_by,
-      reactivatedAt: row.reactivated_at
+      reactivatedAt: row.reactivated_at,
     };
   }
 
   // Helper method to map database result to CourseBookingWithDetails
-  private static mapDatabaseBookingWithDetails(row: any): CourseBookingWithDetails {
+  private static mapDatabaseBookingWithDetails(
+    row: any
+  ): CourseBookingWithDetails {
     return {
       id: row.id,
       studentId: row.student_id,
@@ -721,7 +807,7 @@ export class CourseBookingModel {
       student: {
         id: row.student_id,
         name: row.student_name,
-        email: row.student_email
+        email: row.student_email,
       },
       course: {
         id: row.course_id,
@@ -733,13 +819,14 @@ export class CourseBookingModel {
         price: row.price,
         seatsCount: row.seats_count,
         hasReservation: row.has_reservation,
-        reservationAmount: row.reservation_amount
+        reservationAmount: row.reservation_amount,
+        gradeName: row.grade_name,
       },
       teacher: {
         id: row.teacher_id,
         name: row.teacher_name,
-        email: row.teacher_email
-      }
+        email: row.teacher_email,
+      },
     };
   }
 
@@ -763,7 +850,9 @@ export class CourseBookingModel {
         WHERE teacher_id = $1 AND is_active = true AND deleted_at IS NULL
         LIMIT 1
       `;
-      const subscriptionResult = await pool.query(subscriptionQuery, [teacherId]);
+      const subscriptionResult = await pool.query(subscriptionQuery, [
+        teacherId,
+      ]);
 
       if (subscriptionResult.rows.length > 0) {
         const teacherSubscriptionId = subscriptionResult.rows[0].id;
@@ -779,7 +868,7 @@ export class CourseBookingModel {
           studentsBefore,
           studentsAfter,
           reason: reason || undefined,
-          performedBy
+          performedBy,
         });
       }
     } catch (error) {
@@ -789,7 +878,9 @@ export class CourseBookingModel {
   }
 
   // Get confirmed students for a course (by course_id)
-  static async getConfirmedStudentIdsByCourse(courseId: string): Promise<string[]> {
+  static async getConfirmedStudentIdsByCourse(
+    courseId: string
+  ): Promise<string[]> {
     const q = `
       SELECT student_id
       FROM course_bookings
@@ -800,7 +891,15 @@ export class CourseBookingModel {
   }
 
   // Get confirmed students with details (name, grade) for a course (teacher view)
-  static async getConfirmedStudentsDetailedByCourse(courseId: string): Promise<Array<{ student_id: string; student_name: string; grade_id: string | null; grade_name: string | null; study_year: string | null }>> {
+  static async getConfirmedStudentsDetailedByCourse(courseId: string): Promise<
+    Array<{
+      student_id: string;
+      student_name: string;
+      grade_id: string | null;
+      grade_name: string | null;
+      study_year: string | null;
+    }>
+  > {
     const q = `
       SELECT
         cb.student_id::text,
