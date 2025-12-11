@@ -379,7 +379,9 @@ export class NotificationService {
             if (
               notificationData.type === NotificationType.NEW_COURSE_AVAILABLE &&
               senderLatitude !== null &&
-              senderLongitude !== null
+              senderLongitude !== null &&
+              Number(senderLatitude) !== 0 &&
+              Number(senderLongitude) !== 0
             ) {
               const students = await UserModel.findStudentsByIdsAndLocation(
                 studentIds,
@@ -388,7 +390,14 @@ export class NotificationService {
               const nearbyStudents = students.filter((s: any) => {
                 const lat = (s as any)?.latitude;
                 const lon = (s as any)?.longitude;
-                if (lat == null || lon == null) return false;
+                if (
+                  lat == null ||
+                  lon == null ||
+                  Number(lat) === 0 ||
+                  Number(lon) === 0
+                ) {
+                  return false;
+                }
                 const d = this.calculateDistanceKm(
                   Number(senderLatitude),
                   Number(senderLongitude),
