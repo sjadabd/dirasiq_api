@@ -187,7 +187,17 @@ export class NotificationModel {
       (n.recipient_type = 'specific_teachers' AND u.user_type = 'teacher' AND $1 = ANY(SELECT jsonb_array_elements_text(n.recipient_ids::jsonb)::uuid)) OR
       (n.recipient_type = 'specific_students' AND u.user_type = 'student' AND $1 = ANY(SELECT jsonb_array_elements_text(n.recipient_ids::jsonb)::uuid))
     )
-    AND n.status IN ('sent', 'delivered', 'read')`;
+    AND n.status IN ('sent', 'delivered', 'read')
+    AND (
+      n.type <> 'new_course_available'
+      OR (
+        (n.data->'teacherLocation'->>'state') IS NULL OR (n.data->'teacherLocation'->>'state') = u.state
+      ) AND (
+        (n.data->'teacherLocation'->>'city') IS NULL OR (n.data->'teacherLocation'->>'city') = u.city
+      ) AND (
+        (n.data->'teacherLocation'->>'suburb') IS NULL OR (n.data->'teacherLocation'->>'suburb') = u.suburb
+      )
+    )`;
 
     const values: any[] = [userId];
     let param = 2;
@@ -458,6 +468,16 @@ export class NotificationModel {
         ))
       )
       AND n.status IN ('sent', 'delivered', 'read')
+      AND (
+        n.type <> 'new_course_available'
+        OR (
+          (n.data->'teacherLocation'->>'state') IS NULL OR (n.data->'teacherLocation'->>'state') = u.state
+        ) AND (
+          (n.data->'teacherLocation'->>'city') IS NULL OR (n.data->'teacherLocation'->>'city') = u.city
+        ) AND (
+          (n.data->'teacherLocation'->>'suburb') IS NULL OR (n.data->'teacherLocation'->>'suburb') = u.suburb
+        )
+      )
       ${activeYear?.year ? `AND n.study_year = $4` : ''}
       ORDER BY n.created_at DESC
       LIMIT $2 OFFSET $3
@@ -479,6 +499,16 @@ export class NotificationModel {
         ))
       )
       AND n.status IN ('sent', 'delivered', 'read')
+      AND (
+        n.type <> 'new_course_available'
+        OR (
+          (n.data->'teacherLocation'->>'state') IS NULL OR (n.data->'teacherLocation'->>'state') = u.state
+        ) AND (
+          (n.data->'teacherLocation'->>'city') IS NULL OR (n.data->'teacherLocation'->>'city') = u.city
+        ) AND (
+          (n.data->'teacherLocation'->>'suburb') IS NULL OR (n.data->'teacherLocation'->>'suburb') = u.suburb
+        )
+      )
       ${activeYear?.year ? `AND n.study_year = $2` : ''}
     `;
 
