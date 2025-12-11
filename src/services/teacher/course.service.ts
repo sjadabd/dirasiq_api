@@ -1,16 +1,27 @@
 import { CourseModel } from '../../models/course.model';
 import { GradeModel } from '../../models/grade.model';
-import { NotificationPriority, NotificationType, RecipientType } from '../../models/notification.model';
+import {
+  NotificationPriority,
+  NotificationType,
+  RecipientType,
+} from '../../models/notification.model';
 import { SubjectModel } from '../../models/subject.model';
 import { UserModel } from '../../models/user.model';
 import { NotificationService } from '../../services/notification.service';
-import { ApiResponse, CreateCourseRequest, UpdateCourseRequest } from '../../types';
+import {
+  ApiResponse,
+  CreateCourseRequest,
+  UpdateCourseRequest,
+} from '../../types';
 import { ImageService } from '../../utils/image.service';
 import { AcademicYearService } from '../super_admin/academic-year.service';
 
 export class CourseService {
   // Create new course
-  static async create(teacherId: string, data: CreateCourseRequest): Promise<ApiResponse> {
+  static async create(
+    teacherId: string,
+    data: CreateCourseRequest
+  ): Promise<ApiResponse> {
     try {
       // ✅ تحقق من المعلم
       const teacher = await UserModel.findById(teacherId);
@@ -18,7 +29,7 @@ export class CourseService {
         return {
           success: false,
           message: 'المعلم غير موجود',
-          errors: ['المعلم غير موجود']
+          errors: ['المعلم غير موجود'],
         };
       }
 
@@ -28,7 +39,7 @@ export class CourseService {
         return {
           success: false,
           message: 'السنة الدراسية غير صحيحة',
-          errors: ['السنة الدراسية غير صحيحة']
+          errors: ['السنة الدراسية غير صحيحة'],
         };
       }
 
@@ -38,17 +49,20 @@ export class CourseService {
         return {
           success: false,
           message: 'الصف غير موجود',
-          errors: ['الصف غير موجود']
+          errors: ['الصف غير موجود'],
         };
       }
 
       // ✅ تحقق من المادة
-      const subject = await SubjectModel.findByIdAndTeacher(data.subject_id, teacherId);
+      const subject = await SubjectModel.findByIdAndTeacher(
+        data.subject_id,
+        teacherId
+      );
       if (!subject) {
         return {
           success: false,
           message: 'المادة غير موجودة',
-          errors: ['المادة لا تنتمي للمعلم']
+          errors: ['المادة لا تنتمي للمعلم'],
         };
       }
 
@@ -61,7 +75,7 @@ export class CourseService {
         return {
           success: false,
           message: 'تاريخ الانتهاء يجب أن يكون بعد تاريخ البداية',
-          errors: ['تاريخ الانتهاء يجب أن يكون بعد تاريخ البداية']
+          errors: ['تاريخ الانتهاء يجب أن يكون بعد تاريخ البداية'],
         };
       }
 
@@ -69,7 +83,7 @@ export class CourseService {
         return {
           success: false,
           message: 'تاريخ الانتهاء يجب أن يكون في المستقبل',
-          errors: ['تاريخ الانتهاء يجب أن يكون في المستقبل']
+          errors: ['تاريخ الانتهاء يجب أن يكون في المستقبل'],
         };
       }
 
@@ -78,7 +92,7 @@ export class CourseService {
         return {
           success: false,
           message: 'السعر غير صحيح',
-          errors: ['السعر غير صحيح']
+          errors: ['السعر غير صحيح'],
         };
       }
 
@@ -90,21 +104,21 @@ export class CourseService {
           return {
             success: false,
             message: 'يجب تحديد مبلغ العربون عند تفعيل خاصية الحجز',
-            errors: ['مطلوب مبلغ العربون']
+            errors: ['مطلوب مبلغ العربون'],
           };
         }
         if (reservationAmount <= 0) {
           return {
             success: false,
             message: 'مبلغ العربون يجب أن يكون أكبر من صفر',
-            errors: ['مبلغ العربون غير صحيح']
+            errors: ['مبلغ العربون غير صحيح'],
           };
         }
         if (reservationAmount > data.price) {
           return {
             success: false,
             message: 'مبلغ العربون لا يمكن أن يتجاوز سعر الكورس',
-            errors: ['مبلغ العربون أكبر من السعر']
+            errors: ['مبلغ العربون أكبر من السعر'],
           };
         }
       }
@@ -114,7 +128,7 @@ export class CourseService {
         return {
           success: false,
           message: 'عدد المقاعد غير صحيح',
-          errors: ['عدد المقاعد غير صحيح']
+          errors: ['عدد المقاعد غير صحيح'],
         };
       }
 
@@ -130,7 +144,7 @@ export class CourseService {
         return {
           success: false,
           message: 'الدورة موجودة بالفعل',
-          errors: ['الدورة موجودة بالفعل']
+          errors: ['الدورة موجودة بالفعل'],
         };
       }
 
@@ -138,12 +152,14 @@ export class CourseService {
       let processedImages: string[] = [];
       if (data.course_images && data.course_images.length > 0) {
         try {
-          processedImages = await ImageService.processCourseImages(data.course_images);
+          processedImages = await ImageService.processCourseImages(
+            data.course_images
+          );
         } catch (error) {
           return {
             success: false,
             message: 'خطأ في معالجة الصورة',
-            errors: ['خطأ في معالجة الصورة']
+            errors: ['خطأ في معالجة الصورة'],
           };
         }
       }
@@ -153,7 +169,7 @@ export class CourseService {
         ...data,
         course_images: processedImages,
         has_reservation: hasReservation,
-        reservation_amount: hasReservation ? reservationAmount : null
+        reservation_amount: hasReservation ? reservationAmount : null,
       };
       const course = await CourseModel.create(teacherId, courseData);
 
@@ -161,7 +177,7 @@ export class CourseService {
       try {
         const notificationService = new NotificationService({
           appId: process.env['ONESIGNAL_APP_ID'] || '',
-          restApiKey: process.env['ONESIGNAL_REST_API_KEY'] || ''
+          restApiKey: process.env['ONESIGNAL_REST_API_KEY'] || '',
         });
 
         await notificationService.createAndSendNotification({
@@ -175,6 +191,12 @@ export class CourseService {
             courseId: course.id,
             gradeId: course.grade_id,
             studyYear: course.study_year,
+            // بيانات موقع المعلم لاستخدامها في فلترة الطلاب حسب الموقع
+            teacherLocation: {
+              state: teacher.state,
+              city: teacher.city,
+              suburb: teacher.suburb,
+            },
             // كل بيانات الدورة لإظهار تفاصيل مباشرة في التطبيق
             course: {
               id: course.id,
@@ -194,11 +216,11 @@ export class CourseService {
               reservation_amount: course.reservation_amount,
               teacher: {
                 id: teacherId,
-                name: teacher.name
-              }
-            }
+                name: teacher.name,
+              },
+            },
           },
-          createdBy: teacherId
+          createdBy: teacherId,
         });
       } catch (notifyErr) {
         console.error('فشل إرسال الإشعار:', notifyErr);
@@ -207,14 +229,14 @@ export class CourseService {
       return {
         success: true,
         message: 'تم إنشاء الدورة',
-        data: { course }
+        data: { course },
       };
     } catch (error) {
       console.error('Error creating course:', error);
       return {
         success: false,
         message: 'فشلت العملية',
-        errors: ['خطأ داخلي في الخادم']
+        errors: ['خطأ داخلي في الخادم'],
       };
     }
   }
@@ -222,24 +244,41 @@ export class CourseService {
     try {
       const teacher = await UserModel.findById(teacherId);
       if (!teacher || teacher.userType !== 'teacher') {
-        return { success: false, message: 'المعلم غير موجود', errors: ['المعلم غير موجود'] };
+        return {
+          success: false,
+          message: 'المعلم غير موجود',
+          errors: ['المعلم غير موجود'],
+        };
       }
 
       const active = await AcademicYearService.getActive();
-      const studyYear = active.success ? active.data?.academicYear?.year : undefined;
+      const studyYear = active.success
+        ? active.data?.academicYear?.year
+        : undefined;
       if (!studyYear) {
-        return { success: false, message: 'لا توجد سنة دراسية مفعلة', errors: ['لا توجد سنة دراسية مفعلة'] };
+        return {
+          success: false,
+          message: 'لا توجد سنة دراسية مفعلة',
+          errors: ['لا توجد سنة دراسية مفعلة'],
+        };
       }
 
-      const rows = await CourseModel.findNamesByTeacherAndYear(teacherId, studyYear);
+      const rows = await CourseModel.findNamesByTeacherAndYear(
+        teacherId,
+        studyYear
+      );
       return {
         success: true,
         message: 'تم جلب أسماء الدورات بنجاح',
-        data: rows.map(r => ({ id: r.id, name: r.course_name }))
+        data: rows.map(r => ({ id: r.id, name: r.course_name })),
       };
     } catch (error) {
       console.error('Error listing course names:', error);
-      return { success: false, message: 'فشلت العملية', errors: ['خطأ داخلي في الخادم'] };
+      return {
+        success: false,
+        message: 'فشلت العملية',
+        errors: ['خطأ داخلي في الخادم'],
+      };
     }
   }
   // Get all courses for a teacher with pagination and filters
@@ -260,24 +299,33 @@ export class CourseService {
         return {
           success: false,
           message: 'المعلم غير موجود',
-          errors: ['المعلم غير موجود']
+          errors: ['المعلم غير موجود'],
         };
       }
 
-      const result = await CourseModel.findAllByTeacher(teacherId, page, limit, search, studyYear, gradeId, subjectId, deleted);
+      const result = await CourseModel.findAllByTeacher(
+        teacherId,
+        page,
+        limit,
+        search,
+        studyYear,
+        gradeId,
+        subjectId,
+        deleted
+      );
 
       return {
         success: true,
         message: 'تمت العملية بنجاح',
         data: result.courses,
-        count: result.total
+        count: result.total,
       };
     } catch (error) {
       console.error('Error getting courses:', error);
       return {
         success: false,
         message: 'فشلت العملية',
-        errors: ['خطأ داخلي في الخادم']
+        errors: ['خطأ داخلي في الخادم'],
       };
     }
   }
@@ -291,7 +339,7 @@ export class CourseService {
         return {
           success: false,
           message: 'الدورة غير موجودة',
-          errors: ['الدورة غير موجودة']
+          errors: ['الدورة غير موجودة'],
         };
       }
 
@@ -303,35 +351,42 @@ export class CourseService {
             ...course,
             grade: {
               id: course.grade_id,
-              name: (course as any).grade_name
+              name: (course as any).grade_name,
             },
             subject: {
               id: course.subject_id,
-              name: (course as any).subject_name
-            }
-          }
-        }
+              name: (course as any).subject_name,
+            },
+          },
+        },
       };
     } catch (error) {
       console.error('Error getting course:', error);
       return {
         success: false,
         message: 'فشلت العملية',
-        errors: ['خطأ داخلي في الخادم']
+        errors: ['خطأ داخلي في الخادم'],
       };
     }
   }
 
   // Update course
-  static async update(id: string, teacherId: string, data: UpdateCourseRequest): Promise<ApiResponse> {
+  static async update(
+    id: string,
+    teacherId: string,
+    data: UpdateCourseRequest
+  ): Promise<ApiResponse> {
     try {
       // Check if course exists and belongs to teacher
-      const existingCourse = await CourseModel.findByIdAndTeacher(id, teacherId);
+      const existingCourse = await CourseModel.findByIdAndTeacher(
+        id,
+        teacherId
+      );
       if (!existingCourse) {
         return {
           success: false,
           message: 'الدورة غير موجودة',
-          errors: ['الدورة غير موجودة']
+          errors: ['الدورة غير موجودة'],
         };
       }
 
@@ -342,7 +397,7 @@ export class CourseService {
           return {
             success: false,
             message: 'السنة الدراسية غير صحيحة',
-            errors: ['السنة الدراسية غير صحيحة']
+            errors: ['السنة الدراسية غير صحيحة'],
           };
         }
       }
@@ -354,19 +409,22 @@ export class CourseService {
           return {
             success: false,
             message: 'الصف غير موجود',
-            errors: ['الصف غير موجود']
+            errors: ['الصف غير موجود'],
           };
         }
       }
 
       // Validate subject exists and belongs to teacher if provided
       if (data.subject_id) {
-        const subject = await SubjectModel.findByIdAndTeacher(data.subject_id, teacherId);
+        const subject = await SubjectModel.findByIdAndTeacher(
+          data.subject_id,
+          teacherId
+        );
         if (!subject) {
           return {
             success: false,
             message: 'المادة غير موجودة',
-            errors: ['المادة لا تنتمي للمعلم']
+            errors: ['المادة لا تنتمي للمعلم'],
           };
         }
       }
@@ -381,7 +439,7 @@ export class CourseService {
           return {
             success: false,
             message: 'تاريخ الانتهاء يجب أن يكون بعد تاريخ البداية',
-            errors: ['تاريخ الانتهاء يجب أن يكون بعد تاريخ البداية']
+            errors: ['تاريخ الانتهاء يجب أن يكون بعد تاريخ البداية'],
           };
         }
 
@@ -389,7 +447,7 @@ export class CourseService {
           return {
             success: false,
             message: 'تاريخ الانتهاء يجب أن يكون في المستقبل',
-            errors: ['تاريخ الانتهاء يجب أن يكون في المستقبل']
+            errors: ['تاريخ الانتهاء يجب أن يكون في المستقبل'],
           };
         }
       } else if (data.end_date) {
@@ -402,7 +460,7 @@ export class CourseService {
           return {
             success: false,
             message: 'تاريخ الانتهاء يجب أن يكون بعد تاريخ البداية',
-            errors: ['تاريخ الانتهاء يجب أن يكون بعد تاريخ البداية']
+            errors: ['تاريخ الانتهاء يجب أن يكون بعد تاريخ البداية'],
           };
         }
 
@@ -410,7 +468,7 @@ export class CourseService {
           return {
             success: false,
             message: 'تاريخ الانتهاء يجب أن يكون في المستقبل',
-            errors: ['تاريخ الانتهاء يجب أن يكون في المستقبل']
+            errors: ['تاريخ الانتهاء يجب أن يكون في المستقبل'],
           };
         }
       } else if (data.start_date) {
@@ -422,7 +480,7 @@ export class CourseService {
           return {
             success: false,
             message: 'تاريخ الانتهاء يجب أن يكون بعد تاريخ البداية',
-            errors: ['تاريخ الانتهاء يجب أن يكون بعد تاريخ البداية']
+            errors: ['تاريخ الانتهاء يجب أن يكون بعد تاريخ البداية'],
           };
         }
       }
@@ -432,35 +490,39 @@ export class CourseService {
         return {
           success: false,
           message: 'السعر غير صحيح',
-          errors: ['السعر غير صحيح']
+          errors: ['السعر غير صحيح'],
         };
       }
 
       // Validate reservation fields on update
       // Determine effective price to validate against
-      const effectivePrice = data.price !== undefined ? data.price : existingCourse.price;
+      const effectivePrice =
+        data.price !== undefined ? data.price : existingCourse.price;
       if (data.has_reservation !== undefined) {
         if (data.has_reservation === true) {
-          const resAmount = data.reservation_amount !== undefined ? data.reservation_amount : existingCourse.reservation_amount;
+          const resAmount =
+            data.reservation_amount !== undefined
+              ? data.reservation_amount
+              : existingCourse.reservation_amount;
           if (resAmount === null || resAmount === undefined) {
             return {
               success: false,
               message: 'يجب تحديد مبلغ العربون عند تفعيل خاصية الحجز',
-              errors: ['مطلوب مبلغ العربون']
+              errors: ['مطلوب مبلغ العربون'],
             };
           }
           if (resAmount <= 0) {
             return {
               success: false,
               message: 'مبلغ العربون يجب أن يكون أكبر من صفر',
-              errors: ['مبلغ العربون غير صحيح']
+              errors: ['مبلغ العربون غير صحيح'],
             };
           }
           if (resAmount > effectivePrice) {
             return {
               success: false,
               message: 'مبلغ العربون لا يمكن أن يتجاوز سعر الكورس',
-              errors: ['مبلغ العربون أكبر من السعر']
+              errors: ['مبلغ العربون أكبر من السعر'],
             };
           }
         }
@@ -472,14 +534,14 @@ export class CourseService {
             return {
               success: false,
               message: 'مبلغ العربون يجب أن يكون أكبر من صفر',
-              errors: ['مبلغ العربون غير صحيح']
+              errors: ['مبلغ العربون غير صحيح'],
             };
           }
           if (data.reservation_amount > effectivePrice) {
             return {
               success: false,
               message: 'مبلغ العربون لا يمكن أن يتجاوز سعر الكورس',
-              errors: ['مبلغ العربون أكبر من السعر']
+              errors: ['مبلغ العربون أكبر من السعر'],
             };
           }
         }
@@ -490,7 +552,7 @@ export class CourseService {
         return {
           success: false,
           message: 'عدد المقاعد غير صحيح',
-          errors: ['عدد المقاعد غير صحيح']
+          errors: ['عدد المقاعد غير صحيح'],
         };
       }
 
@@ -512,7 +574,7 @@ export class CourseService {
           return {
             success: false,
             message: 'الدورة موجودة بالفعل',
-            errors: ['الدورة موجودة بالفعل']
+            errors: ['الدورة موجودة بالفعل'],
           };
         }
       }
@@ -521,12 +583,15 @@ export class CourseService {
       let processedImages: string[] = existingCourse.course_images;
       if (data.course_images) {
         try {
-          processedImages = await ImageService.updateCourseImages(data.course_images, existingCourse.course_images);
+          processedImages = await ImageService.updateCourseImages(
+            data.course_images,
+            existingCourse.course_images
+          );
         } catch (error) {
           return {
             success: false,
             message: 'خطأ في معالجة الصورة',
-            errors: ['خطأ في معالجة الصورة']
+            errors: ['خطأ في معالجة الصورة'],
           };
         }
       }
@@ -536,7 +601,7 @@ export class CourseService {
         ...data,
         course_images: processedImages,
         // If has_reservation explicitly set to false, ensure reservation_amount becomes null
-        ...(data.has_reservation === false ? { reservation_amount: null } : {})
+        ...(data.has_reservation === false ? { reservation_amount: null } : {}),
       } as UpdateCourseRequest;
       const course = await CourseModel.update(id, teacherId, updateData);
 
@@ -544,21 +609,21 @@ export class CourseService {
         return {
           success: false,
           message: 'الدورة غير موجودة',
-          errors: ['الدورة غير موجودة']
+          errors: ['الدورة غير موجودة'],
         };
       }
 
       return {
         success: true,
         message: 'تم تحديث الدورة',
-        data: { course }
+        data: { course },
       };
     } catch (error) {
       console.error('Error updating course:', error);
       return {
         success: false,
         message: 'فشلت العملية',
-        errors: ['خطأ داخلي في الخادم']
+        errors: ['خطأ داخلي في الخادم'],
       };
     }
   }
@@ -567,12 +632,15 @@ export class CourseService {
   static async delete(id: string, teacherId: string): Promise<ApiResponse> {
     try {
       // Check if course exists and belongs to teacher
-      const existingCourse = await CourseModel.findByIdAndTeacher(id, teacherId);
+      const existingCourse = await CourseModel.findByIdAndTeacher(
+        id,
+        teacherId
+      );
       if (!existingCourse) {
         return {
           success: false,
           message: 'الدورة غير موجودة',
-          errors: ['الدورة غير موجودة']
+          errors: ['الدورة غير موجودة'],
         };
       }
 
@@ -583,20 +651,20 @@ export class CourseService {
         return {
           success: false,
           message: 'الدورة غير موجودة',
-          errors: ['الدورة غير موجودة']
+          errors: ['الدورة غير موجودة'],
         };
       }
 
       return {
         success: true,
-        message: 'تم حذف الدورة'
+        message: 'تم حذف الدورة',
       };
     } catch (error) {
       console.error('Error deleting course:', error);
       return {
         success: false,
         message: 'فشلت العملية',
-        errors: ['خطأ داخلي في الخادم']
+        errors: ['خطأ داخلي في الخادم'],
       };
     }
   }
@@ -614,24 +682,28 @@ export class CourseService {
         return {
           success: false,
           message: 'المعلم غير موجود',
-          errors: ['المعلم غير موجود']
+          errors: ['المعلم غير موجود'],
         };
       }
 
-      const result = await CourseModel.findDeletedNotExpiredByTeacher(teacherId, page, limit);
+      const result = await CourseModel.findDeletedNotExpiredByTeacher(
+        teacherId,
+        page,
+        limit
+      );
 
       return {
         success: true,
         message: 'تم جلب الدورات المحذوفة غير المنتهية الصلاحية',
         data: result.courses,
-        count: result.total
+        count: result.total,
       };
     } catch (error) {
       console.error('Error getting deleted not expired courses:', error);
       return {
         success: false,
         message: 'فشلت العملية',
-        errors: ['خطأ داخلي في الخادم']
+        errors: ['خطأ داخلي في الخادم'],
       };
     }
   }
@@ -645,7 +717,7 @@ export class CourseService {
         return {
           success: false,
           message: 'المعلم غير موجود',
-          errors: ['المعلم غير موجود']
+          errors: ['المعلم غير موجود'],
         };
       }
 
@@ -655,26 +727,26 @@ export class CourseService {
       if (!restoredCourse) {
         return {
           success: false,
-          message: 'لا يمكن استرجاع الدورة - إما أنها غير موجودة أو منتهية الصلاحية',
-          errors: ['لا يمكن استرجاع الدورة - إما أنها غير موجودة أو منتهية الصلاحية']
+          message:
+            'لا يمكن استرجاع الدورة - إما أنها غير موجودة أو منتهية الصلاحية',
+          errors: [
+            'لا يمكن استرجاع الدورة - إما أنها غير موجودة أو منتهية الصلاحية',
+          ],
         };
       }
 
       return {
         success: true,
         message: 'تم استرجاع الدورة بنجاح',
-        data: { course: restoredCourse }
+        data: { course: restoredCourse },
       };
     } catch (error) {
       console.error('Error restoring course:', error);
       return {
         success: false,
         message: 'فشلت العملية',
-        errors: ['خطأ داخلي في الخادم']
+        errors: ['خطأ داخلي في الخادم'],
       };
     }
   }
-
-
-
 }

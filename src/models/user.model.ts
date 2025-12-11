@@ -514,6 +514,54 @@ export class UserModel {
     return result.rows;
   }
 
+  // Find students by ids and optional location fields
+  static async findStudentsByIdsAndLocation(
+    studentIds: string[],
+    options: {
+      state?: string | null;
+      city?: string | null;
+      suburb?: string | null;
+    }
+  ): Promise<any[]> {
+    if (!studentIds || studentIds.length === 0) {
+      return [];
+    }
+
+    let query = `
+      SELECT u.*
+      FROM users u
+      WHERE u.user_type = 'student'
+        AND u.deleted_at IS NULL
+        AND u.id = ANY($1::uuid[])
+    `;
+
+    const values: any[] = [studentIds];
+    let paramCount = 2;
+
+    if (options.state) {
+      query += ` AND u.state = $${paramCount}`;
+      values.push(options.state);
+      paramCount++;
+    }
+
+    if (options.city) {
+      query += ` AND u.city = $${paramCount}`;
+      values.push(options.city);
+      paramCount++;
+    }
+
+    if (options.suburb) {
+      query += ` AND u.suburb = $${paramCount}`;
+      values.push(options.suburb);
+      paramCount++;
+    }
+
+    query += ' ORDER BY u.created_at DESC';
+
+    const result = await pool.query(query, values);
+    return result.rows.map((row: any) => this.mapDatabaseUserToUser(row));
+  }
+
   // Find active teachers alphabetically (fallback when no location)
   static async findTeachersAlphabetical(
     limit: number,

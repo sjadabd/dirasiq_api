@@ -46,13 +46,16 @@ export class NotificationService {
   /**
    * Helper: send to specific playerIds
    */
-  private async sendToPlayers(playerIds: string[], options: SendNotificationOptions): Promise<boolean> {
+  private async sendToPlayers(
+    playerIds: string[],
+    options: SendNotificationOptions
+  ): Promise<boolean> {
     if (!playerIds || playerIds.length === 0) {
       console.warn('⚠️ No player IDs provided');
       return false;
     }
 
-    const validPlayerIds = playerIds.filter((id) => id && id.trim().length > 0);
+    const validPlayerIds = playerIds.filter(id => id && id.trim().length > 0);
     if (validPlayerIds.length === 0) {
       console.warn('⚠️ No valid player IDs found');
       return false;
@@ -128,9 +131,14 @@ export class NotificationService {
   /**
    * Send notification to specific users (all their tokens/devices)
    */
-  async sendToSpecificUsers(userIds: string[], options: SendNotificationOptions): Promise<boolean> {
+  async sendToSpecificUsers(
+    userIds: string[],
+    options: SendNotificationOptions
+  ): Promise<boolean> {
     try {
-      console.info(`👥 sendToSpecificUsers: targetUserIds=${JSON.stringify(userIds)}`);
+      console.info(
+        `👥 sendToSpecificUsers: targetUserIds=${JSON.stringify(userIds)}`
+      );
       let allPlayerIds: string[] = [];
       for (const id of userIds) {
         const playerIds = await TokenModel.getPlayerIdsByUserId(id);
@@ -139,7 +147,9 @@ export class NotificationService {
 
       const uniquePlayerIds = Array.from(new Set(allPlayerIds));
 
-      console.info(`🎯 Targeting specific users: users=${userIds.length}, resolvedDevices=${uniquePlayerIds.length}`);
+      console.info(
+        `🎯 Targeting specific users: users=${userIds.length}, resolvedDevices=${uniquePlayerIds.length}`
+      );
 
       if (uniquePlayerIds.length === 0) {
         console.warn('⚠️ No valid player IDs found for users:', userIds);
@@ -156,11 +166,16 @@ export class NotificationService {
   /**
    * Send notification to user types (teachers, students, etc.)
    */
-  async sendToUserTypes(userTypes: UserType[], options: SendNotificationOptions): Promise<boolean> {
+  async sendToUserTypes(
+    userTypes: UserType[],
+    options: SendNotificationOptions
+  ): Promise<boolean> {
     try {
       const users = await this.getUsersByTypes(userTypes);
       const userIds = users.map(u => u.id);
-      console.info(`👥 sendToUserTypes: userTypes=${JSON.stringify(userTypes)}, targetUserIds=${JSON.stringify(userIds)}`);
+      console.info(
+        `👥 sendToUserTypes: userTypes=${JSON.stringify(userTypes)}, targetUserIds=${JSON.stringify(userIds)}`
+      );
 
       let allPlayerIds: string[] = [];
       for (const user of users) {
@@ -195,12 +210,34 @@ export class NotificationService {
     createdBy: string;
   }): Promise<Notification | null> {
     try {
+      // Prevent duplicate NEW_COURSE_AVAILABLE notifications for same course + creator
+      if (
+        notificationData.type === NotificationType.NEW_COURSE_AVAILABLE &&
+        notificationData.data?.['courseId'] &&
+        notificationData.createdBy
+      ) {
+        const alreadyExists =
+          await NotificationModel.existsNewCourseNotification({
+            courseId: String(notificationData.data['courseId']),
+            createdBy: String(notificationData.createdBy),
+          });
+        if (alreadyExists) {
+          console.info(
+            `⚠️ Skipping duplicate NEW_COURSE_AVAILABLE notification for courseId=${notificationData.data['courseId']} createdBy=${notificationData.createdBy}`
+          );
+          return null;
+        }
+      }
+
       // Resolve sender metadata from createdBy
       let senderName = 'النظام';
-      let senderType: 'system' | 'admin' | 'teacher' | 'student' | 'user' = 'system';
+      let senderType: 'system' | 'admin' | 'teacher' | 'student' | 'user' =
+        'system';
       let senderId: string | null = null;
       try {
-        const user = await UserModel.findById(String(notificationData.createdBy));
+        const user = await UserModel.findById(
+          String(notificationData.createdBy)
+        );
         if (user) {
           senderId = String(user.id);
           const displayName = (user as any)?.name || '';
@@ -236,7 +273,10 @@ export class NotificationService {
       const activeYear = await AcademicYearModel.getActive();
       const enrichedData: Record<string, any> = {
         ...notificationData.data,
-        ...(activeYear && { studyYear: (notificationData.data?.['studyYear'] as any) || activeYear.year }),
+        ...(activeYear && {
+          studyYear:
+            (notificationData.data?.['studyYear'] as any) || activeYear.year,
+        }),
         sender: {
           id: senderId || String(notificationData.createdBy || ''),
           type: senderType,
@@ -246,7 +286,10 @@ export class NotificationService {
 
       // Auto-attach deep-link for TEACHER web if not provided (data.url)
       // Uses provided teacher routes list and available identifiers in data
-      const targetsTeachers = [RecipientType.TEACHERS, RecipientType.SPECIFIC_TEACHERS].includes(notificationData.recipientType);
+      const targetsTeachers = [
+        RecipientType.TEACHERS,
+        RecipientType.SPECIFIC_TEACHERS,
+      ].includes(notificationData.recipientType);
       if (targetsTeachers && !enrichedData['url']) {
         const t = String(notificationData.type || '').toLowerCase();
         const d = enrichedData || {};
@@ -261,11 +304,17 @@ export class NotificationService {
         } else if (t === 'grade_update') {
           url = '/teacher/exams/manage-exams';
         } else if (t === 'class_reminder' || t === 'course_update') {
-          url = d['courseId'] ? '/teacher/course/show-course' : '/teacher/sessions/manage-sessions';
+          url = d['courseId']
+            ? '/teacher/course/show-course'
+            : '/teacher/sessions/manage-sessions';
         } else if (t === 'payment_reminder') {
-          url = withId('/teacher/invoices/:invoiceId', 'invoiceId') || '/teacher/invoices/manage-invoices';
+          url =
+            withId('/teacher/invoices/:invoiceId', 'invoiceId') ||
+            '/teacher/invoices/manage-invoices';
         } else if (t === 'booking_status') {
-          url = withId('/teacher/payments/reservations/:bookingId', 'bookingId') || '/teacher/bookings/show-bookings';
+          url =
+            withId('/teacher/payments/reservations/:bookingId', 'bookingId') ||
+            '/teacher/bookings/show-bookings';
         } else if (t === 'teacher_message') {
           url = '/teacher/notifications/show-notifications';
         } else if (t === 'system_announcement') {
@@ -290,7 +339,9 @@ export class NotificationService {
           notificationId: notification.id,
           type: notificationData.type,
         },
-        priority: this.mapPriorityToOneSignal(notificationData.priority || 'medium'),
+        priority: this.mapPriorityToOneSignal(
+          notificationData.priority || 'medium'
+        ),
       };
 
       let success = false;
@@ -306,24 +357,67 @@ export class NotificationService {
           break;
         case RecipientType.STUDENTS:
           // 👇 تحقق إذا فيه gradeId + studyYear
-          if (notificationData.data?.['gradeId'] && notificationData.data?.['studyYear']) {
+          if (
+            notificationData.data?.['gradeId'] &&
+            notificationData.data?.['studyYear']
+          ) {
             console.info(
               `🎓 createAndSendNotification: RecipientType=STUDENTS with filter gradeId=${notificationData.data['gradeId']} studyYear=${notificationData.data['studyYear']}`
             );
-            const studentGrades = await StudentGradeModel.findByGradeAndStudyYear(
-              String(notificationData.data['gradeId']),
-              notificationData.data['studyYear'] as any
+            const studentGrades =
+              await StudentGradeModel.findByGradeAndStudyYear(
+                String(notificationData.data['gradeId']),
+                notificationData.data['studyYear'] as any
+              );
+            const studentIds = studentGrades.map(sg => sg.studentId);
+
+            // فلترة إضافية حسب موقع المعلّم
+            const teacherLocation =
+              (notificationData.data as any)?.teacherLocation || {};
+            const locationFilter = {
+              state: teacherLocation.state || null,
+              city: teacherLocation.city || null,
+              suburb: teacherLocation.suburb || null,
+            };
+
+            let finalStudentIds = studentIds;
+            if (
+              locationFilter.state ||
+              locationFilter.city ||
+              locationFilter.suburb
+            ) {
+              const studentsInLocation =
+                await UserModel.findStudentsByIdsAndLocation(
+                  studentIds,
+                  locationFilter
+                );
+              finalStudentIds = studentsInLocation.map((s: any) => s.id);
+              console.info(
+                `📍 Location filter applied for students: state=${locationFilter.state}, city=${locationFilter.city}, suburb=${locationFilter.suburb}, before=${studentIds.length}, after=${finalStudentIds.length}`
+              );
+            }
+
+            console.info(
+              `👥 Filtered students count: ${finalStudentIds.length}`
             );
-            const studentIds = studentGrades.map((sg) => sg.studentId);
-            console.info(`👥 Filtered students count: ${studentIds.length}`);
-            console.info(`🧑‍🎓 Filtered studentIds=${JSON.stringify(studentIds)}`);
-            if (studentIds.length > 0) {
-              success = await this.sendToSpecificUsers(studentIds, sendOptions);
+            console.info(
+              `🧑‍🎓 Filtered studentIds=${JSON.stringify(finalStudentIds)}`
+            );
+            if (finalStudentIds.length > 0) {
+              success = await this.sendToSpecificUsers(
+                finalStudentIds,
+                sendOptions
+              );
             }
           } else {
             // إذا ما في فلترة → كل الطلاب
-            console.info('🎓 createAndSendNotification: RecipientType=STUDENTS (no filter)');
-            success = await this.sendToUserTypes([UserType.STUDENT], sendOptions);
+            console.info(
+              '🎓 createAndSendNotification: RecipientType=STUDENTS (no filter)'
+            );
+            success = await this.sendToUserTypes(
+              [UserType.STUDENT],
+              sendOptions
+            );
           }
           break;
         case RecipientType.SPECIFIC_TEACHERS:
@@ -332,7 +426,10 @@ export class NotificationService {
             console.info(
               `📌 createAndSendNotification: RecipientType=SPECIFIC, recipients=${notificationData.recipientIds.length}`
             );
-            success = await this.sendToSpecificUsers(notificationData.recipientIds, sendOptions);
+            success = await this.sendToSpecificUsers(
+              notificationData.recipientIds,
+              sendOptions
+            );
           }
           break;
       }
@@ -369,8 +466,14 @@ export class NotificationService {
         throw new Error(`Template ${templateName} not found`);
       }
 
-      const title = this.replaceTemplateVariables(template.title_template, variables);
-      const message = this.replaceTemplateVariables(template.message_template, variables);
+      const title = this.replaceTemplateVariables(
+        template.title_template,
+        variables
+      );
+      const message = this.replaceTemplateVariables(
+        template.message_template,
+        variables
+      );
 
       let recipientType: RecipientType = RecipientType.ALL;
       let recipientIds: string[] | undefined;
@@ -378,8 +481,10 @@ export class NotificationService {
       if (recipients.allUsers) {
         recipientType = RecipientType.ALL;
       } else if (recipients.userTypes?.length) {
-        if (recipients.userTypes.includes(UserType.TEACHER)) recipientType = RecipientType.TEACHERS;
-        if (recipients.userTypes.includes(UserType.STUDENT)) recipientType = RecipientType.STUDENTS;
+        if (recipients.userTypes.includes(UserType.TEACHER))
+          recipientType = RecipientType.TEACHERS;
+        if (recipients.userTypes.includes(UserType.STUDENT))
+          recipientType = RecipientType.STUDENTS;
       } else if (recipients.userIds?.length) {
         recipientIds = recipients.userIds;
         recipientType = RecipientType.SPECIFIC_TEACHERS; // default, adjust based on your needs
@@ -403,7 +508,8 @@ export class NotificationService {
 
   async processPendingNotifications(): Promise<void> {
     try {
-      const pendingNotifications = await NotificationModel.getPendingNotifications();
+      const pendingNotifications =
+        await NotificationModel.getPendingNotifications();
 
       for (const notification of pendingNotifications) {
         await this.sendPendingNotification(notification);
@@ -413,7 +519,9 @@ export class NotificationService {
     }
   }
 
-  private async sendPendingNotification(notification: Notification): Promise<void> {
+  private async sendPendingNotification(
+    notification: Notification
+  ): Promise<void> {
     try {
       const sendOptions: SendNotificationOptions = {
         title: notification.title,
@@ -440,7 +548,10 @@ export class NotificationService {
         case RecipientType.SPECIFIC_TEACHERS:
         case RecipientType.SPECIFIC_STUDENTS:
           if (notification.recipientIds?.length) {
-            success = await this.sendToSpecificUsers(notification.recipientIds, sendOptions);
+            success = await this.sendToSpecificUsers(
+              notification.recipientIds,
+              sendOptions
+            );
           }
           break;
       }
@@ -452,13 +563,16 @@ export class NotificationService {
       );
     } catch (error) {
       console.error('❌ Error sending pending notification:', error);
-      await NotificationModel.updateStatus(notification.id, NotificationStatus.FAILED);
+      await NotificationModel.updateStatus(
+        notification.id,
+        NotificationStatus.FAILED
+      );
     }
   }
 
   private async getUsersByTypes(userTypes: UserType[]): Promise<any[]> {
     const allUsers = await UserModel.findAll({ limit: 10000 });
-    return allUsers.users.filter((user) => userTypes.includes(user.userType));
+    return allUsers.users.filter(user => userTypes.includes(user.userType));
   }
 
   private mapPriorityToOneSignal(priority: string): 'low' | 'normal' | 'high' {
@@ -473,7 +587,10 @@ export class NotificationService {
     }
   }
 
-  private replaceTemplateVariables(template: string, variables: Record<string, any>): string {
+  private replaceTemplateVariables(
+    template: string,
+    variables: Record<string, any>
+  ): string {
     let result = template;
     for (const [key, value] of Object.entries(variables)) {
       const regex = new RegExp(`{{${key}}}`, 'g');
@@ -511,9 +628,17 @@ export class NotificationService {
     userId: string,
     page = 1,
     limit = 10,
-    options?: { q?: string | null; type?: NotificationType | null; courseId?: string | null; subType?: string | null }
+    options?: {
+      q?: string | null;
+      type?: NotificationType | null;
+      courseId?: string | null;
+      subType?: string | null;
+    }
   ): Promise<any> {
-    if (options && (options.q || options.type || options.courseId || options.subType)) {
+    if (
+      options &&
+      (options.q || options.type || options.courseId || options.subType)
+    ) {
       return await NotificationModel.getUserNotificationsWithFilters(userId, {
         page,
         limit,
@@ -526,7 +651,10 @@ export class NotificationService {
     return await NotificationModel.getUserNotifications(userId, page, limit);
   }
 
-  async markNotificationAsRead(notificationId: string, userId: string): Promise<boolean> {
+  async markNotificationAsRead(
+    notificationId: string,
+    userId: string
+  ): Promise<boolean> {
     return await NotificationModel.markAsRead(notificationId, userId);
   }
 }

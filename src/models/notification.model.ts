@@ -139,6 +139,30 @@ export class NotificationModel {
 
     // Get notifications visible to a specific user with extra filters (search/type/course)
   }
+
+  // Check if a NEW_COURSE_AVAILABLE notification already exists for given course and creator
+  static async existsNewCourseNotification(params: {
+    courseId: string;
+    createdBy: string;
+  }): Promise<boolean> {
+    const query = `
+      SELECT 1
+      FROM notifications
+      WHERE type = $1
+        AND created_by = $2
+        AND (data->>'courseId') = $3
+        AND deleted_at IS NULL
+      LIMIT 1
+    `;
+
+    const result = await pool.query(query, [
+      NotificationType.NEW_COURSE_AVAILABLE,
+      params.createdBy,
+      params.courseId,
+    ]);
+
+    return (result.rowCount ?? 0) > 0;
+  }
   static async getUserNotificationsWithFilters(
     userId: string,
     options: {
@@ -229,7 +253,8 @@ export class NotificationModel {
 
   // Get notification by ID
   static async findById(id: string): Promise<Notification | null> {
-    const query = 'SELECT * FROM notifications WHERE id = $1 AND deleted_at IS NULL';
+    const query =
+      'SELECT * FROM notifications WHERE id = $1 AND deleted_at IS NULL';
     const result = await pool.query(query, [id]);
 
     if (result.rows.length === 0) {
@@ -458,7 +483,9 @@ export class NotificationModel {
     `;
 
     const countParams = activeYear?.year ? [userId, activeYear.year] : [userId];
-    const dataParams = activeYear?.year ? [userId, limit, offset, activeYear.year] : [userId, limit, offset];
+    const dataParams = activeYear?.year
+      ? [userId, limit, offset, activeYear.year]
+      : [userId, limit, offset];
 
     const countResult = await pool.query(countQuery, countParams);
     const total = parseInt(countResult.rows[0].count);
