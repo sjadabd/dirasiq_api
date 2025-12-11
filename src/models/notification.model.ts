@@ -191,11 +191,13 @@ export class NotificationModel {
     AND (
       n.type <> 'new_course_available'
       OR (
-        (n.data->'teacherLocation'->>'state') IS NULL OR (n.data->'teacherLocation'->>'state') = u.state
-      ) AND (
-        (n.data->'teacherLocation'->>'city') IS NULL OR (n.data->'teacherLocation'->>'city') = u.city
-      ) AND (
-        (n.data->'teacherLocation'->>'suburb') IS NULL OR (n.data->'teacherLocation'->>'suburb') = u.suburb
+        (
+          (n.data->'teacherLocation'->>'state') IS NULL OR (n.data->'teacherLocation'->>'state') = u.state
+        ) AND (
+          (n.data->'teacherLocation'->>'city') IS NULL OR (n.data->'teacherLocation'->>'city') = u.city
+        ) AND (
+          (n.data->'teacherLocation'->>'suburb') IS NULL OR (n.data->'teacherLocation'->>'suburb') = u.suburb
+        )
       )
     )`;
 
@@ -471,11 +473,13 @@ export class NotificationModel {
       AND (
         n.type <> 'new_course_available'
         OR (
-          (n.data->'teacherLocation'->>'state') IS NULL OR (n.data->'teacherLocation'->>'state') = u.state
-        ) AND (
-          (n.data->'teacherLocation'->>'city') IS NULL OR (n.data->'teacherLocation'->>'city') = u.city
-        ) AND (
-          (n.data->'teacherLocation'->>'suburb') IS NULL OR (n.data->'teacherLocation'->>'suburb') = u.suburb
+          (
+            (n.data->'teacherLocation'->>'state') IS NULL OR (n.data->'teacherLocation'->>'state') = u.state
+          ) AND (
+            (n.data->'teacherLocation'->>'city') IS NULL OR (n.data->'teacherLocation'->>'city') = u.city
+          ) AND (
+            (n.data->'teacherLocation'->>'suburb') IS NULL OR (n.data->'teacherLocation'->>'suburb') = u.suburb
+          )
         )
       )
       ${activeYear?.year ? `AND n.study_year = $4` : ''}
