@@ -51,20 +51,18 @@ BEGIN
     END IF;
 END $$;
 
--- Constraint: unique courses per teacher/year/name/grade/subject
+-- Unique: enforce one active (non-deleted) course per teacher/year/name/grade/subject
 DO $$
 BEGIN
     IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'unique_course_per_teacher_year_grade_subject'
+        SELECT 1 FROM pg_class
+        WHERE relname = 'idx_courses_unique_active_per_teacher_year_grade_subject'
     ) THEN
-        ALTER TABLE courses ADD CONSTRAINT unique_course_per_teacher_year_grade_subject
-        UNIQUE (teacher_id, study_year, course_name, grade_id, subject_id);
+        CREATE UNIQUE INDEX idx_courses_unique_active_per_teacher_year_grade_subject
+          ON courses (teacher_id, study_year, course_name, grade_id, subject_id)
+          WHERE is_deleted = false;
     END IF;
 END $$;
-
-COMMENT ON CONSTRAINT unique_course_per_teacher_year_grade_subject ON courses IS
-'Ensures unique courses per teacher, year, name, grade, and subject. Allows same course name for different grades/subjects.';
 
 -- Constraint: reservation rules
 DO $$
