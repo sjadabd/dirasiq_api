@@ -19,9 +19,9 @@ export class CourseBookingModel {
     try {
       await client.query('BEGIN');
 
-      // First, get the course details to extract teacher_id and study_year
+      // First, get the course details to extract teacher_id, study_year and grade_id
       const courseQuery =
-        'SELECT teacher_id, study_year FROM courses WHERE id = $1 AND is_deleted = false';
+        'SELECT teacher_id, study_year, grade_id FROM courses WHERE id = $1 AND is_deleted = false';
       const courseResult = await client.query(courseQuery, [data.courseId]);
 
       if (courseResult.rows.length === 0) {
@@ -30,6 +30,31 @@ export class CourseBookingModel {
 
       const teacherId = courseResult.rows[0].teacher_id;
       const studyYear = courseResult.rows[0].study_year;
+      const courseGradeId = courseResult.rows[0].grade_id;
+
+      // Ensure student has an active grade matching the course grade and study year
+      const gradeCheckQuery = `
+        SELECT 1 FROM student_grades
+        WHERE student_id = $1
+          AND grade_id = $2
+          AND study_year = $3
+          AND is_active = true
+          AND deleted_at IS NULL
+        LIMIT 1
+      `;
+      const gradeCheckResult = await client.query(gradeCheckQuery, [
+        studentId,
+        courseGradeId,
+        studyYear,
+      ]);
+
+      if (gradeCheckResult.rows.length === 0) {
+        const error: any = new Error(
+          'Student grade not eligible for this course'
+        );
+        error.code = 'STUDENT_GRADE_MISMATCH';
+        throw error;
+      }
 
       // Check if booking already exists
       const existingBookingQuery =

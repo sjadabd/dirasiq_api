@@ -182,6 +182,7 @@ export class NotificationModel {
     // Base visibility where clause (same as getUserNotifications)
     // Distance-based filter for NEW_COURSE_AVAILABLE notifications using teacher (creator) and student locations
     // Uses a fixed radius (e.g. 30km) to determine proximity
+    // Also restrict NEW_COURSE_AVAILABLE to notifications whose course grade matches the student's active grade & study year
     let where = `(
       n.recipient_type = 'all' OR
       (n.recipient_type = 'teachers' AND u.user_type = 'teacher') OR
@@ -202,6 +203,14 @@ export class NotificationModel {
             sin(radians(CAST(u.latitude AS double precision))) * sin(radians(CAST(t.latitude AS double precision)))
           )
         ) <= 30
+        AND EXISTS (
+          SELECT 1 FROM student_grades sg
+          WHERE sg.student_id = u.id
+            AND sg.is_active = true
+            AND sg.deleted_at IS NULL
+            AND sg.study_year = n.study_year
+            AND sg.grade_id = (n.data->>'gradeId')::uuid
+        )
       )
     )`;
 
@@ -489,6 +498,14 @@ export class NotificationModel {
               sin(radians(CAST(u.latitude AS double precision))) * sin(radians(CAST(t.latitude AS double precision)))
             )
           ) <= 30
+          AND EXISTS (
+            SELECT 1 FROM student_grades sg
+            WHERE sg.student_id = u.id
+              AND sg.is_active = true
+              AND sg.deleted_at IS NULL
+              AND sg.study_year = n.study_year
+              AND sg.grade_id = (n.data->>'gradeId')::uuid
+          )
         )
       )
       AND n.deleted_at IS NULL
