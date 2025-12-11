@@ -1,14 +1,27 @@
 import { Router } from 'express';
 import { TeacherRosterController } from '../../controllers/teacher/roster.controller';
-import { authenticateToken, requireTeacher } from '../../middleware/auth.middleware';
+import {
+  authenticateToken,
+  requireTeacher,
+} from '../../middleware/auth.middleware';
 
 const router = Router();
 router.use(authenticateToken, requireTeacher);
 
 // Students
 router.get('/', TeacherRosterController.listAllStudents); // /api/teacher/students
-router.get('/by-course/:courseId', TeacherRosterController.listStudentsByCourse);
-router.get('/by-session/:sessionId', TeacherRosterController.listStudentsBySession);
+router.get(
+  '/by-course/:courseId',
+  TeacherRosterController.listStudentsByCourse
+);
+router.get(
+  '/by-course/:courseId/paginated',
+  TeacherRosterController.listStudentsByCoursePaginated
+);
+router.get(
+  '/by-session/:sessionId',
+  TeacherRosterController.listStudentsBySession
+);
 
 // Sessions (names/time/day)
 router.get('/sessions/names', TeacherRosterController.listSessionNames); // also mounted under /roster
