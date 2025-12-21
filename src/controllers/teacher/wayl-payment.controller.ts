@@ -38,6 +38,14 @@ export class TeacherWaylPaymentController {
         return;
       }
 
+      if (Number(pkg.price) < 1000) {
+        res.status(400).json({
+          success: false,
+          message: 'الحد الأدنى للدفع عبر Wayl هو 1000 دينار',
+        });
+        return;
+      }
+
       const referenceId = `sub_${teacherId}_${packageId}_${Date.now()}`;
 
       const webhookUrl = process.env['WAYL_WEBHOOK_URL'];
@@ -99,9 +107,10 @@ export class TeacherWaylPaymentController {
         return;
       }
       if (msg.toLowerCase().includes('missing fields')) {
+        console.error('Wayl subscription link error (details):', msg);
         res.status(400).json({
           success: false,
-          message: 'Whoops, missing fields',
+          message: msg,
         });
         return;
       }
@@ -127,6 +136,14 @@ export class TeacherWaylPaymentController {
       const amount = Number(req.body?.amount);
       if (!Number.isFinite(amount) || amount <= 0) {
         res.status(400).json({ success: false, message: 'amount must be > 0' });
+        return;
+      }
+
+      if (amount < 1000) {
+        res.status(400).json({
+          success: false,
+          message: 'الحد الأدنى للدفع عبر Wayl هو 1000 دينار',
+        });
         return;
       }
 
@@ -189,9 +206,10 @@ export class TeacherWaylPaymentController {
         return;
       }
       if (msg.toLowerCase().includes('missing fields')) {
+        console.error('Wayl wallet topup link error (details):', msg);
         res.status(400).json({
           success: false,
-          message: 'Whoops, missing fields',
+          message: msg,
         });
         return;
       }
