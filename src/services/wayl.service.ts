@@ -15,6 +15,21 @@ export class WaylService {
     return t;
   }
 
+  private static buildAuthHeaders(): Record<string, string> {
+    const token = this.getMerchantToken();
+    const configured = this.getAuthHeaderName();
+
+    // Wayl docs/examples sometimes vary in header naming.
+    // Send the token using multiple common header names to avoid env misconfig.
+    const headers: Record<string, string> = {
+      [configured]: token,
+      'X-WAYL-AUTHENTICATION-KEY': token,
+      'X-WAYL-AUTHENTICATION': token,
+    };
+
+    return headers;
+  }
+
   static async createLink(payload: any): Promise<any> {
     let _fetch: any = (globalThis as any).fetch;
     if (!_fetch) {
@@ -27,14 +42,20 @@ export class WaylService {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        [this.getAuthHeaderName()]: this.getMerchantToken(),
+        Accept: 'application/json',
+        ...this.buildAuthHeaders(),
       },
       body: JSON.stringify(payload),
     } as any);
 
     const json = await res.json().catch(() => ({}));
     if (!res.ok) {
-      throw new Error(json?.message || 'Wayl create link failed');
+      const msg =
+        json?.message ||
+        json?.error?.message ||
+        json?.error ||
+        'Wayl create link failed';
+      throw new Error(msg);
     }
     return json;
   }

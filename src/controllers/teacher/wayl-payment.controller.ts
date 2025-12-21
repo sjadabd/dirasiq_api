@@ -82,17 +82,25 @@ export class TeacherWaylPaymentController {
         waylCode,
       });
 
-      res
-        .status(200)
-        .json({
-          success: true,
-          message: 'تم إنشاء رابط الدفع',
-          data: { url, referenceId },
-        });
+      res.status(200).json({
+        success: true,
+        message: 'تم إنشاء رابط الدفع',
+        data: { url, referenceId },
+      });
     } catch (e: any) {
-      res
-        .status(500)
-        .json({ success: false, message: e.message || 'خطأ داخلي في الخادم' });
+      const msg = String(e?.message || '');
+      if (msg.toLowerCase().includes('invalid authentication key')) {
+        res.status(400).json({
+          success: false,
+          message: 'Invalid authentication key',
+        });
+        return;
+      }
+      console.error('Wayl subscription link error:', e);
+      res.status(500).json({
+        success: false,
+        message: e.message || 'خطأ داخلي في الخادم',
+      });
     }
   }
 
@@ -155,17 +163,25 @@ export class TeacherWaylPaymentController {
         waylCode,
       });
 
-      res
-        .status(200)
-        .json({
-          success: true,
-          message: 'تم إنشاء رابط شحن المحفظة',
-          data: { url, referenceId },
-        });
+      res.status(200).json({
+        success: true,
+        message: 'تم إنشاء رابط شحن المحفظة',
+        data: { url, referenceId },
+      });
     } catch (e: any) {
-      res
-        .status(500)
-        .json({ success: false, message: e.message || 'خطأ داخلي في الخادم' });
+      const msg = String(e?.message || '');
+      if (msg.toLowerCase().includes('invalid authentication key')) {
+        res.status(400).json({
+          success: false,
+          message: 'Invalid authentication key',
+        });
+        return;
+      }
+      console.error('Wayl wallet topup link error:', e);
+      res.status(500).json({
+        success: false,
+        message: e.message || 'خطأ داخلي في الخادم',
+      });
     }
   }
 }
