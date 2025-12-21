@@ -84,7 +84,11 @@ export class WaylWebhookController {
     }
 
     const status = String(
-      (req.body as any)?.status || (req.body as any)?.data?.status || ''
+      (req.body as any)?.status ||
+        (req.body as any)?.data?.status ||
+        (req.body as any)?.paymentStatus ||
+        (req.body as any)?.data?.paymentStatus ||
+        ''
     );
     if (String(link.status) === 'paid') {
       if (event?.id) {
@@ -101,6 +105,7 @@ export class WaylWebhookController {
     const normalizedStatus = status.trim().toLowerCase();
     const isPaidStatus =
       normalizedStatus === 'paid' ||
+      normalizedStatus === 'payment.paid' ||
       normalizedStatus === 'completed' ||
       normalizedStatus === 'complete';
 
@@ -109,12 +114,13 @@ export class WaylWebhookController {
         await WaylWebhookEventModel.markProcessed({
           id: event.id,
           status: 'ignored',
-          message: 'Ignored non-paid webhook',
+          message: `Ignored non-paid webhook (status=${normalizedStatus || 'missing'})`,
         });
       }
-      res
-        .status(200)
-        .json({ success: true, message: 'Ignored non-paid webhook' });
+      res.status(200).json({
+        success: true,
+        message: `Ignored non-paid webhook (status=${normalizedStatus || 'missing'})`,
+      });
       return;
     }
 
