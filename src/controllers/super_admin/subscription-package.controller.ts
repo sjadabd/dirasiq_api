@@ -10,11 +10,25 @@ export class SubscriptionPackageController {
       // Validate request body
       await Promise.all([
         body('name').notEmpty().withMessage('الاسم مطلوب').run(req),
-        body('description').optional().isLength({ max: 1000 }).withMessage('الوصف طويل جداً').run(req),
-        body('maxStudents').isInt({ min: 1 }).withMessage('عدد الطلاب مطلوب').run(req),
+        body('description')
+          .optional()
+          .isLength({ max: 1000 })
+          .withMessage('الوصف طويل جداً')
+          .run(req),
+        body('maxStudents')
+          .isInt({ min: 1 })
+          .withMessage('عدد الطلاب مطلوب')
+          .run(req),
         body('price').isFloat({ min: 0 }).withMessage('السعر مطلوب').run(req),
-        body('durationDays').isInt({ min: 1 }).withMessage('مدة الباقة مطلوبة').run(req),
-        body('isFree').optional().isBoolean().withMessage('قيمة غير صحيحة').run(req)
+        body('durationDays')
+          .isInt({ min: 1 })
+          .withMessage('مدة الباقة مطلوبة')
+          .run(req),
+        body('isFree')
+          .optional()
+          .isBoolean()
+          .withMessage('قيمة غير صحيحة')
+          .run(req),
       ]);
 
       const errors = validationResult(req);
@@ -22,12 +36,13 @@ export class SubscriptionPackageController {
         res.status(400).json({
           success: false,
           message: 'فشل في التحقق من البيانات',
-          errors: errors.array().map(err => err.msg)
+          errors: errors.array().map(err => err.msg),
         });
         return;
       }
 
-      const { name, description, maxStudents, price, durationDays, isFree } = req.body;
+      const { name, description, maxStudents, price, durationDays, isFree } =
+        req.body;
 
       const result = await SubscriptionPackageService.createPackage({
         name,
@@ -35,7 +50,7 @@ export class SubscriptionPackageController {
         maxStudents: Number(maxStudents),
         price: Number(price),
         durationDays: Number(durationDays),
-        isFree: isFree || false
+        isFree: isFree || false,
       });
 
       if (result.success) {
@@ -48,7 +63,7 @@ export class SubscriptionPackageController {
       res.status(500).json({
         success: false,
         message: 'حدث خطأ في الخادم',
-        errors: ['حدث خطأ في الخادم']
+        errors: ['حدث خطأ في الخادم'],
       });
     }
   }
@@ -64,7 +79,7 @@ export class SubscriptionPackageController {
         res.status(400).json({
           success: false,
           message: 'فشل في التحقق من البيانات',
-          errors: errors.array().map(err => err.msg)
+          errors: errors.array().map(err => err.msg),
         });
         return;
       }
@@ -82,7 +97,7 @@ export class SubscriptionPackageController {
       res.status(500).json({
         success: false,
         message: 'حدث خطأ في الخادم',
-        errors: ['حدث خطأ في الخادم']
+        errors: ['حدث خطأ في الخادم'],
       });
     }
   }
@@ -97,7 +112,7 @@ export class SubscriptionPackageController {
         isActive = null,
         isFree = null,
         sortBy = null,
-        deleted = false
+        deleted = false,
       } = req.query;
 
       // Validate numeric parameters
@@ -108,7 +123,7 @@ export class SubscriptionPackageController {
         res.status(400).json({
           success: false,
           message: 'رقم الصفحة غير صحيح',
-          errors: ['رقم الصفحة غير صحيح']
+          errors: ['رقم الصفحة غير صحيح'],
         });
         return;
       }
@@ -117,7 +132,7 @@ export class SubscriptionPackageController {
         res.status(400).json({
           success: false,
           message: 'الحد غير صحيح',
-          errors: ['الحد غير صحيح']
+          errors: ['الحد غير صحيح'],
         });
         return;
       }
@@ -127,7 +142,7 @@ export class SubscriptionPackageController {
         res.status(400).json({
           success: false,
           message: 'البحث طويل جداً',
-          errors: ['البحث طويل جداً']
+          errors: ['البحث طويل جداً'],
         });
         return;
       }
@@ -143,7 +158,7 @@ export class SubscriptionPackageController {
           res.status(400).json({
             success: false,
             message: 'قيمة غير صحيحة',
-            errors: ['قيمة غير صحيحة']
+            errors: ['قيمة غير صحيحة'],
           });
           return;
         }
@@ -156,7 +171,7 @@ export class SubscriptionPackageController {
           res.status(400).json({
             success: false,
             message: 'قيمة غير صحيحة',
-            errors: ['قيمة غير صحيحة']
+            errors: ['قيمة غير صحيحة'],
           });
           return;
         }
@@ -165,7 +180,7 @@ export class SubscriptionPackageController {
       const params: any = {
         page: pageNum,
         limit: limitNum,
-        deleted: deleted === 'true'
+        deleted: deleted === 'true',
       };
 
       // Add optional filters
@@ -192,7 +207,7 @@ export class SubscriptionPackageController {
       res.status(500).json({
         success: false,
         message: 'حدث خطأ في الخادم',
-        errors: ['حدث خطأ في الخادم']
+        errors: ['حدث خطأ في الخادم'],
       });
     }
   }
@@ -204,12 +219,36 @@ export class SubscriptionPackageController {
       await Promise.all([
         param('id').isUUID().withMessage('معرف غير صحيح').run(req),
         body('name').optional().notEmpty().withMessage('الاسم مطلوب').run(req),
-        body('description').optional().isLength({ max: 1000 }).withMessage('الوصف طويل جداً').run(req),
-        body('maxStudents').optional().isInt({ min: 1 }).withMessage('عدد الطلاب مطلوب').run(req),
-        body('price').optional().isFloat({ min: 0 }).withMessage('السعر مطلوب').run(req),
-        body('durationDays').optional().isInt({ min: 1 }).withMessage('مدة الباقة مطلوبة').run(req),
-        body('isFree').optional().isBoolean().withMessage('قيمة غير صحيحة').run(req),
-        body('isActive').optional().isBoolean().withMessage('قيمة غير صحيحة').run(req)
+        body('description')
+          .optional()
+          .isLength({ max: 1000 })
+          .withMessage('الوصف طويل جداً')
+          .run(req),
+        body('maxStudents')
+          .optional()
+          .isInt({ min: 1 })
+          .withMessage('عدد الطلاب مطلوب')
+          .run(req),
+        body('price')
+          .optional()
+          .isFloat({ min: 0 })
+          .withMessage('السعر مطلوب')
+          .run(req),
+        body('durationDays')
+          .optional()
+          .isInt({ min: 1 })
+          .withMessage('مدة الباقة مطلوبة')
+          .run(req),
+        body('isFree')
+          .optional()
+          .isBoolean()
+          .withMessage('قيمة غير صحيحة')
+          .run(req),
+        body('isActive')
+          .optional()
+          .isBoolean()
+          .withMessage('قيمة غير صحيحة')
+          .run(req),
       ]);
 
       const errors = validationResult(req);
@@ -217,7 +256,7 @@ export class SubscriptionPackageController {
         res.status(400).json({
           success: false,
           message: 'فشل في التحقق من البيانات',
-          errors: errors.array().map(err => err.msg)
+          errors: errors.array().map(err => err.msg),
         });
         return;
       }
@@ -226,11 +265,16 @@ export class SubscriptionPackageController {
       const updateData = req.body;
 
       // Convert numeric fields
-      if (updateData.maxStudents) updateData.maxStudents = Number(updateData.maxStudents);
+      if (updateData.maxStudents)
+        updateData.maxStudents = Number(updateData.maxStudents);
       if (updateData.price) updateData.price = Number(updateData.price);
-      if (updateData.durationDays) updateData.durationDays = Number(updateData.durationDays);
+      if (updateData.durationDays)
+        updateData.durationDays = Number(updateData.durationDays);
 
-      const result = await SubscriptionPackageService.updatePackage(id!, updateData);
+      const result = await SubscriptionPackageService.updatePackage(
+        id!,
+        updateData
+      );
 
       if (result.success) {
         res.status(200).json(result);
@@ -242,7 +286,7 @@ export class SubscriptionPackageController {
       res.status(500).json({
         success: false,
         message: 'حدث خطأ في الخادم',
-        errors: ['حدث خطأ في الخادم']
+        errors: ['حدث خطأ في الخادم'],
       });
     }
   }
@@ -258,7 +302,7 @@ export class SubscriptionPackageController {
         res.status(400).json({
           success: false,
           message: 'فشل في التحقق من البيانات',
-          errors: errors.array().map(err => err.msg)
+          errors: errors.array().map(err => err.msg),
         });
         return;
       }
@@ -276,7 +320,7 @@ export class SubscriptionPackageController {
       res.status(500).json({
         success: false,
         message: 'حدث خطأ في الخادم',
-        errors: ['حدث خطأ في الخادم']
+        errors: ['حدث خطأ في الخادم'],
       });
     }
   }
@@ -292,7 +336,7 @@ export class SubscriptionPackageController {
         res.status(400).json({
           success: false,
           message: 'فشل في التحقق من البيانات',
-          errors: errors.array().map(err => err.msg)
+          errors: errors.array().map(err => err.msg),
         });
         return;
       }
@@ -310,7 +354,7 @@ export class SubscriptionPackageController {
       res.status(500).json({
         success: false,
         message: 'حدث خطأ في الخادم',
-        errors: ['حدث خطأ في الخادم']
+        errors: ['حدث خطأ في الخادم'],
       });
     }
   }
@@ -326,7 +370,7 @@ export class SubscriptionPackageController {
         res.status(400).json({
           success: false,
           message: 'فشل في التحقق من البيانات',
-          errors: errors.array().map(err => err.msg)
+          errors: errors.array().map(err => err.msg),
         });
         return;
       }
@@ -344,7 +388,7 @@ export class SubscriptionPackageController {
       res.status(500).json({
         success: false,
         message: 'حدث خطأ في الخادم',
-        errors: ['حدث خطأ في الخادم']
+        errors: ['حدث خطأ في الخادم'],
       });
     }
   }
@@ -352,12 +396,22 @@ export class SubscriptionPackageController {
   // Get active subscription packages (Public)
   static async getActivePackages(_req: Request, res: Response): Promise<void> {
     try {
+      res.setHeader(
+        'Cache-Control',
+        'no-store, no-cache, must-revalidate, proxy-revalidate'
+      );
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+      res.removeHeader('ETag');
+
       // ✅ حاول الحصول على user من locals
       const user = (res.locals as any)?.user;
       const teacherId = user?.userId || null;
 
       // ✅ استدعاء الخدمة وتمرير teacherId فقط عند توفره
-      const data = await SubscriptionPackageService.getActivePackages(teacherId || undefined);
+      const data = await SubscriptionPackageService.getActivePackages(
+        teacherId || undefined
+      );
 
       res.status(200).json({
         success: true,
@@ -376,7 +430,6 @@ export class SubscriptionPackageController {
     }
   }
 
-
   // Get free subscription package (Public)
   static async getFreePackage(_req: Request, res: Response): Promise<void> {
     try {
@@ -392,7 +445,7 @@ export class SubscriptionPackageController {
       res.status(500).json({
         success: false,
         message: 'حدث خطأ في الخادم',
-        errors: ['حدث خطأ في الخادم']
+        errors: ['حدث خطأ في الخادم'],
       });
     }
   }
@@ -406,7 +459,7 @@ export class SubscriptionPackageController {
         res.status(400).json({
           success: false,
           message: 'فشل في التحقق من البيانات',
-          errors: errors.array().map(e => e.msg)
+          errors: errors.array().map(e => e.msg),
         });
         return;
       }
@@ -416,13 +469,16 @@ export class SubscriptionPackageController {
         res.status(401).json({
           success: false,
           message: 'المصادقة مطلوبة',
-          errors: ['المستخدم غير مصادق عليه']
+          errors: ['المستخدم غير مصادق عليه'],
         });
         return;
       }
 
       const { id } = req.params;
-      const result = await TeacherSubscriptionService.activateForTeacher(teacher.id, id!);
+      const result = await TeacherSubscriptionService.activateForTeacher(
+        teacher.id,
+        id!
+      );
 
       if (result.success) {
         res.status(200).json(result);
@@ -434,7 +490,7 @@ export class SubscriptionPackageController {
       res.status(500).json({
         success: false,
         message: 'حدث خطأ في الخادم',
-        errors: ['حدث خطأ في الخادم']
+        errors: ['حدث خطأ في الخادم'],
       });
     }
   }

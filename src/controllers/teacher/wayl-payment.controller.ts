@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { SubscriptionPackageModel } from '../../models/subscription-package.model';
+import { WaylPaymentLinkLogModel } from '../../models/wayl-payment-link-log.model';
 import { WaylPaymentLinkModel } from '../../models/wayl-payment-link.model';
 import { WaylService } from '../../services/wayl.service';
 
@@ -8,6 +9,7 @@ export class TeacherWaylPaymentController {
     req: Request,
     res: Response
   ): Promise<void> {
+    let referenceId: string | null = null;
     try {
       const teacherId = (req as any).user?.id;
       if (!teacherId) {
@@ -46,7 +48,7 @@ export class TeacherWaylPaymentController {
         return;
       }
 
-      const referenceId = `sub_${teacherId}_${packageId}_${Date.now()}`;
+      referenceId = `sub_${teacherId}_${packageId}_${Date.now()}`;
 
       const webhookUrl = process.env['WAYL_WEBHOOK_URL'];
       if (!webhookUrl) throw new Error('WAYL_WEBHOOK_URL is not configured');
@@ -78,13 +80,21 @@ export class TeacherWaylPaymentController {
         lineItem: [item],
       };
 
+      await WaylPaymentLinkLogModel.create({
+        paymentLinkId: null,
+        referenceId,
+        eventType: 'create_link_request',
+        httpStatus: null,
+        payload,
+      });
+
       const waylRes = await WaylService.createLink(payload);
 
       const url = waylRes?.data?.url || waylRes?.url;
       const waylOrderId = waylRes?.data?.id || waylRes?.id || null;
       const waylCode = waylRes?.data?.code || waylRes?.code || null;
 
-      await WaylPaymentLinkModel.create({
+      const created = await WaylPaymentLinkModel.create({
         teacherId,
         purpose: 'subscription',
         subscriptionPackageId: packageId,
@@ -97,12 +107,33 @@ export class TeacherWaylPaymentController {
         waylCode,
       });
 
+      await WaylPaymentLinkLogModel.create({
+        paymentLinkId: created.id,
+        referenceId,
+        eventType: 'create_link_response',
+        httpStatus: 200,
+        payload: waylRes,
+      });
+
       res.status(200).json({
         success: true,
         message: 'تم إنشاء رابط الدفع',
         data: { url, referenceId },
       });
     } catch (e: any) {
+      try {
+        await WaylPaymentLinkLogModel.create({
+          paymentLinkId: null,
+          referenceId,
+          eventType: 'create_link_error',
+          httpStatus: null,
+          payload: {
+            message: e?.message,
+          },
+        });
+      } catch {
+        // ignore logging errors
+      }
       const msg = String(e?.message || '');
       if (msg.toLowerCase().includes('invalid authentication key')) {
         res.status(400).json({
@@ -131,6 +162,7 @@ export class TeacherWaylPaymentController {
     req: Request,
     res: Response
   ): Promise<void> {
+    let referenceId: string | null = null;
     try {
       const teacherId = (req as any).user?.id;
       if (!teacherId) {
@@ -152,7 +184,7 @@ export class TeacherWaylPaymentController {
         return;
       }
 
-      const referenceId = `topup_${teacherId}_${Date.now()}`;
+      referenceId = `topup_${teacherId}_${Date.now()}`;
 
       const webhookUrl = process.env['WAYL_WEBHOOK_URL'];
       if (!webhookUrl) throw new Error('WAYL_WEBHOOK_URL is not configured');
@@ -184,12 +216,20 @@ export class TeacherWaylPaymentController {
         lineItem: [item],
       };
 
+      await WaylPaymentLinkLogModel.create({
+        paymentLinkId: null,
+        referenceId,
+        eventType: 'create_link_request',
+        httpStatus: null,
+        payload,
+      });
+
       const waylRes = await WaylService.createLink(payload);
       const url = waylRes?.data?.url || waylRes?.url;
       const waylOrderId = waylRes?.data?.id || waylRes?.id || null;
       const waylCode = waylRes?.data?.code || waylRes?.code || null;
 
-      await WaylPaymentLinkModel.create({
+      const created = await WaylPaymentLinkModel.create({
         teacherId,
         purpose: 'wallet_topup',
         amount,
@@ -201,12 +241,33 @@ export class TeacherWaylPaymentController {
         waylCode,
       });
 
+      await WaylPaymentLinkLogModel.create({
+        paymentLinkId: created.id,
+        referenceId,
+        eventType: 'create_link_response',
+        httpStatus: 200,
+        payload: waylRes,
+      });
+
       res.status(200).json({
         success: true,
         message: 'تم إنشاء رابط شحن المحفظة',
         data: { url, referenceId },
       });
     } catch (e: any) {
+      try {
+        await WaylPaymentLinkLogModel.create({
+          paymentLinkId: null,
+          referenceId,
+          eventType: 'create_link_error',
+          httpStatus: null,
+          payload: {
+            message: e?.message,
+          },
+        });
+      } catch {
+        // ignore logging errors
+      }
       const msg = String(e?.message || '');
       if (msg.toLowerCase().includes('invalid authentication key')) {
         res.status(400).json({

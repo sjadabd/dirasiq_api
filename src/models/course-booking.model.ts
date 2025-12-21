@@ -389,7 +389,10 @@ export class CourseBookingModel {
         // تأكيد حجز جديد - زيادة العدد
         const capacityCheck =
           await TeacherSubscriptionModel.canAddStudent(teacherId);
-        await TeacherSubscriptionModel.incrementCurrentStudents(teacherId);
+        await TeacherSubscriptionModel.incrementCurrentStudents(
+          teacherId,
+          client
+        );
 
         // تسجيل الاستخدام
         await this.logBookingUsage(
@@ -411,7 +414,10 @@ export class CourseBookingModel {
         // رفض حجز كان مؤكداً - تقليل العدد
         const capacityCheck =
           await TeacherSubscriptionModel.canAddStudent(teacherId);
-        await TeacherSubscriptionModel.decrementCurrentStudents(teacherId);
+        await TeacherSubscriptionModel.decrementCurrentStudents(
+          teacherId,
+          client
+        );
 
         // تسجيل الاستخدام
         await this.logBookingUsage(
@@ -433,7 +439,10 @@ export class CourseBookingModel {
         // إلغاء حجز كان مؤكداً - تقليل العدد
         const capacityCheck =
           await TeacherSubscriptionModel.canAddStudent(teacherId);
-        await TeacherSubscriptionModel.decrementCurrentStudents(teacherId);
+        await TeacherSubscriptionModel.decrementCurrentStudents(
+          teacherId,
+          client
+        );
 
         // تسجيل الاستخدام
         await this.logBookingUsage(

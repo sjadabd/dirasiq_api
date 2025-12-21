@@ -1,9 +1,15 @@
 import pool from '../config/database';
-import { CreateSubscriptionPackageRequest, SubscriptionPackage, UpdateSubscriptionPackageRequest } from '../types';
+import {
+  CreateSubscriptionPackageRequest,
+  SubscriptionPackage,
+  UpdateSubscriptionPackageRequest,
+} from '../types';
 
 export class SubscriptionPackageModel {
   // Create a new subscription package
-  static async create(data: CreateSubscriptionPackageRequest): Promise<SubscriptionPackage> {
+  static async create(
+    data: CreateSubscriptionPackageRequest
+  ): Promise<SubscriptionPackage> {
     // Check for duplicate package with same combination
     const duplicateCheckQuery = `
       SELECT id FROM subscription_packages
@@ -18,7 +24,7 @@ export class SubscriptionPackageModel {
       data.maxStudents,
       data.price,
       data.durationDays,
-      data.isFree || false
+      data.isFree || false,
     ]);
 
     if (duplicateCheck.rows.length > 0) {
@@ -38,7 +44,7 @@ export class SubscriptionPackageModel {
       data.maxStudents,
       data.price,
       data.durationDays,
-      data.isFree || false
+      data.isFree || false,
     ];
 
     const result = await pool.query(query, values);
@@ -47,7 +53,8 @@ export class SubscriptionPackageModel {
 
   // Find subscription package by ID
   static async findById(id: string): Promise<SubscriptionPackage | null> {
-    const query = 'SELECT * FROM subscription_packages WHERE id = $1 AND deleted_at IS NULL';
+    const query =
+      'SELECT * FROM subscription_packages WHERE id = $1 AND deleted_at IS NULL';
     const result = await pool.query(query, [id]);
 
     if (result.rows.length === 0) {
@@ -59,7 +66,8 @@ export class SubscriptionPackageModel {
 
   // Find subscription package by name
   static async findByName(name: string): Promise<SubscriptionPackage | null> {
-    const query = 'SELECT * FROM subscription_packages WHERE name = $1 AND deleted_at IS NULL';
+    const query =
+      'SELECT * FROM subscription_packages WHERE name = $1 AND deleted_at IS NULL';
     const result = await pool.query(query, [name]);
 
     if (result.rows.length === 0) {
@@ -90,7 +98,7 @@ export class SubscriptionPackageModel {
       specs.maxStudents,
       specs.price,
       specs.durationDays,
-      specs.isFree
+      specs.isFree,
     ]);
 
     if (result.rows.length === 0) {
@@ -109,12 +117,18 @@ export class SubscriptionPackageModel {
     isFree?: boolean;
     sortBy?: { key: string; order: 'asc' | 'desc' };
     deleted?: boolean;
-  }): Promise<{ packages: SubscriptionPackage[]; total: number; totalPages: number }> {
+  }): Promise<{
+    packages: SubscriptionPackage[];
+    total: number;
+    totalPages: number;
+  }> {
     const page = params.page || 1;
     const limit = params.limit || 10;
     const offset = (page - 1) * limit;
 
-    let whereClause = params.deleted ? 'WHERE deleted_at IS NOT NULL' : 'WHERE deleted_at IS NULL';
+    let whereClause = params.deleted
+      ? 'WHERE deleted_at IS NOT NULL'
+      : 'WHERE deleted_at IS NULL';
     let searchClause = '';
     let filterClause = '';
     let searchValues: any[] = [];
@@ -161,28 +175,47 @@ export class SubscriptionPackageModel {
     const total = parseInt(countResult.rows[0].count);
 
     const dataResult = await pool.query(dataQuery, searchValues);
-    const packages = dataResult.rows.map((row: any) => this.mapDatabaseToSubscriptionPackage(row));
+    const packages = dataResult.rows.map((row: any) =>
+      this.mapDatabaseToSubscriptionPackage(row)
+    );
 
     return {
       packages,
       total,
-      totalPages: Math.ceil(total / limit)
+      totalPages: Math.ceil(total / limit),
     };
   }
 
   // Update subscription package
-  static async update(id: string, updateData: UpdateSubscriptionPackageRequest): Promise<SubscriptionPackage | null> {
-    const allowedFields = ['name', 'description', 'max_students', 'price', 'duration_days', 'is_free', 'is_active'];
+  static async update(
+    id: string,
+    updateData: UpdateSubscriptionPackageRequest
+  ): Promise<SubscriptionPackage | null> {
+    const allowedFields = [
+      'name',
+      'description',
+      'max_students',
+      'price',
+      'duration_days',
+      'is_free',
+      'is_active',
+    ];
     const updates: string[] = [];
     const values: any[] = [];
     let paramCount = 1;
 
     for (const [key, value] of Object.entries(updateData)) {
       if (allowedFields.includes(key) && value !== undefined) {
-        const dbField = key === 'maxStudents' ? 'max_students' :
-          key === 'durationDays' ? 'duration_days' :
-            key === 'isFree' ? 'is_free' :
-              key === 'isActive' ? 'is_active' : key;
+        const dbField =
+          key === 'maxStudents'
+            ? 'max_students'
+            : key === 'durationDays'
+              ? 'duration_days'
+              : key === 'isFree'
+                ? 'is_free'
+                : key === 'isActive'
+                  ? 'is_active'
+                  : key;
 
         updates.push(`${dbField} = $${paramCount}`);
         values.push(value);
@@ -266,7 +299,7 @@ export class SubscriptionPackageModel {
 
       // ✅ إذا لم يتم تمرير teacher_id فقط ارجع الباقات
       if (!teacher_id) {
-        return packages.map((row) => ({
+        return packages.map(row => ({
           ...this.mapDatabaseToSubscriptionPackage(row),
           current: false,
         }));
@@ -279,13 +312,19 @@ export class SubscriptionPackageModel {
         WHERE teacher_id = $1
           AND is_active = true
           AND deleted_at IS NULL
+          AND end_date > NOW()
+        ORDER BY created_at DESC
         LIMIT 1
       `;
-      const { rows: activeSub } = await pool.query(activeSubQuery, [teacher_id]);
-      const currentPackageId = activeSub.length ? activeSub[0].subscription_package_id : null;
+      const { rows: activeSub } = await pool.query(activeSubQuery, [
+        teacher_id,
+      ]);
+      const currentPackageId = activeSub.length
+        ? activeSub[0].subscription_package_id
+        : null;
 
       // ✅ دمج البيانات وتحديد الباقة الحالية
-      const result = packages.map((row) => {
+      const result = packages.map(row => {
         const mapped = this.mapDatabaseToSubscriptionPackage(row);
         return {
           ...mapped,
@@ -318,7 +357,9 @@ export class SubscriptionPackageModel {
   }
 
   // Map database row to SubscriptionPackage interface
-  private static mapDatabaseToSubscriptionPackage(dbPackage: any): SubscriptionPackage {
+  private static mapDatabaseToSubscriptionPackage(
+    dbPackage: any
+  ): SubscriptionPackage {
     return {
       id: dbPackage.id,
       name: dbPackage.name,
@@ -330,7 +371,7 @@ export class SubscriptionPackageModel {
       isActive: dbPackage.is_active,
       createdAt: dbPackage.created_at,
       updatedAt: dbPackage.updated_at,
-      current: false
+      current: false,
     };
   }
 }

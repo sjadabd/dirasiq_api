@@ -27,6 +27,14 @@ export class TeacherCourseBookingController {
     res: Response
   ): Promise<void> {
     try {
+      res.setHeader(
+        'Cache-Control',
+        'no-store, no-cache, must-revalidate, proxy-revalidate'
+      );
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+      res.removeHeader('ETag');
+
       const teacherId = req.user?.id;
       if (!teacherId) {
         res.status(401).json({ error: 'Unauthorized' });
@@ -292,13 +300,11 @@ export class TeacherCourseBookingController {
         return;
       }
       console.error('Error confirming booking:', error);
-      res
-        .status(500)
-        .json({
-          success: false,
-          message: 'خطأ داخلي في الخادم',
-          errors: ['حدث خطأ في الخادم'],
-        });
+      res.status(500).json({
+        success: false,
+        message: 'خطأ داخلي في الخادم',
+        errors: ['حدث خطأ في الخادم'],
+      });
     }
   }
 

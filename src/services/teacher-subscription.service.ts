@@ -184,39 +184,7 @@ export class TeacherSubscriptionService {
         };
       }
 
-      // 2) التحقق من وجود اشتراك فعّال والتعامل معه حسب القواعد
-      const current =
-        await TeacherSubscriptionModel.findActiveByTeacherId(teacherId);
-
-      if (current) {
-        // التحقق من السعة الحالية (هل ما زال يمكنه إضافة طلاب؟)
-        const capacity =
-          await TeacherSubscriptionModel.canAddStudent(teacherId);
-
-        if (capacity.canAdd) {
-          // ما زال بإمكانه إضافة طلاب ضمن الاشتراك الحالي
-          if (current.subscriptionPackageId === pkg.id) {
-            // نفس الباقة
-            return {
-              success: false,
-              message: 'أنت مشترك مسبقًا بهذه الباقة.',
-              errors: ['أنت مشترك مسبقًا بهذه الباقة.'],
-            };
-          }
-
-          // باقة مختلفة مع وجود اشتراك فعّال لم يصل للحد الأقصى بعد
-          return {
-            success: false,
-            message: 'لديك اشتراك فعّال، يرجى إنهائه قبل شراء باقة جديدة.',
-            errors: ['لديك اشتراك فعّال، يرجى إنهائه قبل شراء باقة جديدة.'],
-          };
-        }
-
-        // لا يمكنه إضافة طلاب (إما الباقة ممتلئة أو منتهية) -> إلغاء تفعيل الاشتراك الحالي والسماح باشتراك جديد
-        await TeacherSubscriptionModel.update(current.id, { isActive: false });
-      }
-
-      // 3) إنشاء اشتراك جديد بحسب مدة الباقة
+      // 2) إنشاء اشتراك جديد بحسب مدة الباقة (يدعم تعدد الاشتراكات والتجديد)
       const startDate = new Date();
       const endDate = new Date(startDate);
       endDate.setDate(endDate.getDate() + Number(pkg.durationDays || 30));

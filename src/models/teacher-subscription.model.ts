@@ -4,6 +4,7 @@ import {
   TeacherSubscription,
   UpdateTeacherSubscriptionRequest,
 } from '../types';
+import { TeacherStudentCapacityModel } from './teacher-student-capacity.model';
 
 export class TeacherSubscriptionModel {
   // إنشاء اشتراك جديد
@@ -183,25 +184,21 @@ export class TeacherSubscriptionModel {
   }
 
   // زيادة عدد الطلاب الحاليين
-  static async incrementCurrentStudents(teacherId: string): Promise<boolean> {
-    const query = `
-      UPDATE teacher_subscriptions
-      SET current_students = current_students + 1, updated_at = CURRENT_TIMESTAMP
-      WHERE teacher_id = $1 AND is_active = true AND deleted_at IS NULL
-    `;
-    const result = await pool.query(query, [teacherId]);
-    return (result.rowCount || 0) > 0;
+  static async incrementCurrentStudents(
+    teacherId: string,
+    client?: any
+  ): Promise<boolean> {
+    await TeacherStudentCapacityModel.increment(teacherId, client);
+    return true;
   }
 
   // تقليل عدد الطلاب الحاليين
-  static async decrementCurrentStudents(teacherId: string): Promise<boolean> {
-    const query = `
-      UPDATE teacher_subscriptions
-      SET current_students = GREATEST(current_students - 1, 0), updated_at = CURRENT_TIMESTAMP
-      WHERE teacher_id = $1 AND is_active = true AND deleted_at IS NULL
-    `;
-    const result = await pool.query(query, [teacherId]);
-    return (result.rowCount || 0) > 0;
+  static async decrementCurrentStudents(
+    teacherId: string,
+    client?: any
+  ): Promise<boolean> {
+    await TeacherStudentCapacityModel.decrement(teacherId, client);
+    return true;
   }
 
   // التحقق من إمكانية إضافة طالب جديد (التحقق من السعة)
@@ -211,18 +208,22 @@ export class TeacherSubscriptionModel {
     maxStudents: number;
     message?: string;
   }> {
-    const query = `
+    const maxQuery = `
       SELECT
-        ts.id AS subscription_id,
-        ts.current_students,
-        sp.max_students,
-        ts.end_date,
+        COALESCE(SUM(sp.max_students), 0) AS base_max_students,
         COALESCE(
           (
-            SELECT SUM(bonus_value)
+            SELECT SUM(b.bonus_value)
             FROM teacher_subscription_bonuses b
-            WHERE b.teacher_subscription_id = ts.id
-              AND (b.expires_at IS NULL OR b.expires_at > NOW())
+            WHERE b.teacher_subscription_id IN (
+              SELECT ts2.id
+              FROM teacher_subscriptions ts2
+              WHERE ts2.teacher_id = $1
+                AND ts2.is_active = true
+                AND ts2.deleted_at IS NULL
+                AND ts2.end_date > NOW()
+            )
+            AND (b.expires_at IS NULL OR b.expires_at > NOW())
           ),
           0
         ) AS bonus_students
@@ -231,42 +232,28 @@ export class TeacherSubscriptionModel {
       WHERE ts.teacher_id = $1
         AND ts.is_active = true
         AND ts.deleted_at IS NULL
+        AND ts.end_date > NOW()
         AND sp.deleted_at IS NULL
-      ORDER BY ts.end_date DESC, ts.created_at DESC
-      LIMIT 1
     `;
 
-    const result = await pool.query(query, [teacherId]);
+    const [maxR, currentStudents] = await Promise.all([
+      pool.query(maxQuery, [teacherId]),
+      TeacherStudentCapacityModel.getCurrentStudents(teacherId),
+    ]);
 
-    if (result.rows.length === 0) {
-      return {
-        canAdd: false,
-        currentStudents: 0,
-        maxStudents: 0,
-        message: 'لا يوجد اشتراك فعال للمعلم',
-      };
-    }
-
-    const subscription = result.rows[0];
-
-    // قيم PostgreSQL من النوع numeric أو bigint تُعاد كسلاسل نصية غالباً
-    const currentStudents = Number(subscription.current_students) || 0;
-    const baseMaxStudents = Number(subscription.max_students) || 0;
-    const bonusStudents = Number(subscription.bonus_students) || 0;
+    const baseMaxStudents = Number(maxR.rows[0]?.base_max_students || 0);
+    const bonusStudents = Number(maxR.rows[0]?.bonus_students || 0);
     const maxStudents = baseMaxStudents + bonusStudents;
-    const endDate = new Date(subscription.end_date);
 
-    // التحقق من انتهاء صلاحية الاشتراك
-    if (endDate < new Date()) {
+    if (maxStudents <= 0) {
       return {
         canAdd: false,
         currentStudents,
         maxStudents,
-        message: 'انتهت صلاحية الاشتراك',
+        message: 'لا يوجد اشتراك فعال للمعلم',
       };
     }
 
-    // التحقق من السعة
     if (currentStudents >= maxStudents) {
       return {
         canAdd: false,
@@ -276,32 +263,12 @@ export class TeacherSubscriptionModel {
       };
     }
 
-    return {
-      canAdd: true,
-      currentStudents,
-      maxStudents,
-    };
+    return { canAdd: true, currentStudents, maxStudents };
   }
 
   // إعادة حساب عدد الطلاب الحاليين من الحجوزات المعتمدة
   static async recalculateCurrentStudents(teacherId: string): Promise<number> {
-    const query = `
-      UPDATE teacher_subscriptions
-      SET current_students = (
-        SELECT COUNT(*)
-        FROM course_bookings cb
-        WHERE cb.teacher_id = teacher_subscriptions.teacher_id
-        AND cb.status = 'confirmed'
-        AND cb.is_deleted = false
-        AND cb.created_at >= teacher_subscriptions.start_date
-        AND cb.created_at <= teacher_subscriptions.end_date
-      ), updated_at = CURRENT_TIMESTAMP
-      WHERE teacher_id = $1 AND is_active = true AND deleted_at IS NULL
-      RETURNING current_students
-    `;
-
-    const result = await pool.query(query, [teacherId]);
-    return result.rows.length > 0 ? result.rows[0].current_students : 0;
+    return TeacherStudentCapacityModel.recalculateFromBookings(teacherId);
   }
 
   // محول من DB إلى واجهة TypeScript

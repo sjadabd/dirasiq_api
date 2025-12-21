@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import pool from '../../config/database';
 import { WaylPaymentLinkModel } from '../../models/wayl-payment-link.model';
+import { WaylWebhookEventModel } from '../../models/wayl-webhook-event.model';
 import { TeacherWalletService } from '../../services/teacher-wallet.service';
 import { WaylService } from '../../services/wayl.service';
 
@@ -26,12 +27,30 @@ export class WaylWebhookController {
         ''
     );
     if (!referenceId) {
+      await WaylWebhookEventModel.create({
+        paymentLinkId: null,
+        referenceId: null,
+        signature,
+        signatureValid: false,
+        headers: req.headers,
+        rawBody,
+        body: req.body,
+      });
       res.status(400).json({ success: false, message: 'Missing referenceId' });
       return;
     }
 
     const link = await WaylPaymentLinkModel.findByReferenceId(referenceId);
     if (!link) {
+      await WaylWebhookEventModel.create({
+        paymentLinkId: null,
+        referenceId,
+        signature,
+        signatureValid: false,
+        headers: req.headers,
+        rawBody,
+        body: req.body,
+      });
       res.status(404).json({ success: false, message: 'Unknown referenceId' });
       return;
     }
@@ -41,7 +60,25 @@ export class WaylWebhookController {
       signature,
       secret: link.wayl_secret,
     });
+
+    const event = await WaylWebhookEventModel.create({
+      paymentLinkId: link.id,
+      referenceId,
+      signature,
+      signatureValid: ok,
+      headers: req.headers,
+      rawBody,
+      body: req.body,
+    });
+
     if (!ok) {
+      if (event?.id) {
+        await WaylWebhookEventModel.markProcessed({
+          id: event.id,
+          status: 'failed',
+          message: 'Invalid signature',
+        });
+      }
       res.status(401).json({ success: false, message: 'Invalid signature' });
       return;
     }
@@ -50,6 +87,13 @@ export class WaylWebhookController {
       (req.body as any)?.status || (req.body as any)?.data?.status || ''
     );
     if (String(link.status) === 'paid') {
+      if (event?.id) {
+        await WaylWebhookEventModel.markProcessed({
+          id: event.id,
+          status: 'ignored',
+          message: 'Already processed',
+        });
+      }
       res.status(200).json({ success: true, message: 'Already processed' });
       return;
     }
@@ -61,6 +105,13 @@ export class WaylWebhookController {
       normalizedStatus === 'complete';
 
     if (!isPaidStatus) {
+      if (event?.id) {
+        await WaylWebhookEventModel.markProcessed({
+          id: event.id,
+          status: 'ignored',
+          message: 'Ignored non-paid webhook',
+        });
+      }
       res
         .status(200)
         .json({ success: true, message: 'Ignored non-paid webhook' });
@@ -75,6 +126,13 @@ export class WaylWebhookController {
         : Number(webhookTotalRaw);
     if (webhookTotal !== null && Number.isFinite(webhookTotal)) {
       if (Number(link.amount) !== Number(webhookTotal)) {
+        if (event?.id) {
+          await WaylWebhookEventModel.markProcessed({
+            id: event.id,
+            status: 'failed',
+            message: 'Amount mismatch',
+          });
+        }
         res.status(400).json({
           success: false,
           message: 'Amount mismatch',
@@ -95,6 +153,13 @@ export class WaylWebhookController {
       );
       if ((markR.rowCount || 0) === 0) {
         await client.query('COMMIT');
+        if (event?.id) {
+          await WaylWebhookEventModel.markProcessed({
+            id: event.id,
+            status: 'ignored',
+            message: 'Already processed',
+          });
+        }
         res.status(200).json({ success: true, message: 'Already processed' });
         return;
       }
@@ -122,39 +187,26 @@ export class WaylWebhookController {
           throw new Error('الباقة غير موجودة أو غير مفعلة');
         }
 
-        const currentSubR = await client.query(
-          `SELECT id, current_students
-           FROM teacher_subscriptions
-           WHERE teacher_id = $1 AND is_active = true AND deleted_at IS NULL
-           ORDER BY created_at DESC
-           LIMIT 1
-           FOR UPDATE`,
-          [link.teacher_id]
-        );
-        const currentStudents = Number(
-          currentSubR.rows[0]?.current_students || 0
-        );
-
-        await client.query(
-          `UPDATE teacher_subscriptions
-           SET is_active = false, updated_at = CURRENT_TIMESTAMP
-           WHERE teacher_id = $1 AND is_active = true AND deleted_at IS NULL`,
-          [link.teacher_id]
-        );
-
         const startDate = new Date();
         const endDate = new Date(startDate);
         endDate.setDate(endDate.getDate() + Number(pkg.duration_days || 30));
 
         await client.query(
           `INSERT INTO teacher_subscriptions (
-             teacher_id, subscription_package_id, start_date, end_date, is_active, current_students
-           ) VALUES ($1,$2,$3,$4,true,$5)`,
-          [link.teacher_id, pkgId, startDate, endDate, currentStudents]
+             teacher_id, subscription_package_id, start_date, end_date, is_active
+           ) VALUES ($1,$2,$3,$4,true)`,
+          [link.teacher_id, pkgId, startDate, endDate]
         );
       }
 
       await client.query('COMMIT');
+      if (event?.id) {
+        await WaylWebhookEventModel.markProcessed({
+          id: event.id,
+          status: 'processed',
+          message: 'Webhook processed',
+        });
+      }
       res.status(200).json({ success: true, message: 'Webhook processed' });
     } catch (e: any) {
       await client.query('ROLLBACK');
@@ -169,6 +221,13 @@ export class WaylWebhookController {
         success: false,
         message: e.message || 'Webhook processing failed',
       });
+      if (event?.id) {
+        await WaylWebhookEventModel.markProcessed({
+          id: event.id,
+          status: 'failed',
+          message: e?.message || 'Webhook processing failed',
+        });
+      }
     } finally {
       client.release();
     }
