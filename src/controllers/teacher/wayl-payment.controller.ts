@@ -51,9 +51,24 @@ export class TeacherWaylPaymentController {
       const payload: any = {
         referenceId,
         total: Number(pkg.price),
+        currency: 'iqd',
         webhookUrl,
         redirectionUrl,
+        details: {
+          type: 'subscription',
+          teacherId,
+          subscriptionPackageId: packageId,
+          amount: Number(pkg.price),
+        },
         secret,
+        // Some Wayl environments expect `lineItem` (singular), others accept `lineItems`.
+        lineItem: [
+          {
+            title: `Subscription: ${pkg.name}`,
+            quantity: 1,
+            price: Number(pkg.price),
+          },
+        ],
         lineItems: [
           {
             title: `Subscription: ${pkg.name}`,
@@ -96,6 +111,13 @@ export class TeacherWaylPaymentController {
         });
         return;
       }
+      if (msg.toLowerCase().includes('missing fields')) {
+        res.status(400).json({
+          success: false,
+          message: msg,
+        });
+        return;
+      }
       console.error('Wayl subscription link error:', e);
       res.status(500).json({
         success: false,
@@ -134,9 +156,23 @@ export class TeacherWaylPaymentController {
       const payload: any = {
         referenceId,
         total: amount,
+        currency: 'iqd',
         webhookUrl,
         redirectionUrl,
+        details: {
+          type: 'wallet_topup',
+          teacherId,
+          amount,
+        },
         secret,
+        // Some Wayl environments expect `lineItem` (singular), others accept `lineItems`.
+        lineItem: [
+          {
+            title: 'Wallet Top-up',
+            quantity: 1,
+            price: amount,
+          },
+        ],
         lineItems: [
           {
             title: 'Wallet Top-up',
@@ -174,6 +210,13 @@ export class TeacherWaylPaymentController {
         res.status(400).json({
           success: false,
           message: 'Invalid authentication key',
+        });
+        return;
+      }
+      if (msg.toLowerCase().includes('missing fields')) {
+        res.status(400).json({
+          success: false,
+          message: msg,
         });
         return;
       }
