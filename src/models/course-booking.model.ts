@@ -1,4 +1,6 @@
 import pool from '../config/database';
+import { AppSettingService } from '../services/app-setting.service';
+import { TeacherWalletService } from '../services/teacher-wallet.service';
 import {
   BookingStatus,
   CourseBooking,
@@ -283,6 +285,15 @@ export class CourseBookingModel {
         if (!capacityCheck.canAdd) {
           throw new Error(capacityCheck.message || 'لا يمكن تأكيد الحجز');
         }
+
+        // التحقق من رصيد المحفظة ورسوم التأكيد (قابلة للتعديل من السوبر أدمن)
+        const confirmFee = await AppSettingService.getBookingConfirmFeeIqd();
+        if (confirmFee > 0) {
+          const balance = await TeacherWalletService.getBalance(teacherId);
+          if (balance < confirmFee) {
+            throw new Error('رصيد المحفظة غير كافي لتأكيد الطلب');
+          }
+        }
       }
 
       // منع تغيير status إلى rejected إذا كان بالفعل rejected
@@ -363,6 +374,18 @@ export class CourseBookingModel {
         data.status === BookingStatus.CONFIRMED &&
         currentStatus !== BookingStatus.CONFIRMED
       ) {
+        // خصم رسوم تأكيد الطلب من المحفظة عند التأكيد (ضمن نفس المعاملة)
+        const confirmFee = await AppSettingService.getBookingConfirmFeeIqd();
+        if (confirmFee > 0) {
+          await TeacherWalletService.debit({
+            teacherId,
+            amount: confirmFee,
+            referenceType: 'booking_confirm',
+            referenceId: id,
+            client,
+          });
+        }
+
         // تأكيد حجز جديد - زيادة العدد
         const capacityCheck =
           await TeacherSubscriptionModel.canAddStudent(teacherId);

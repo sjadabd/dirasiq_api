@@ -9,12 +9,14 @@ import path from 'path';
 import { initializeDatabase } from './database/init';
 import authRoutes from './routes/auth.routes';
 import notificationRoutes from './routes/notification.routes';
+import waylRoutes from './routes/payments/wayl.routes';
 import publicNewsRoutes from './routes/public/news.routes';
 import studentRoutes from './routes/student';
 import academicYearRoutes from './routes/super_admin/academic-year.routes';
 import superAdminDashboardRoutes from './routes/super_admin/dashboard.routes';
 import gradeRoutes from './routes/super_admin/grade.routes';
 import newsRoutes from './routes/super_admin/news.routes';
+import superAdminSettingsRoutes from './routes/super_admin/settings.routes';
 import subscriptionPackageRoutes from './routes/super_admin/subscription-package.routes';
 import superAdminTeacherRoutes from './routes/super_admin/teacher.routes';
 import teacherRoutes from './routes/teacher';
@@ -127,7 +129,14 @@ app.use(limiter);
 // =====================================================
 // 🔹 Core Middleware (بدون أي limits للملفات)
 // =====================================================
-app.use(express.json({ limit: '1000mb' }));
+app.use(
+  express.json({
+    limit: '1000mb',
+    verify: (req: any, _res, buf) => {
+      req.rawBody = buf?.toString('utf8');
+    },
+  })
+);
 app.use(express.urlencoded({ extended: true, limit: '1000mb' }));
 
 // =====================================================
@@ -201,6 +210,8 @@ app.use('/api/notifications', notificationRoutes);
 app.use('/api/user', userOnesignalRoutes);
 app.use('/api/super-admin/dashboard', superAdminDashboardRoutes);
 app.use('/api/super-admin/teachers', superAdminTeacherRoutes);
+app.use('/api/super-admin/settings', superAdminSettingsRoutes);
+app.use('/api/payments/wayl', waylRoutes);
 
 // =====================================================
 // 🔹 Error Handling

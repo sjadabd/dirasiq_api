@@ -1,21 +1,22 @@
 import { Router } from 'express';
+import academicYearRoutes from './academic-year.routes';
+import assignmentRoutes from './assignment.routes';
 import courseBookingRoutes from './course-booking.routes';
 import courseRoutes from './course.routes';
+import dashboardRoutes from './dashboard.routes';
+import examRoutes from './exam.routes';
+import expenseRoutes from './expense.routes';
+import invoiceRoutes from './invoice.routes';
 import notificationRoutes from './notification.routes';
+import paymentRoutes from './payment.routes';
+import profileRoutes from './profile.routes';
+import reportRoutes from './report.routes';
 import rosterRoutes from './roster.routes';
 import sessionRoutes from './session.routes';
-import subjectRoutes from './subject.routes';
-import assignmentRoutes from './assignment.routes';
-import examRoutes from './exam.routes';
 import studentEvaluationRoutes from './student-evaluation.routes';
-import paymentRoutes from './payment.routes';
-import invoiceRoutes from './invoice.routes';
+import subjectRoutes from './subject.routes';
 import subscriptionPackageRoutes from './subscription-package.routes';
-import academicYearRoutes from './academic-year.routes';
-import expenseRoutes from './expense.routes';
-import reportRoutes from './report.routes';
-import dashboardRoutes from './dashboard.routes';
-import profileRoutes from './profile.routes';
+import walletRoutes from './wallet.routes';
 
 const router = Router();
 
@@ -38,7 +39,6 @@ router.use('/academic-years', academicYearRoutes);
 router.use('/expenses', expenseRoutes);
 router.use('/reports', reportRoutes);
 router.use('/profile', profileRoutes);
+router.use('/wallet', walletRoutes);
 
 export default router;
-
-

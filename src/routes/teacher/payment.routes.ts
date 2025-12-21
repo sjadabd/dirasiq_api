@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { TeacherPaymentController } from '../../controllers/teacher/payment.controller';
+import { TeacherWaylPaymentController } from '../../controllers/teacher/wayl-payment.controller';
 import { authenticateToken } from '../../middleware/auth.middleware';
 
 const router = Router();
@@ -29,6 +30,20 @@ router.get(
 router.patch(
   '/reservations/:bookingId/mark-paid',
   TeacherPaymentController.markReservationPaid
+);
+
+// Create Wayl payment link for subscription purchase
+// POST /teacher/payments/wayl/subscription-link
+router.post(
+  '/wayl/subscription-link',
+  TeacherWaylPaymentController.createSubscriptionLink
+);
+
+// Create Wayl payment link for wallet top-up
+// POST /teacher/payments/wayl/wallet-topup-link
+router.post(
+  '/wayl/wallet-topup-link',
+  TeacherWaylPaymentController.createWalletTopupLink
 );
 
 export default router;
