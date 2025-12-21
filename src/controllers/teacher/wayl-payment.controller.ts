@@ -57,10 +57,15 @@ export class TeacherWaylPaymentController {
 
       const webhookSecret = WaylService.generateSecret();
 
+      const defaultImageUrl =
+        process.env['WAYL_DEFAULT_LINEITEM_IMAGE_URL'] ||
+        'https://mulhimiq.com/favicon.ico';
+
       const item: any = {
         label: `Subscription: ${pkg.name}`,
         amount: Number(pkg.price),
         type: 'increase',
+        image: defaultImageUrl,
       };
 
       const payload: any = {
@@ -158,10 +163,15 @@ export class TeacherWaylPaymentController {
 
       const webhookSecret = WaylService.generateSecret();
 
+      const defaultImageUrl =
+        process.env['WAYL_DEFAULT_LINEITEM_IMAGE_URL'] ||
+        'https://mulhimiq.com/favicon.ico';
+
       const item: any = {
         label: 'Wallet Top-up',
         amount: amount,
         type: 'increase',
+        image: defaultImageUrl,
       };
 
       const payload: any = {
