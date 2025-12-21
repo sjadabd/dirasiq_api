@@ -32,6 +32,7 @@ import { NotificationService } from './services/notification.service';
 // =====================================================
 dotenv.config();
 const app = express();
+app.set('etag', false);
 app.set('trust proxy', 1);
 const PORT: number = parseInt(process.env['PORT'] || '3000', 10);
 const NODE_ENV: string = process.env['NODE_ENV'] || 'development';
