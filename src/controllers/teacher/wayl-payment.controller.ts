@@ -39,7 +39,6 @@ export class TeacherWaylPaymentController {
       }
 
       const referenceId = `sub_${teacherId}_${packageId}_${Date.now()}`;
-      const secret = WaylService.generateSecret();
 
       const webhookUrl = process.env['WAYL_WEBHOOK_URL'];
       if (!webhookUrl) throw new Error('WAYL_WEBHOOK_URL is not configured');
@@ -48,34 +47,22 @@ export class TeacherWaylPaymentController {
         process.env['WAYL_REDIRECT_URL'] ||
         'https://mulhimiq.com/teacher/dashboard';
 
+      const webhookSecret = WaylService.generateSecret();
+
+      const item: any = {
+        label: `Subscription: ${pkg.name}`,
+        amount: Number(pkg.price),
+        type: 'increase',
+      };
+
       const payload: any = {
         referenceId,
         total: Number(pkg.price),
-        currency: 'iqd',
+        currency: 'IQD',
         webhookUrl,
+        webhookSecret,
         redirectionUrl,
-        details: {
-          type: 'subscription',
-          teacherId,
-          subscriptionPackageId: packageId,
-          amount: Number(pkg.price),
-        },
-        secret,
-        // Some Wayl environments expect `lineItem` (singular), others accept `lineItems`.
-        lineItem: [
-          {
-            title: `Subscription: ${pkg.name}`,
-            quantity: 1,
-            price: Number(pkg.price),
-          },
-        ],
-        lineItems: [
-          {
-            title: `Subscription: ${pkg.name}`,
-            quantity: 1,
-            price: Number(pkg.price),
-          },
-        ],
+        lineItem: [item],
       };
 
       const waylRes = await WaylService.createLink(payload);
@@ -91,7 +78,7 @@ export class TeacherWaylPaymentController {
         amount: Number(pkg.price),
         currency: 'iqd',
         referenceId,
-        waylSecret: secret,
+        waylSecret: webhookSecret,
         waylUrl: url || null,
         waylOrderId,
         waylCode,
@@ -114,7 +101,7 @@ export class TeacherWaylPaymentController {
       if (msg.toLowerCase().includes('missing fields')) {
         res.status(400).json({
           success: false,
-          message: msg,
+          message: 'Whoops, missing fields',
         });
         return;
       }
@@ -144,7 +131,6 @@ export class TeacherWaylPaymentController {
       }
 
       const referenceId = `topup_${teacherId}_${Date.now()}`;
-      const secret = WaylService.generateSecret();
 
       const webhookUrl = process.env['WAYL_WEBHOOK_URL'];
       if (!webhookUrl) throw new Error('WAYL_WEBHOOK_URL is not configured');
@@ -153,33 +139,22 @@ export class TeacherWaylPaymentController {
         process.env['WAYL_REDIRECT_URL'] ||
         'https://mulhimiq.com/teacher/dashboard';
 
+      const webhookSecret = WaylService.generateSecret();
+
+      const item: any = {
+        label: 'Wallet Top-up',
+        amount: amount,
+        type: 'increase',
+      };
+
       const payload: any = {
         referenceId,
         total: amount,
-        currency: 'iqd',
+        currency: 'IQD',
         webhookUrl,
         redirectionUrl,
-        details: {
-          type: 'wallet_topup',
-          teacherId,
-          amount,
-        },
-        secret,
-        // Some Wayl environments expect `lineItem` (singular), others accept `lineItems`.
-        lineItem: [
-          {
-            title: 'Wallet Top-up',
-            quantity: 1,
-            price: amount,
-          },
-        ],
-        lineItems: [
-          {
-            title: 'Wallet Top-up',
-            quantity: 1,
-            price: amount,
-          },
-        ],
+        webhookSecret,
+        lineItem: [item],
       };
 
       const waylRes = await WaylService.createLink(payload);
@@ -193,7 +168,7 @@ export class TeacherWaylPaymentController {
         amount,
         currency: 'iqd',
         referenceId,
-        waylSecret: secret,
+        waylSecret: webhookSecret,
         waylUrl: url || null,
         waylOrderId,
         waylCode,
@@ -216,7 +191,7 @@ export class TeacherWaylPaymentController {
       if (msg.toLowerCase().includes('missing fields')) {
         res.status(400).json({
           success: false,
-          message: msg,
+          message: 'Whoops, missing fields',
         });
         return;
       }

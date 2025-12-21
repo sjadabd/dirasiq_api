@@ -6,7 +6,7 @@ export class WaylService {
   }
 
   static getAuthHeaderName(): string {
-    return process.env['WAYL_AUTH_HEADER'] || 'X-WAYL-AUTHENTICATION-KEY';
+    return process.env['WAYL_AUTH_HEADER'] || 'X-WAYL-AUTHENTICATION';
   }
 
   static getMerchantToken(): string {
@@ -55,7 +55,14 @@ export class WaylService {
         json?.error?.message ||
         json?.error ||
         'Wayl create link failed';
-      throw new Error(msg);
+      const details = (() => {
+        try {
+          return JSON.stringify(json);
+        } catch {
+          return String(json);
+        }
+      })();
+      throw new Error(`${msg} (status=${res.status}) body=${details}`);
     }
     return json;
   }
