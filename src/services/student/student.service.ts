@@ -303,9 +303,9 @@ export class StudentService {
     const a =
       Math.sin(dLat / 2) * Math.sin(dLat / 2) +
       Math.cos(this.toRadians(lat1)) *
-      Math.cos(this.toRadians(lat2)) *
-      Math.sin(dLon / 2) *
-      Math.sin(dLon / 2);
+        Math.cos(this.toRadians(lat2)) *
+        Math.sin(dLon / 2) *
+        Math.sin(dLon / 2);
 
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     const distance = R * c; // Distance in kilometers
@@ -334,8 +334,25 @@ export interface SuggestedTeacherRow {
 
 export namespace StudentService {
   // Weekly schedule for the student
-  export async function getWeeklySchedule(studentId: string): Promise<ApiResponse> {
+  export async function getWeeklySchedule(
+    studentId: string
+  ): Promise<ApiResponse> {
     try {
+      const to12Hour = (time: any): string | null => {
+        if (time === null || time === undefined) return null;
+        const s = String(time);
+        const parts = s.split(':');
+        if (parts.length < 2) return s;
+        const h24 = Number(parts[0]);
+        const m = Number(parts[1]);
+        if (!Number.isFinite(h24) || !Number.isFinite(m)) return s;
+
+        const suffix = h24 >= 12 ? 'PM' : 'AM';
+        const h12 = h24 % 12 || 12;
+        const mm = String(m).padStart(2, '0');
+        return `${h12}:${mm} ${suffix}`;
+      };
+
       const q = `
         SELECT
           s.id,
@@ -365,8 +382,8 @@ export namespace StudentService {
       const items = r.rows.map((row: any) => ({
         id: String(row.id),
         weekday: Number(row.weekday),
-        startTime: row.start_time,
-        endTime: row.end_time,
+        startTime: to12Hour(row.start_time),
+        endTime: to12Hour(row.end_time),
         course: {
           id: String(row.course_id),
           name: row.course_name,
@@ -384,11 +401,14 @@ export namespace StudentService {
         },
       }));
       // Group by weekday: { "0": [...], "1": [...], ... }
-      const scheduleByDay = items.reduce((acc: Record<string, any[]>, it) => {
-        const key = String(it.weekday);
-        (acc[key] ??= []).push(it);
-        return acc;
-      }, {} as Record<string, any[]>);
+      const scheduleByDay = items.reduce(
+        (acc: Record<string, any[]>, it) => {
+          const key = String(it.weekday);
+          (acc[key] ??= []).push(it);
+          return acc;
+        },
+        {} as Record<string, any[]>
+      );
 
       return {
         success: true,
@@ -398,11 +418,17 @@ export namespace StudentService {
       };
     } catch (error) {
       console.error('Error getting weekly schedule for student:', error);
-      return { success: false, message: 'فشلت العملية', errors: ['خطأ داخلي في الخادم'] };
+      return {
+        success: false,
+        message: 'فشلت العملية',
+        errors: ['خطأ داخلي في الخادم'],
+      };
     }
   }
   // Dashboard overview: progress and attendance
-  export async function getDashboardOverview(studentId: string): Promise<ApiResponse> {
+  export async function getDashboardOverview(
+    studentId: string
+  ): Promise<ApiResponse> {
     try {
       // Assignments counts (visible to student)
       const assignmentsTotalQ = `
@@ -552,7 +578,17 @@ export namespace StudentService {
         FROM mapped;
       `;
 
-      const [aTot, aSub, eTot, eGrd, attTot, attPres, nextSessionRes, nextExamRes, evalRes] = await Promise.all([
+      const [
+        aTot,
+        aSub,
+        eTot,
+        eGrd,
+        attTot,
+        attPres,
+        nextSessionRes,
+        nextExamRes,
+        evalRes,
+      ] = await Promise.all([
         pool.query(assignmentsTotalQ, [studentId]),
         pool.query(assignmentsSubmittedQ, [studentId]),
         pool.query(examsTotalQ, [studentId]),
@@ -561,7 +597,7 @@ export namespace StudentService {
         pool.query(attendancePresentQ, [studentId]),
         pool.query(nextSessionQ, [studentId]),
         pool.query(nextMonthlyExamQ, [studentId]),
-        pool.query(evaluationQ, [studentId])
+        pool.query(evaluationQ, [studentId]),
       ]);
 
       const assignmentsTotal = aTot.rows[0]?.c ?? 0;
@@ -571,60 +607,76 @@ export namespace StudentService {
       const attendanceTotal = attTot.rows[0]?.c ?? 0;
       const attendancePresent = attPres.rows[0]?.c ?? 0;
 
-      const progressDen = Math.max(0, Number(assignmentsTotal) + Number(examsTotal));
-      const progressNum = Math.min(assignmentsSubmitted, assignmentsTotal) + Math.min(examsGraded, examsTotal);
-      const progressPercent = progressDen > 0 ? Math.round((progressNum / progressDen) * 100) : 0;
+      const progressDen = Math.max(
+        0,
+        Number(assignmentsTotal) + Number(examsTotal)
+      );
+      const progressNum =
+        Math.min(assignmentsSubmitted, assignmentsTotal) +
+        Math.min(examsGraded, examsTotal);
+      const progressPercent =
+        progressDen > 0 ? Math.round((progressNum / progressDen) * 100) : 0;
 
-      const attendancePercent = attendanceTotal > 0 ? Math.round((attendancePresent / attendanceTotal) * 100) : 0;
+      const attendancePercent =
+        attendanceTotal > 0
+          ? Math.round((attendancePresent / attendanceTotal) * 100)
+          : 0;
 
-      const evalRow = evalRes.rows[0] as { avg_percent?: number; eval_count?: number; last_eval_date?: string } | undefined;
+      const evalRow = evalRes.rows[0] as
+        | { avg_percent?: number; eval_count?: number; last_eval_date?: string }
+        | undefined;
       const evaluation = {
         averagePercent: evalRow?.avg_percent ?? 0,
         count: evalRow?.eval_count ?? 0,
-        lastEvaluationDate: evalRow?.last_eval_date ? new Date(evalRow.last_eval_date).toISOString() : null,
+        lastEvaluationDate: evalRow?.last_eval_date
+          ? new Date(evalRow.last_eval_date).toISOString()
+          : null,
       };
 
       const nextSession = nextSessionRes.rows[0]
         ? {
-          id: String(nextSessionRes.rows[0].id),
-          courseId: String(nextSessionRes.rows[0].course_id),
-          teacherId: String(nextSessionRes.rows[0].teacher_id),
-          weekday: Number(nextSessionRes.rows[0].weekday),
-          startTime: nextSessionRes.rows[0].start_time,
-          endTime: nextSessionRes.rows[0].end_time,
-          nextOccurrence: new Date(nextSessionRes.rows[0].next_occurrence).toISOString(),
-          courseName: nextSessionRes.rows[0].course_name,
-          subject: {
-            id: nextSessionRes.rows[0].subject_id || null,
-            name: nextSessionRes.rows[0].subject_name || null
-          },
-          teacher: {
-            name: nextSessionRes.rows[0].teacher_name,
-            profileImagePath: nextSessionRes.rows[0].profile_image_path || null,
-            latitude: nextSessionRes.rows[0].latitude ?? null,
-            longitude: nextSessionRes.rows[0].longitude ?? null
+            id: String(nextSessionRes.rows[0].id),
+            courseId: String(nextSessionRes.rows[0].course_id),
+            teacherId: String(nextSessionRes.rows[0].teacher_id),
+            weekday: Number(nextSessionRes.rows[0].weekday),
+            startTime: nextSessionRes.rows[0].start_time,
+            endTime: nextSessionRes.rows[0].end_time,
+            nextOccurrence: new Date(
+              nextSessionRes.rows[0].next_occurrence
+            ).toISOString(),
+            courseName: nextSessionRes.rows[0].course_name,
+            subject: {
+              id: nextSessionRes.rows[0].subject_id || null,
+              name: nextSessionRes.rows[0].subject_name || null,
+            },
+            teacher: {
+              name: nextSessionRes.rows[0].teacher_name,
+              profileImagePath:
+                nextSessionRes.rows[0].profile_image_path || null,
+              latitude: nextSessionRes.rows[0].latitude ?? null,
+              longitude: nextSessionRes.rows[0].longitude ?? null,
+            },
           }
-        }
         : null;
 
       const nextMonthlyExam = nextExamRes.rows[0]
         ? {
-          id: String(nextExamRes.rows[0].id),
-          courseId: String(nextExamRes.rows[0].course_id),
-          teacherId: String(nextExamRes.rows[0].teacher_id),
-          subjectId: String(nextExamRes.rows[0].subject_id),
-          examDate: nextExamRes.rows[0].exam_date,
-          examType: nextExamRes.rows[0].exam_type,
-          maxScore: Number(nextExamRes.rows[0].max_score),
-          courseName: nextExamRes.rows[0].course_name,
-          subjectName: nextExamRes.rows[0].subject_name,
-          teacher: {
-            name: nextExamRes.rows[0].teacher_name,
-            profileImagePath: nextExamRes.rows[0].profile_image_path || null,
-            latitude: nextExamRes.rows[0].latitude ?? null,
-            longitude: nextExamRes.rows[0].longitude ?? null
+            id: String(nextExamRes.rows[0].id),
+            courseId: String(nextExamRes.rows[0].course_id),
+            teacherId: String(nextExamRes.rows[0].teacher_id),
+            subjectId: String(nextExamRes.rows[0].subject_id),
+            examDate: nextExamRes.rows[0].exam_date,
+            examType: nextExamRes.rows[0].exam_type,
+            maxScore: Number(nextExamRes.rows[0].max_score),
+            courseName: nextExamRes.rows[0].course_name,
+            subjectName: nextExamRes.rows[0].subject_name,
+            teacher: {
+              name: nextExamRes.rows[0].teacher_name,
+              profileImagePath: nextExamRes.rows[0].profile_image_path || null,
+              latitude: nextExamRes.rows[0].latitude ?? null,
+              longitude: nextExamRes.rows[0].longitude ?? null,
+            },
           }
-        }
         : null;
 
       return {
@@ -642,13 +694,17 @@ export namespace StudentService {
             examsTotal,
             examsGraded,
             attendanceTotal,
-            attendancePresent
-          }
-        }
+            attendancePresent,
+          },
+        },
       };
     } catch (error) {
       console.error('Error getting student dashboard overview:', error);
-      return { success: false, message: 'فشلت العملية', errors: ['خطأ داخلي في الخادم'] };
+      return {
+        success: false,
+        message: 'فشلت العملية',
+        errors: ['خطأ داخلي في الخادم'],
+      };
     }
   }
   // Get teacher subjects and available courses for students
@@ -753,13 +809,13 @@ export namespace StudentService {
             name: teacher.name,
             profileImagePath: (teacher as any).profileImagePath ?? null,
             latitude: (teacher as any).latitude ?? null,
-            longitude: (teacher as any).longitude ?? null
+            longitude: (teacher as any).longitude ?? null,
           },
           subjects,
           courses,
-          count: countRes.rows[0]?.count ?? courses.length
+          count: countRes.rows[0]?.count ?? courses.length,
         },
-        count: countRes.rows[0]?.count ?? courses.length
+        count: countRes.rows[0]?.count ?? courses.length,
       };
     } catch (error) {
       console.error(
@@ -980,7 +1036,11 @@ export namespace StudentService {
       const gradeIds = grades.map(g => g.gradeId);
       const offset = (page - 1) * limit;
 
-      const courses = await CourseModel.findByGradesNewest(gradeIds, limit, offset);
+      const courses = await CourseModel.findByGradesNewest(
+        gradeIds,
+        limit,
+        offset
+      );
       return {
         success: true,
         message: 'تم العثور على الدورات',
@@ -989,7 +1049,11 @@ export namespace StudentService {
       };
     } catch (e) {
       console.error('Error getting suggested courses without location:', e);
-      return { success: false, message: 'فشلت العملية', errors: ['خطأ داخلي في الخادم'] };
+      return {
+        success: false,
+        message: 'فشلت العملية',
+        errors: ['خطأ داخلي في الخادم'],
+      };
     }
   }
 }
