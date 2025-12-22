@@ -7,14 +7,21 @@ export interface Session {
   title?: string | null;
   weekday: number; // 0..6 (Sunday..Saturday)
   start_time: string; // HH:MM:SS
-  end_time: string;   // HH:MM:SS
+  end_time: string; // HH:MM:SS
   recurrence: boolean;
   flex_type: 'window' | 'alternates' | 'none';
   flex_minutes?: number | null;
   flex_alternates?: any | null;
   hard_constraints?: any | null;
   soft_constraints?: any | null;
-  state: 'draft' | 'proposed' | 'conflict' | 'confirmed' | 'negotiating' | 'rejected' | 'canceled';
+  state:
+    | 'draft'
+    | 'proposed'
+    | 'conflict'
+    | 'confirmed'
+    | 'negotiating'
+    | 'rejected'
+    | 'canceled';
   version: number;
   is_deleted: boolean;
   created_at: Date;
@@ -35,7 +42,14 @@ export class SessionModel {
     flex_alternates?: any | null;
     hard_constraints?: any | null;
     soft_constraints?: any | null;
-    state?: 'draft' | 'proposed' | 'conflict' | 'confirmed' | 'negotiating' | 'rejected' | 'canceled';
+    state?:
+      | 'draft'
+      | 'proposed'
+      | 'conflict'
+      | 'confirmed'
+      | 'negotiating'
+      | 'rejected'
+      | 'canceled';
   }): Promise<Session> {
     const query = `
       INSERT INTO sessions (
@@ -58,14 +72,17 @@ export class SessionModel {
       input.flex_alternates ? JSON.stringify(input.flex_alternates) : null,
       input.hard_constraints ? JSON.stringify(input.hard_constraints) : null,
       input.soft_constraints ? JSON.stringify(input.soft_constraints) : null,
-      input.state ?? 'draft'
+      input.state ?? 'draft',
     ];
 
     const result = await pool.query(query, values);
     return result.rows[0] as Session;
   }
 
-  static async addAttendees(sessionId: string, studentIds: string[]): Promise<void> {
+  static async addAttendees(
+    sessionId: string,
+    studentIds: string[]
+  ): Promise<void> {
     if (!studentIds || studentIds.length === 0) return;
     const client = await pool.connect();
     try {
@@ -84,7 +101,10 @@ export class SessionModel {
     }
   }
 
-  static async removeAttendees(sessionId: string, studentIds: string[]): Promise<number> {
+  static async removeAttendees(
+    sessionId: string,
+    studentIds: string[]
+  ): Promise<number> {
     if (!studentIds || studentIds.length === 0) return 0;
     const q = `
       DELETE FROM session_attendees
@@ -104,7 +124,15 @@ export class SessionModel {
     return r.rows.map((row: any) => String(row.student_id));
   }
 
-  static async listAttendeesDetailed(sessionId: string): Promise<Array<{ student_id: string; student_name: string; grade_id: string | null; grade_name: string | null; study_year: string | null }>> {
+  static async listAttendeesDetailed(sessionId: string): Promise<
+    Array<{
+      student_id: string;
+      student_name: string;
+      grade_id: string | null;
+      grade_name: string | null;
+      study_year: string | null;
+    }>
+  > {
     const q = `
       SELECT
         sa.student_id::text,
@@ -145,7 +173,7 @@ export class SessionModel {
     page = 1,
     limit = 20,
     filters?: { weekday?: number | null; courseId?: string | null }
-  ): Promise<{ sessions: any[]; total: number; }> {
+  ): Promise<{ sessions: any[]; total: number }> {
     const offset = (page - 1) * limit;
 
     // Build dynamic filters for count query
@@ -202,12 +230,18 @@ export class SessionModel {
       LIMIT $${lIndex} OFFSET $${lIndex + 1}
     `;
 
-    const total = parseInt((await pool.query(countQ, countParams)).rows[0].count);
-    const sessions = (await pool.query(listQ, [...listParams, limit, offset])).rows;
+    const total = parseInt(
+      (await pool.query(countQ, countParams)).rows[0].count
+    );
+    const sessions = (await pool.query(listQ, [...listParams, limit, offset]))
+      .rows;
     return { sessions, total };
   }
 
-  static async getStudentWeeklySchedule(studentId: string, weekStartISO: string): Promise<any[]> {
+  static async getStudentWeeklySchedule(
+    studentId: string,
+    weekStartISO: string
+  ): Promise<any[]> {
     // Strict: Fetch sessions only where the student is an explicit attendee
     const query = `
       SELECT s.*, c.course_name, u.name as teacher_name
@@ -228,12 +262,33 @@ export class SessionModel {
     weekStart.setHours(0, 0, 0, 0);
 
     const schedule = result.rows.map((row: any) => {
+      const to12Hour = (time: any): string | null => {
+        if (time === null || time === undefined) return null;
+        const s = String(time);
+        const parts = s.split(':');
+        if (parts.length < 2) return s;
+        const h24 = Number(parts[0]);
+        const m = Number(parts[1]);
+        if (!Number.isFinite(h24) || !Number.isFinite(m)) return s;
+
+        const suffix = h24 >= 12 ? 'PM' : 'AM';
+        const h12 = h24 % 12 || 12;
+        const mm = String(m).padStart(2, '0');
+        return `${h12}:${mm} ${suffix}`;
+      };
+
       const weekday: number = Number(row.weekday);
       const dayOffset = (weekday - weekStart.getDay() + 7) % 7;
-      const date = new Date(weekStart.getTime() + dayOffset * 24 * 60 * 60 * 1000);
+      const date = new Date(
+        weekStart.getTime() + dayOffset * 24 * 60 * 60 * 1000
+      );
 
-      const [sh, sm, ss] = String(row.start_time).split(':').map((x: string) => parseInt(x, 10));
-      const [eh, em, es] = String(row.end_time).split(':').map((x: string) => parseInt(x, 10));
+      const [sh, sm, ss] = String(row.start_time)
+        .split(':')
+        .map((x: string) => parseInt(x, 10));
+      const [eh, em, es] = String(row.end_time)
+        .split(':')
+        .map((x: string) => parseInt(x, 10));
 
       const startAt = new Date(date);
       startAt.setHours(sh || 0, sm || 0, ss || 0, 0);
@@ -248,8 +303,8 @@ export class SessionModel {
         teacherName: row.teacher_name,
         title: row.title,
         weekday,
-        startTime: row.start_time,
-        endTime: row.end_time,
+        startTime: to12Hour(row.start_time),
+        endTime: to12Hour(row.end_time),
         startAt: startAt.toISOString(),
         endAt: endAt.toISOString(),
         state: row.state,
@@ -262,9 +317,16 @@ export class SessionModel {
     // Simple conflict flagging per day
     const byDay: Record<string, any[]> = {};
     for (const s of schedule) {
-      const dayKey = s.startAt.substring(0, 10); // YYYY-MM-DD
-      byDay[dayKey] = byDay[dayKey] || [];
-      byDay[dayKey].push(s);
+      const startAtIso =
+        typeof s.startAt === 'string'
+          ? s.startAt
+          : s.startAt
+            ? new Date(s.startAt as any).toISOString()
+            : null;
+      if (!startAtIso) continue;
+      const dayKey = startAtIso.slice(0, 10); // YYYY-MM-DD
+      const daySessions = (byDay[dayKey] ??= []);
+      daySessions.push(s);
     }
 
     for (const sessions of Object.values(byDay)) {
@@ -277,7 +339,10 @@ export class SessionModel {
           const B = sessions[j];
           const bStart = new Date(B.startAt).getTime();
           const bEnd = new Date(B.endAt).getTime();
-          const overlap = Math.max(0, Math.min(aEnd, bEnd) - Math.max(aStart, bStart));
+          const overlap = Math.max(
+            0,
+            Math.min(aEnd, bEnd) - Math.max(aStart, bStart)
+          );
           if (overlap > 0) {
             A.conflict = true;
             B.conflict = true;
@@ -303,7 +368,7 @@ export class SessionModel {
     teacherId: string;
     weekday: number;
     startTime: string; // HH:MM or HH:MM:SS
-    endTime: string;   // HH:MM or HH:MM:SS
+    endTime: string; // HH:MM or HH:MM:SS
     excludeSessionId?: string;
   }): Promise<boolean> {
     const q = `
@@ -323,45 +388,95 @@ export class SessionModel {
       params.startTime,
       params.endTime,
       params.excludeSessionId,
-    ].filter((v) => v !== undefined);
+    ].filter(v => v !== undefined);
     const r = await pool.query(q, args as any[]);
     return r.rows.length > 0;
   }
 
-  static async updateSession(id: string, input: {
-    title?: string | null;
-    weekday?: number;
-    start_time?: string;
-    end_time?: string;
-    recurrence?: boolean;
-    flex_type?: 'window' | 'alternates' | 'none';
-    flex_minutes?: number | null;
-    flex_alternates?: any | null;
-    hard_constraints?: any | null;
-    soft_constraints?: any | null;
-    state?: 'draft' | 'proposed' | 'conflict' | 'confirmed' | 'negotiating' | 'rejected' | 'canceled';
-  }): Promise<Session | null> {
+  static async updateSession(
+    id: string,
+    input: {
+      title?: string | null;
+      weekday?: number;
+      start_time?: string;
+      end_time?: string;
+      recurrence?: boolean;
+      flex_type?: 'window' | 'alternates' | 'none';
+      flex_minutes?: number | null;
+      flex_alternates?: any | null;
+      hard_constraints?: any | null;
+      soft_constraints?: any | null;
+      state?:
+        | 'draft'
+        | 'proposed'
+        | 'conflict'
+        | 'confirmed'
+        | 'negotiating'
+        | 'rejected'
+        | 'canceled';
+    }
+  ): Promise<Session | null> {
     const fields: string[] = [];
     const values: any[] = [];
     let idx = 1;
 
     const setJson = (col: string, val: any) => {
       fields.push(`${col} = $${idx}`);
-      values.push(val !== undefined && val !== null ? JSON.stringify(val) : null);
+      values.push(
+        val !== undefined && val !== null ? JSON.stringify(val) : null
+      );
       idx++;
     };
 
-    if (input.title !== undefined) { fields.push(`title = $${idx}`); values.push(input.title); idx++; }
-    if (input.weekday !== undefined) { fields.push(`weekday = $${idx}`); values.push(input.weekday); idx++; }
-    if (input.start_time !== undefined) { fields.push(`start_time = $${idx}`); values.push(input.start_time); idx++; }
-    if (input.end_time !== undefined) { fields.push(`end_time = $${idx}`); values.push(input.end_time); idx++; }
-    if (input.recurrence !== undefined) { fields.push(`recurrence = $${idx}`); values.push(input.recurrence); idx++; }
-    if (input.flex_type !== undefined) { fields.push(`flex_type = $${idx}`); values.push(input.flex_type); idx++; }
-    if (input.flex_minutes !== undefined) { fields.push(`flex_minutes = $${idx}`); values.push(input.flex_minutes); idx++; }
-    if (input.flex_alternates !== undefined) { setJson('flex_alternates', input.flex_alternates); }
-    if (input.hard_constraints !== undefined) { setJson('hard_constraints', input.hard_constraints); }
-    if (input.soft_constraints !== undefined) { setJson('soft_constraints', input.soft_constraints); }
-    if (input.state !== undefined) { fields.push(`state = $${idx}`); values.push(input.state); idx++; }
+    if (input.title !== undefined) {
+      fields.push(`title = $${idx}`);
+      values.push(input.title);
+      idx++;
+    }
+    if (input.weekday !== undefined) {
+      fields.push(`weekday = $${idx}`);
+      values.push(input.weekday);
+      idx++;
+    }
+    if (input.start_time !== undefined) {
+      fields.push(`start_time = $${idx}`);
+      values.push(input.start_time);
+      idx++;
+    }
+    if (input.end_time !== undefined) {
+      fields.push(`end_time = $${idx}`);
+      values.push(input.end_time);
+      idx++;
+    }
+    if (input.recurrence !== undefined) {
+      fields.push(`recurrence = $${idx}`);
+      values.push(input.recurrence);
+      idx++;
+    }
+    if (input.flex_type !== undefined) {
+      fields.push(`flex_type = $${idx}`);
+      values.push(input.flex_type);
+      idx++;
+    }
+    if (input.flex_minutes !== undefined) {
+      fields.push(`flex_minutes = $${idx}`);
+      values.push(input.flex_minutes);
+      idx++;
+    }
+    if (input.flex_alternates !== undefined) {
+      setJson('flex_alternates', input.flex_alternates);
+    }
+    if (input.hard_constraints !== undefined) {
+      setJson('hard_constraints', input.hard_constraints);
+    }
+    if (input.soft_constraints !== undefined) {
+      setJson('soft_constraints', input.soft_constraints);
+    }
+    if (input.state !== undefined) {
+      fields.push(`state = $${idx}`);
+      values.push(input.state);
+      idx++;
+    }
 
     if (fields.length === 0) return await this.getById(id);
 
