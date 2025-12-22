@@ -424,7 +424,12 @@ export class TeacherSessionController {
           const day = String(date);
           for (const it of filtered) {
             const status = String(it.status);
-            const statusText = status === 'present' ? 'حضور' : status === 'absent' ? 'غياب' : 'إجازة';
+            const statusText =
+              status === 'present'
+                ? 'حضور'
+                : status === 'absent'
+                  ? 'غياب'
+                  : 'إجازة';
             await notifService.createAndSendNotification({
               title: 'تحديث حالة الحضور',
               message: `قام المعلم بتحديث حالتك: ${statusText} بتاريخ ${day}`,
@@ -432,7 +437,13 @@ export class TeacherSessionController {
               priority: NotificationPriority.HIGH,
               recipientType: RecipientType.SPECIFIC_STUDENTS,
               recipientIds: [String(it.studentId)],
-              data: { sessionId, courseId: session.course_id, teacherId: session.teacher_id, date: day, status },
+              data: {
+                sessionId,
+                courseId: session.course_id,
+                teacherId: session.teacher_id,
+                date: day,
+                status,
+              },
               createdBy: String(me.id),
             });
           }
@@ -650,8 +661,10 @@ export class TeacherSessionController {
       // Add 12h times in listing for display
       const displaySessions = sessions.map((s: any) => ({
         ...s,
-        start_time_12h: TeacherSessionController.to12h(s.start_time),
-        end_time_12h: TeacherSessionController.to12h(s.end_time),
+        start_time_24h: s.start_time,
+        end_time_24h: s.end_time,
+        start_time: TeacherSessionController.to12h(s.start_time),
+        end_time: TeacherSessionController.to12h(s.end_time),
       }));
       res.status(200).json({
         success: true,
