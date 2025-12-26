@@ -129,20 +129,44 @@ export class AuthService {
         // Generate JWT and store token with OneSignal playerId
         const jwtSecret = process.env['JWT_SECRET'];
         if (!jwtSecret) console.warn('⚠️ Missing JWT_SECRET in environment!');
-        const token = jwt.sign(
-          {
-            userId: existingUser.id,
-            userType: existingUser.userType,
-            email: existingUser.email,
-          },
-          jwtSecret || 'fallback-secret',
-          { expiresIn: '7d' }
+        // سياسة انتهاء الصلاحية: الطلاب صلاحية طويلة جداً، غير ذلك 7 أيام كما هو
+        let appleExistingExpiresAt = new Date(
+          Date.now() + 7 * 24 * 60 * 60 * 1000
         );
+        let appleExistingToken: string;
+        if (existingUser.userType === UserType.STUDENT) {
+          const days = parseInt(
+            process.env['STUDENT_TOKEN_TTL_DAYS'] || '36500',
+            10
+          );
+          appleExistingExpiresAt = new Date(
+            Date.now() + days * 24 * 60 * 60 * 1000
+          );
+          appleExistingToken = jwt.sign(
+            {
+              userId: existingUser.id,
+              userType: existingUser.userType,
+              email: existingUser.email,
+            },
+            jwtSecret || 'fallback-secret',
+            { expiresIn: `${days}d` }
+          );
+        } else {
+          appleExistingToken = jwt.sign(
+            {
+              userId: existingUser.id,
+              userType: existingUser.userType,
+              email: existingUser.email,
+            },
+            jwtSecret || 'fallback-secret',
+            { expiresIn: '7d' }
+          );
+        }
 
         await TokenModel.create(
           existingUser.id,
-          token,
-          new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+          appleExistingToken,
+          appleExistingExpiresAt,
           appleData.oneSignalPlayerId
         );
 
@@ -154,7 +178,7 @@ export class AuthService {
               ...enhancedUser,
               studyYear: activeAcademicYear?.year,
             },
-            token,
+            token: appleExistingToken,
             isNewUser: false,
             isProfileComplete,
             requiresProfileCompletion: !isProfileComplete,
@@ -245,20 +269,40 @@ export class AuthService {
 
       const jwtSecret2 = process.env['JWT_SECRET'];
       if (!jwtSecret2) console.warn('⚠️ Missing JWT_SECRET in environment!');
-      const token = jwt.sign(
-        {
-          userId: newUser.id,
-          userType: newUser.userType,
-          email: newUser.email,
-        },
-        jwtSecret2 || 'fallback-secret',
-        { expiresIn: '7d' }
-      );
+      // سياسة انتهاء الصلاحية: الطلاب صلاحية طويلة جداً، غير ذلك 7 أيام كما هو
+      let appleNewExpiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+      let appleNewToken: string;
+      if (newUser.userType === UserType.STUDENT) {
+        const days = parseInt(
+          process.env['STUDENT_TOKEN_TTL_DAYS'] || '36500',
+          10
+        );
+        appleNewExpiresAt = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+        appleNewToken = jwt.sign(
+          {
+            userId: newUser.id,
+            userType: newUser.userType,
+            email: newUser.email,
+          },
+          jwtSecret2 || 'fallback-secret',
+          { expiresIn: `${days}d` }
+        );
+      } else {
+        appleNewToken = jwt.sign(
+          {
+            userId: newUser.id,
+            userType: newUser.userType,
+            email: newUser.email,
+          },
+          jwtSecret2 || 'fallback-secret',
+          { expiresIn: '7d' }
+        );
+      }
 
       await TokenModel.create(
         newUser.id,
-        token,
-        new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        appleNewToken,
+        appleNewExpiresAt,
         appleData.oneSignalPlayerId
       );
 
@@ -270,7 +314,7 @@ export class AuthService {
             ...enhancedUser,
             studyYear: activeAcademicYear?.year,
           },
-          token,
+          token: appleNewToken,
           isNewUser: true,
           isProfileComplete: false,
           requiresProfileCompletion: true,
@@ -673,8 +717,11 @@ export class AuthService {
           Math.floor((expiresAt.getTime() - now.getTime()) / 1000)
         );
       } else {
-        // الطالب: مدة أطول (افتراضياً 7 أيام) ويمكن ضبطها عبر ENV
-        const days = parseInt(process.env['STUDENT_TOKEN_TTL_DAYS'] || '7', 10);
+        // الطالب: مدة طويلة جداً (افتراضياً 36500 يوم ≈ 100 سنة) ويمكن ضبطها عبر ENV
+        const days = parseInt(
+          process.env['STUDENT_TOKEN_TTL_DAYS'] || '36500',
+          10
+        );
         expiresAt = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
         expiresInSeconds = days * 24 * 60 * 60;
       }
@@ -1000,22 +1047,44 @@ export class AuthService {
           );
         }
 
-        // Generate JWT token for existing user
-        const token = jwt.sign(
-          {
-            userId: existingUser.id,
-            userType: existingUser.userType,
-            email: existingUser.email,
-          },
-          process.env['JWT_SECRET'] || 'fallback-secret',
-          { expiresIn: '7d' }
-        );
+        // Generate JWT token for existing user with policy: students very long TTL
+        const jwtSecretG = process.env['JWT_SECRET'] || 'fallback-secret';
+        let gExistingExpiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+        let gExistingToken: string;
+        if (existingUser.userType === UserType.STUDENT) {
+          const days = parseInt(
+            process.env['STUDENT_TOKEN_TTL_DAYS'] || '36500',
+            10
+          );
+          gExistingExpiresAt = new Date(
+            Date.now() + days * 24 * 60 * 60 * 1000
+          );
+          gExistingToken = jwt.sign(
+            {
+              userId: existingUser.id,
+              userType: existingUser.userType,
+              email: existingUser.email,
+            },
+            jwtSecretG,
+            { expiresIn: `${days}d` }
+          );
+        } else {
+          gExistingToken = jwt.sign(
+            {
+              userId: existingUser.id,
+              userType: existingUser.userType,
+              email: existingUser.email,
+            },
+            jwtSecretG,
+            { expiresIn: '7d' }
+          );
+        }
 
         // Store token in database
         await TokenModel.create(
           existingUser.id,
-          token,
-          new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
+          gExistingToken,
+          gExistingExpiresAt,
           googleData.oneSignalPlayerId
         );
 
@@ -1027,7 +1096,7 @@ export class AuthService {
               ...enhancedUser,
               studyYear: activeAcademicYear?.year,
             },
-            token,
+            token: gExistingToken,
             isNewUser: false,
             isProfileComplete,
             requiresProfileCompletion: !isProfileComplete,
@@ -1155,22 +1224,42 @@ export class AuthService {
       // Get enhanced user data
       const enhancedUser = await this.getEnhancedUserData(newUser);
 
-      // Generate JWT token for new user
-      const token = jwt.sign(
-        {
-          userId: newUser.id,
-          userType: newUser.userType,
-          email: newUser.email,
-        },
-        process.env['JWT_SECRET'] || 'fallback-secret',
-        { expiresIn: '7d' }
-      );
+      // Generate JWT token for new user with policy: students very long TTL
+      const jwtSecretG2 = process.env['JWT_SECRET'] || 'fallback-secret';
+      let gNewExpiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+      let gNewToken: string;
+      if (newUser.userType === UserType.STUDENT) {
+        const days = parseInt(
+          process.env['STUDENT_TOKEN_TTL_DAYS'] || '36500',
+          10
+        );
+        gNewExpiresAt = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+        gNewToken = jwt.sign(
+          {
+            userId: newUser.id,
+            userType: newUser.userType,
+            email: newUser.email,
+          },
+          jwtSecretG2,
+          { expiresIn: `${days}d` }
+        );
+      } else {
+        gNewToken = jwt.sign(
+          {
+            userId: newUser.id,
+            userType: newUser.userType,
+            email: newUser.email,
+          },
+          jwtSecretG2,
+          { expiresIn: '7d' }
+        );
+      }
 
       // Store token in database
       await TokenModel.create(
         newUser.id,
-        token,
-        new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
+        gNewToken,
+        gNewExpiresAt,
         googleData.oneSignalPlayerId
       );
 
@@ -1182,7 +1271,7 @@ export class AuthService {
             ...enhancedUser,
             studyYear: activeAcademicYear?.year,
           },
-          token,
+          token: gNewToken,
           isNewUser: true,
           isProfileComplete: false,
           requiresProfileCompletion: true,
