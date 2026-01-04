@@ -1,9 +1,9 @@
 import cron from 'node-cron';
-import { NotificationService } from './notification.service';
+import { TokenModel } from '../models/token.model';
 import { CourseReminderService } from './course-reminder.service';
+import { NotificationService } from './notification.service';
 import { SessionEndReminderService } from './session-end-reminder.service';
 import { SessionStartReminderService } from './session-start-reminder.service';
-import { TokenModel } from '../models/token.model';
 
 export class NotificationCronService {
   private notificationService: NotificationService;
@@ -15,13 +15,17 @@ export class NotificationCronService {
   constructor() {
     const oneSignalConfig = {
       appId: process.env['ONESIGNAL_APP_ID'] || '',
-      restApiKey: process.env['ONESIGNAL_REST_API_KEY'] || ''
+      restApiKey: process.env['ONESIGNAL_REST_API_KEY'] || '',
     };
 
     this.notificationService = new NotificationService(oneSignalConfig);
     this.courseReminderService = new CourseReminderService();
-    this.sessionEndReminderService = new SessionEndReminderService(this.notificationService);
-    this.sessionStartReminderService = new SessionStartReminderService(this.notificationService);
+    this.sessionEndReminderService = new SessionEndReminderService(
+      this.notificationService
+    );
+    this.sessionStartReminderService = new SessionStartReminderService(
+      this.notificationService
+    );
   }
 
   /**
@@ -38,6 +42,8 @@ export class NotificationCronService {
         await this.notificationService.processPendingNotifications();
         // Send 5-minute-before-start reminders for sessions starting soon
         await this.sessionStartReminderService.sendFiveMinuteBeforeStartReminders();
+        // Send 30-minute-before-start reminders for students
+        await this.sessionStartReminderService.sendThirtyMinuteBeforeStartStudentReminders();
         // Also send 3-minute-before-end reminders for sessions ending soon
         await this.sessionEndReminderService.sendThreeMinuteBeforeEndReminders();
       } catch (error) {
@@ -46,24 +52,34 @@ export class NotificationCronService {
     });
 
     // Daily at 09:00 Asia/Baghdad time: send course start reminders (3, 2, 1 days before)
-    cron.schedule('0 9 * * *', async () => {
-      try {
-        await this.courseReminderService.sendReminders();
-      } catch (error) {
-        console.error('❌ Error sending course start reminders:', error);
-      }
-    }, { timezone: 'Asia/Baghdad' });
+    cron.schedule(
+      '0 9 * * *',
+      async () => {
+        try {
+          await this.courseReminderService.sendReminders();
+        } catch (error) {
+          console.error('❌ Error sending course start reminders:', error);
+        }
+      },
+      { timezone: 'Asia/Baghdad' }
+    );
 
     // Daily at 03:00 Asia/Baghdad time: purge all teacher tokens and clean expired tokens
-    cron.schedule('0 3 * * *', async () => {
-      try {
-        const deletedTeachers = await TokenModel.deleteAllTeacherTokens();
-        const cleaned = await TokenModel.cleanExpiredTokens();
-        console.log(`🧹 Purged ${deletedTeachers} teacher tokens and cleaned ${cleaned} expired tokens at 03:00 Asia/Baghdad`);
-      } catch (error) {
-        console.error('❌ Error purging teacher tokens:', error);
-      }
-    }, { timezone: 'Asia/Baghdad' });
+    cron.schedule(
+      '0 3 * * *',
+      async () => {
+        try {
+          const deletedTeachers = await TokenModel.deleteAllTeacherTokens();
+          const cleaned = await TokenModel.cleanExpiredTokens();
+          console.log(
+            `🧹 Purged ${deletedTeachers} teacher tokens and cleaned ${cleaned} expired tokens at 03:00 Asia/Baghdad`
+          );
+        } catch (error) {
+          console.error('❌ Error purging teacher tokens:', error);
+        }
+      },
+      { timezone: 'Asia/Baghdad' }
+    );
 
     this.isRunning = true;
   }
