@@ -1,95 +1,104 @@
-import { Request, Response } from 'express';
+import type { Request, Response } from 'express';
+
 import { SubscriptionPackageModel } from '../../models/subscription-package.model';
 import { WaylPaymentLinkLogModel } from '../../models/wayl-payment-link-log.model';
 import { WaylPaymentLinkModel } from '../../models/wayl-payment-link.model';
 import { WaylService } from '../../services/wayl.service';
+import { ApiError, ErrorCodes } from '../../utils/api-error';
+import { ok } from '../../utils/response.util';
+
+const DEFAULT_IMAGE_URL_FALLBACK = 'https://mulhimiq.com/favicon.ico';
+const DEFAULT_REDIRECT_FALLBACK = 'https://mulhimiq.com/teacher/dashboard';
+
+const mapWaylError = (err: unknown): ApiError => {
+  const message = String(err instanceof Error ? err.message : err ?? '').toLowerCase();
+  if (message.includes('invalid authentication key')) {
+    return new ApiError(400, 'Invalid authentication key', ErrorCodes.SERVICE_UNAVAILABLE);
+  }
+  if (message.includes('missing fields')) {
+    return new ApiError(400, err instanceof Error ? err.message : 'Missing fields', ErrorCodes.INVALID_REQUEST);
+  }
+  return new ApiError(500, err instanceof Error ? err.message : 'خطأ داخلي في الخادم', ErrorCodes.INTERNAL_ERROR, undefined, {
+    expected: false,
+    cause: err,
+  });
+};
+
+const logFailure = async (referenceId: string | null, err: unknown) => {
+  try {
+    await WaylPaymentLinkLogModel.create({
+      paymentLinkId: null,
+      referenceId,
+      eventType: 'create_link_error',
+      httpStatus: null,
+      payload: { message: err instanceof Error ? err.message : String(err) },
+    });
+  } catch {
+    /* logging errors are best-effort */
+  }
+};
 
 export class TeacherWaylPaymentController {
-  static async createSubscriptionLink(
-    req: Request,
-    res: Response
-  ): Promise<void> {
-    let referenceId: string | null = null;
+  // POST /teacher/payments/wayl/subscription-link
+  static async createSubscriptionLink(req: Request, res: Response): Promise<void> {
+    const teacherId = req.user.id as string;
+    const { packageId } = req.body as { packageId: string };
+
+    const pkg = await SubscriptionPackageModel.findById(packageId);
+    if (!pkg || !pkg.isActive) {
+      throw new ApiError(404, 'الباقة غير موجودة أو غير مفعلة', ErrorCodes.NOT_FOUND);
+    }
+    if (pkg.isFree || Number(pkg.price) <= 0) {
+      throw new ApiError(
+        400,
+        'هذه الباقة مجانية ولا تحتاج دفع',
+        ErrorCodes.BUSINESS_RULE
+      );
+    }
+    if (Number(pkg.price) < 1000) {
+      throw new ApiError(
+        400,
+        'الحد الأدنى للدفع عبر Wayl هو 1000 دينار',
+        ErrorCodes.BUSINESS_RULE
+      );
+    }
+
+    const referenceId = `sub_${teacherId}_${packageId}_${Date.now()}`;
+    const webhookUrl = process.env['WAYL_WEBHOOK_URL'];
+    if (!webhookUrl) {
+      throw new ApiError(500, 'WAYL_WEBHOOK_URL is not configured', ErrorCodes.SERVICE_UNAVAILABLE);
+    }
+    const redirectionUrl = process.env['WAYL_REDIRECT_URL'] || DEFAULT_REDIRECT_FALLBACK;
+    const webhookSecret = WaylService.generateSecret();
+    const defaultImageUrl = process.env['WAYL_DEFAULT_LINEITEM_IMAGE_URL'] || DEFAULT_IMAGE_URL_FALLBACK;
+
+    const payload = {
+      referenceId,
+      total: Number(pkg.price),
+      currency: 'IQD' as const,
+      webhookUrl,
+      webhookSecret,
+      redirectionUrl,
+      lineItem: [
+        {
+          label: `Subscription: ${pkg.name}`,
+          amount: Number(pkg.price),
+          type: 'increase',
+          image: defaultImageUrl,
+        },
+      ],
+    };
+
+    await WaylPaymentLinkLogModel.create({
+      paymentLinkId: null,
+      referenceId,
+      eventType: 'create_link_request',
+      httpStatus: null,
+      payload,
+    });
+
     try {
-      const teacherId = (req as any).user?.id;
-      if (!teacherId) {
-        res.status(401).json({ success: false, message: 'Unauthorized' });
-        return;
-      }
-
-      const packageId = String(req.body?.packageId || '');
-      if (!packageId) {
-        res
-          .status(400)
-          .json({ success: false, message: 'packageId is required' });
-        return;
-      }
-
-      const pkg = await SubscriptionPackageModel.findById(packageId);
-      if (!pkg || !pkg.isActive) {
-        res
-          .status(404)
-          .json({ success: false, message: 'الباقة غير موجودة أو غير مفعلة' });
-        return;
-      }
-
-      if (pkg.isFree || Number(pkg.price) <= 0) {
-        res
-          .status(400)
-          .json({ success: false, message: 'هذه الباقة مجانية ولا تحتاج دفع' });
-        return;
-      }
-
-      if (Number(pkg.price) < 1000) {
-        res.status(400).json({
-          success: false,
-          message: 'الحد الأدنى للدفع عبر Wayl هو 1000 دينار',
-        });
-        return;
-      }
-
-      referenceId = `sub_${teacherId}_${packageId}_${Date.now()}`;
-
-      const webhookUrl = process.env['WAYL_WEBHOOK_URL'];
-      if (!webhookUrl) throw new Error('WAYL_WEBHOOK_URL is not configured');
-
-      const redirectionUrl =
-        process.env['WAYL_REDIRECT_URL'] ||
-        'https://mulhimiq.com/teacher/dashboard';
-
-      const webhookSecret = WaylService.generateSecret();
-
-      const defaultImageUrl =
-        process.env['WAYL_DEFAULT_LINEITEM_IMAGE_URL'] ||
-        'https://mulhimiq.com/favicon.ico';
-
-      const item: any = {
-        label: `Subscription: ${pkg.name}`,
-        amount: Number(pkg.price),
-        type: 'increase',
-        image: defaultImageUrl,
-      };
-
-      const payload: any = {
-        referenceId,
-        total: Number(pkg.price),
-        currency: 'IQD',
-        webhookUrl,
-        webhookSecret,
-        redirectionUrl,
-        lineItem: [item],
-      };
-
-      await WaylPaymentLinkLogModel.create({
-        paymentLinkId: null,
-        referenceId,
-        eventType: 'create_link_request',
-        httpStatus: null,
-        payload,
-      });
-
       const waylRes = await WaylService.createLink(payload);
-
       const url = waylRes?.data?.url || waylRes?.url;
       const waylOrderId = waylRes?.data?.id || waylRes?.id || null;
       const waylCode = waylRes?.data?.code || waylRes?.code || null;
@@ -115,115 +124,53 @@ export class TeacherWaylPaymentController {
         payload: waylRes,
       });
 
-      res.status(200).json({
-        success: true,
-        message: 'تم إنشاء رابط الدفع',
-        data: { url, referenceId },
-      });
-    } catch (e: any) {
-      try {
-        await WaylPaymentLinkLogModel.create({
-          paymentLinkId: null,
-          referenceId,
-          eventType: 'create_link_error',
-          httpStatus: null,
-          payload: {
-            message: e?.message,
-          },
-        });
-      } catch {
-        // ignore logging errors
-      }
-      const msg = String(e?.message || '');
-      if (msg.toLowerCase().includes('invalid authentication key')) {
-        res.status(400).json({
-          success: false,
-          message: 'Invalid authentication key',
-        });
-        return;
-      }
-      if (msg.toLowerCase().includes('missing fields')) {
-        console.error('Wayl subscription link error (details):', msg);
-        res.status(400).json({
-          success: false,
-          message: msg,
-        });
-        return;
-      }
-      console.error('Wayl subscription link error:', e);
-      res.status(500).json({
-        success: false,
-        message: e.message || 'خطأ داخلي في الخادم',
-      });
+      res.status(200).json(ok({ url, referenceId }, 'تم إنشاء رابط الدفع'));
+    } catch (err) {
+      await logFailure(referenceId, err);
+      throw mapWaylError(err);
     }
   }
 
-  static async createWalletTopupLink(
-    req: Request,
-    res: Response
-  ): Promise<void> {
-    let referenceId: string | null = null;
+  // POST /teacher/payments/wayl/wallet-topup-link
+  static async createWalletTopupLink(req: Request, res: Response): Promise<void> {
+    const teacherId = req.user.id as string;
+    const { amount } = req.body as { amount: number };
+
+    const referenceId = `topup_${teacherId}_${Date.now()}`;
+    const webhookUrl = process.env['WAYL_WEBHOOK_URL'];
+    if (!webhookUrl) {
+      throw new ApiError(500, 'WAYL_WEBHOOK_URL is not configured', ErrorCodes.SERVICE_UNAVAILABLE);
+    }
+    const redirectionUrl = process.env['WAYL_REDIRECT_URL'] || DEFAULT_REDIRECT_FALLBACK;
+    const webhookSecret = WaylService.generateSecret();
+    const defaultImageUrl = process.env['WAYL_DEFAULT_LINEITEM_IMAGE_URL'] || DEFAULT_IMAGE_URL_FALLBACK;
+
+    const payload = {
+      referenceId,
+      total: amount,
+      currency: 'IQD' as const,
+      webhookUrl,
+      redirectionUrl,
+      webhookSecret,
+      lineItem: [
+        {
+          label: 'Wallet Top-up',
+          amount,
+          type: 'increase',
+          image: defaultImageUrl,
+        },
+      ],
+    };
+
+    await WaylPaymentLinkLogModel.create({
+      paymentLinkId: null,
+      referenceId,
+      eventType: 'create_link_request',
+      httpStatus: null,
+      payload,
+    });
+
     try {
-      const teacherId = (req as any).user?.id;
-      if (!teacherId) {
-        res.status(401).json({ success: false, message: 'Unauthorized' });
-        return;
-      }
-
-      const amount = Number(req.body?.amount);
-      if (!Number.isFinite(amount) || amount <= 0) {
-        res.status(400).json({ success: false, message: 'amount must be > 0' });
-        return;
-      }
-
-      if (amount < 1000) {
-        res.status(400).json({
-          success: false,
-          message: 'الحد الأدنى للدفع عبر Wayl هو 1000 دينار',
-        });
-        return;
-      }
-
-      referenceId = `topup_${teacherId}_${Date.now()}`;
-
-      const webhookUrl = process.env['WAYL_WEBHOOK_URL'];
-      if (!webhookUrl) throw new Error('WAYL_WEBHOOK_URL is not configured');
-
-      const redirectionUrl =
-        process.env['WAYL_REDIRECT_URL'] ||
-        'https://mulhimiq.com/teacher/dashboard';
-
-      const webhookSecret = WaylService.generateSecret();
-
-      const defaultImageUrl =
-        process.env['WAYL_DEFAULT_LINEITEM_IMAGE_URL'] ||
-        'https://mulhimiq.com/favicon.ico';
-
-      const item: any = {
-        label: 'Wallet Top-up',
-        amount: amount,
-        type: 'increase',
-        image: defaultImageUrl,
-      };
-
-      const payload: any = {
-        referenceId,
-        total: amount,
-        currency: 'IQD',
-        webhookUrl,
-        redirectionUrl,
-        webhookSecret,
-        lineItem: [item],
-      };
-
-      await WaylPaymentLinkLogModel.create({
-        paymentLinkId: null,
-        referenceId,
-        eventType: 'create_link_request',
-        httpStatus: null,
-        payload,
-      });
-
       const waylRes = await WaylService.createLink(payload);
       const url = waylRes?.data?.url || waylRes?.url;
       const waylOrderId = waylRes?.data?.id || waylRes?.id || null;
@@ -249,46 +196,10 @@ export class TeacherWaylPaymentController {
         payload: waylRes,
       });
 
-      res.status(200).json({
-        success: true,
-        message: 'تم إنشاء رابط شحن المحفظة',
-        data: { url, referenceId },
-      });
-    } catch (e: any) {
-      try {
-        await WaylPaymentLinkLogModel.create({
-          paymentLinkId: null,
-          referenceId,
-          eventType: 'create_link_error',
-          httpStatus: null,
-          payload: {
-            message: e?.message,
-          },
-        });
-      } catch {
-        // ignore logging errors
-      }
-      const msg = String(e?.message || '');
-      if (msg.toLowerCase().includes('invalid authentication key')) {
-        res.status(400).json({
-          success: false,
-          message: 'Invalid authentication key',
-        });
-        return;
-      }
-      if (msg.toLowerCase().includes('missing fields')) {
-        console.error('Wayl wallet topup link error (details):', msg);
-        res.status(400).json({
-          success: false,
-          message: msg,
-        });
-        return;
-      }
-      console.error('Wayl wallet topup link error:', e);
-      res.status(500).json({
-        success: false,
-        message: e.message || 'خطأ داخلي في الخادم',
-      });
+      res.status(200).json(ok({ url, referenceId }, 'تم إنشاء رابط شحن المحفظة'));
+    } catch (err) {
+      await logFailure(referenceId, err);
+      throw mapWaylError(err);
     }
   }
 }

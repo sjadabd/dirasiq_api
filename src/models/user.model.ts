@@ -1,4 +1,5 @@
 import bcrypt from 'bcryptjs';
+import { randomInt } from 'crypto';
 import pool from '../config/database';
 import {
   Student,
@@ -9,9 +10,56 @@ import {
   UserType,
 } from '../types';
 
+/**
+ * Result of an OTP verification attempt (verifyEmail / resetPassword).
+ *
+ * `ok = true` means the code matched and the side-effect (email_verified or
+ * password changed) has been applied. Otherwise `reason` identifies which
+ * specific failure occurred so the service can return a precise error message
+ * without leaking account-enumeration signal.
+ */
+export type OtpVerifyResult =
+  | { ok: true }
+  | { ok: false; reason: 'not_found' | 'no_code' | 'expired' | 'locked' | 'wrong'; attemptsRemaining?: number };
+
+const OTP_MAX_ATTEMPTS = parseInt(process.env['OTP_MAX_ATTEMPTS'] || '5', 10);
+const OTP_EXPIRY_MINUTES = parseInt(process.env['OTP_EXPIRY_MINUTES'] || '10', 10);
+
 export class UserModel {
-  // Create a new user
-  static async create(userData: Partial<User>): Promise<User> {
+  // Normalize an email for storage and lookup.
+  //
+  // The `users.email` column is `citext` (migration 033), so DB-level
+  // uniqueness and `WHERE email = $1` are already case-insensitive. We
+  // still trim + lowercase on write so the stored representation is
+  // uniform — useful for display, exports, and any future report that
+  // does naive string comparison.
+  //
+  // Returns the normalized string. Pass-through for null / undefined /
+  // empty so the caller's existing NOT NULL handling stays in charge.
+  static normalizeEmail(raw: string | null | undefined): string {
+    if (raw === null || raw === undefined) return '';
+    return String(raw).trim().toLowerCase();
+  }
+
+  // Create a new user.
+  //
+  // For teachers and students that start in PENDING status, this method
+  // generates a fresh 6-digit OTP, bcrypt-hashes it, and stores the HASH —
+  // never the plaintext. The plaintext is returned alongside the user so the
+  // caller (auth.service.ts) can deliver it by email. Once the function
+  // returns, the plaintext only exists in the email; the database holds the
+  // hash.
+  //
+  // For super_admin and for OAuth-created teacher/student accounts that are
+  // immediately ACTIVE (Google/Apple), no OTP is generated and the returned
+  // `plaintextVerificationCode` is null.
+  //
+  // Email is normalized (trimmed + lowercased) before insert. citext makes
+  // lookups case-insensitive at the DB layer, but normalizing here keeps
+  // stored values uniform.
+  static async create(
+    userData: Partial<User>,
+  ): Promise<{ user: User; plaintextVerificationCode: string | null }> {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
@@ -19,6 +67,29 @@ export class UserModel {
       // Hash password
       const saltRounds = parseInt(process.env['BCRYPT_ROUNDS'] || '12');
       const hashedPassword = await bcrypt.hash(userData.password!, saltRounds);
+
+      // Normalize email for storage (citext makes lookup case-insensitive
+      // regardless, but uniform storage is good hygiene).
+      const normalizedEmail = UserModel.normalizeEmail(userData.email);
+
+      // Decide whether this user needs an email-verification OTP at creation
+      // time. Email-based teacher/student registrations start PENDING and
+      // need verification; OAuth users (Google/Apple) come in already ACTIVE
+      // and don't need an OTP; super_admin doesn't need one.
+      const needsOtp =
+        (userData.userType === UserType.TEACHER ||
+          userData.userType === UserType.STUDENT) &&
+        (userData.status ?? UserStatus.PENDING) === UserStatus.PENDING;
+
+      const plaintextVerificationCode = needsOtp
+        ? UserModel.generateVerificationCode()
+        : null;
+      const hashedVerificationCode = plaintextVerificationCode
+        ? await UserModel.hashOtp(plaintextVerificationCode)
+        : null;
+      const verificationExpiresAt = needsOtp
+        ? new Date(Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000)
+        : null;
 
       const query = `
         INSERT INTO users (
@@ -44,7 +115,7 @@ export class UserModel {
 
       const values = [
         userData.name,
-        userData.email,
+        normalizedEmail,
         hashedPassword,
         userData.userType,
         userData.status || UserStatus.PENDING,
@@ -102,16 +173,14 @@ export class UserModel {
         userData.suburb || null,
         userData.locationConfidence || null,
 
-        // Verification
-        userData.userType === UserType.SUPER_ADMIN ? true : false,
-        userData.userType === UserType.TEACHER ||
-        userData.userType === UserType.STUDENT
-          ? this.generateVerificationCode()
-          : null,
-        userData.userType === UserType.TEACHER ||
-        userData.userType === UserType.STUDENT
-          ? new Date(Date.now() + 10 * 60 * 1000)
-          : null,
+        // Verification — store the HASH of the OTP (or NULL when no OTP is needed).
+        // email_verified=true for super_admin (no email step) and for OAuth-active users.
+        userData.userType === UserType.SUPER_ADMIN ||
+          (userData.status === UserStatus.ACTIVE &&
+            (userData.userType === UserType.TEACHER ||
+              userData.userType === UserType.STUDENT)),
+        hashedVerificationCode,
+        verificationExpiresAt,
 
         // Password reset
         null, // password_reset_code
@@ -125,7 +194,10 @@ export class UserModel {
 
       const result = await client.query(query, values);
       await client.query('COMMIT');
-      return this.mapDatabaseUserToUser(result.rows[0]);
+      return {
+        user: this.mapDatabaseUserToUser(result.rows[0]),
+        plaintextVerificationCode,
+      };
     } catch (error) {
       await client.query('ROLLBACK');
       throw error;
@@ -134,21 +206,12 @@ export class UserModel {
     }
   }
 
-  // Get verification code for a teacher or student
-  static async getVerificationCode(email: string): Promise<string | null> {
-    const query =
-      'SELECT verification_code FROM users WHERE email = $1 AND user_type IN ($2, $3)';
-    const result = await pool.query(query, [
-      email,
-      UserType.TEACHER,
-      UserType.STUDENT,
-    ]);
-
-    if (result.rows.length === 0) {
-      return null;
-    }
-
-    return result.rows[0].verification_code;
+  // DEPRECATED — kept as a stub that always returns null so any forgotten
+  // caller fails loudly. The plaintext verification code is now ONLY
+  // available from `create()`'s return value and from `resendVerificationCode()`.
+  // It is NEVER read back from the database (the DB only holds the hash).
+  static async getVerificationCode(_email: string): Promise<string | null> {
+    return null;
   }
 
   // Find user by email
@@ -194,85 +257,182 @@ export class UserModel {
     return parseInt(result.rows[0].count) > 0;
   }
 
-  // Verify email for teacher or student
-  static async verifyEmail(email: string, code: string): Promise<boolean> {
-    const query = `
-      UPDATE users
-      SET email_verified = true,
-          verification_code = NULL,
-          verification_code_expires = NULL,
-          status = 'active'
-      WHERE email = $1
-        AND verification_code = $2
-        AND verification_code_expires > (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
-        AND user_type IN ('teacher', 'student')
-    `;
+  // Verify the email-verification OTP. Discriminated result lets the caller
+  // distinguish "no such user", "expired", "wrong", and "too many attempts".
+  //
+  // Side effects on success: email_verified=true, status=active, code/expiry
+  // wiped, attempts reset to 0.
+  // Side effects on wrong: verification_code_attempts += 1.
+  static async verifyEmail(
+    email: string,
+    submittedCode: string,
+  ): Promise<OtpVerifyResult> {
+    const lookup = await pool.query(
+      `SELECT id, verification_code AS hash, verification_code_expires AS expires_at,
+              verification_code_attempts AS attempts
+         FROM users
+        WHERE email = $1
+          AND user_type IN ('teacher', 'student')
+          AND deleted_at IS NULL`,
+      [email],
+    );
 
-    const result = await pool.query(query, [email, code]);
-    return (result.rowCount || 0) > 0;
+    if (lookup.rows.length === 0) {
+      return { ok: false, reason: 'not_found' };
+    }
+    const row = lookup.rows[0];
+    if (!row.hash || !row.expires_at) {
+      return { ok: false, reason: 'no_code' };
+    }
+    if (new Date(row.expires_at).getTime() <= Date.now()) {
+      return { ok: false, reason: 'expired' };
+    }
+    if ((row.attempts ?? 0) >= OTP_MAX_ATTEMPTS) {
+      return { ok: false, reason: 'locked' };
+    }
+
+    const matches = await UserModel.compareOtp(submittedCode, row.hash);
+    if (!matches) {
+      // Atomic increment so two concurrent guesses can't both pass the
+      // attempts ceiling.
+      const inc = await pool.query(
+        `UPDATE users
+            SET verification_code_attempts = verification_code_attempts + 1
+          WHERE id = $1
+          RETURNING verification_code_attempts AS attempts`,
+        [row.id],
+      );
+      const newAttempts = inc.rows[0]?.attempts ?? 0;
+      return {
+        ok: false,
+        reason: newAttempts >= OTP_MAX_ATTEMPTS ? 'locked' : 'wrong',
+        attemptsRemaining: Math.max(0, OTP_MAX_ATTEMPTS - newAttempts),
+      };
+    }
+
+    // Match — burn the code, activate the user, reset the counter.
+    await pool.query(
+      `UPDATE users
+          SET email_verified = TRUE,
+              status = 'active',
+              verification_code = NULL,
+              verification_code_expires = NULL,
+              verification_code_attempts = 0
+        WHERE id = $1`,
+      [row.id],
+    );
+    return { ok: true };
   }
 
-  // Resend verification code
-  static async resendVerificationCode(email: string): Promise<boolean> {
-    const verificationCode = this.generateVerificationCode();
-    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+  // Issue a fresh verification OTP, hash it, reset the attempt counter, and
+  // return the PLAINTEXT to the caller for emailing. The hash is what lives
+  // in the database from this point on.
+  //
+  // Returns null when no eligible (unverified teacher/student) row exists.
+  static async resendVerificationCode(email: string): Promise<string | null> {
+    const plaintext = UserModel.generateVerificationCode();
+    const hashed = await UserModel.hashOtp(plaintext);
+    const expiresAt = new Date(Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000);
 
-    const query = `
-      UPDATE users
-      SET verification_code = $1,
-          verification_code_expires = $2
-      WHERE email = $3
-        AND user_type IN ('teacher', 'student')
-        AND email_verified = false
-    `;
+    const result = await pool.query(
+      `UPDATE users
+          SET verification_code          = $1,
+              verification_code_expires  = $2,
+              verification_code_attempts = 0
+        WHERE email = $3
+          AND user_type IN ('teacher', 'student')
+          AND email_verified = FALSE
+          AND deleted_at IS NULL`,
+      [hashed, expiresAt, email],
+    );
 
-    const result = await pool.query(query, [
-      verificationCode,
-      expiresAt,
-      email,
-    ]);
-    return (result.rowCount || 0) > 0;
+    return (result.rowCount ?? 0) > 0 ? plaintext : null;
   }
 
-  // Set password reset code
+  // Issue a password-reset OTP. Same pattern: hash in DB, plaintext returned
+  // to the caller for emailing. Reset the attempt counter on issue.
+  //
+  // Returns null when the user doesn't exist (or is soft-deleted).
   static async setPasswordResetCode(email: string): Promise<string | null> {
-    const resetCode = this.generateVerificationCode();
-    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+    const plaintext = UserModel.generateVerificationCode();
+    const hashed = await UserModel.hashOtp(plaintext);
+    const expiresAt = new Date(Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000);
 
-    const query = `
-      UPDATE users
-      SET password_reset_code = $1,
-          password_reset_expires = $2
-      WHERE email = $3
-        AND deleted_at IS NULL
-    `;
+    const result = await pool.query(
+      `UPDATE users
+          SET password_reset_code          = $1,
+              password_reset_expires       = $2,
+              password_reset_code_attempts = 0
+        WHERE email = $3
+          AND deleted_at IS NULL`,
+      [hashed, expiresAt, email],
+    );
 
-    const result = await pool.query(query, [resetCode, expiresAt, email]);
-    return (result.rowCount || 0) > 0 ? resetCode : null;
+    return (result.rowCount ?? 0) > 0 ? plaintext : null;
   }
 
-  // Reset password with code
+  // Verify the password-reset OTP and, on success, persist the new password.
+  // Same discriminated-result pattern as verifyEmail.
   static async resetPassword(
     email: string,
-    code: string,
-    newPassword: string
-  ): Promise<boolean> {
-    const saltRounds = parseInt(process.env['BCRYPT_ROUNDS'] || '12');
-    const hashedPassword = await bcrypt.hash(newPassword, saltRounds);
+    submittedCode: string,
+    newPassword: string,
+  ): Promise<OtpVerifyResult> {
+    const lookup = await pool.query(
+      `SELECT id, password_reset_code AS hash, password_reset_expires AS expires_at,
+              password_reset_code_attempts AS attempts
+         FROM users
+        WHERE email = $1
+          AND deleted_at IS NULL`,
+      [email],
+    );
 
-    const query = `
-      UPDATE users
-      SET password = $1,
-          password_reset_code = NULL,
-          password_reset_expires = NULL
-      WHERE email = $2
-        AND password_reset_code = $3
-        AND password_reset_expires > (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
-        AND deleted_at IS NULL
-    `;
+    if (lookup.rows.length === 0) {
+      return { ok: false, reason: 'not_found' };
+    }
+    const row = lookup.rows[0];
+    if (!row.hash || !row.expires_at) {
+      return { ok: false, reason: 'no_code' };
+    }
+    if (new Date(row.expires_at).getTime() <= Date.now()) {
+      return { ok: false, reason: 'expired' };
+    }
+    if ((row.attempts ?? 0) >= OTP_MAX_ATTEMPTS) {
+      return { ok: false, reason: 'locked' };
+    }
 
-    const result = await pool.query(query, [hashedPassword, email, code]);
-    return (result.rowCount || 0) > 0;
+    const matches = await UserModel.compareOtp(submittedCode, row.hash);
+    if (!matches) {
+      const inc = await pool.query(
+        `UPDATE users
+            SET password_reset_code_attempts = password_reset_code_attempts + 1
+          WHERE id = $1
+          RETURNING password_reset_code_attempts AS attempts`,
+        [row.id],
+      );
+      const newAttempts = inc.rows[0]?.attempts ?? 0;
+      return {
+        ok: false,
+        reason: newAttempts >= OTP_MAX_ATTEMPTS ? 'locked' : 'wrong',
+        attemptsRemaining: Math.max(0, OTP_MAX_ATTEMPTS - newAttempts),
+      };
+    }
+
+    // Match — rotate password, burn the code.
+    const saltRounds = parseInt(process.env['BCRYPT_ROUNDS'] || '12', 10);
+    const newPasswordHash = await bcrypt.hash(newPassword, saltRounds);
+
+    await pool.query(
+      `UPDATE users
+          SET password                     = $1,
+              password_reset_code          = NULL,
+              password_reset_expires       = NULL,
+              password_reset_code_attempts = 0
+        WHERE id = $2`,
+      [newPasswordHash, row.id],
+    );
+
+    return { ok: true };
   }
 
   // Get all users with pagination
@@ -420,9 +580,33 @@ export class UserModel {
     return (result.rowCount || 0) > 0;
   }
 
-  // Generate verification code
+  // ---------------------------------------------------------------------------
+  // OTP helpers
+  // ---------------------------------------------------------------------------
+  // Crypto-secure 6-digit code. randomInt is cryptographically random;
+  // Math.random is not.
   private static generateVerificationCode(): string {
-    return Math.floor(100000 + Math.random() * 900000).toString();
+    return randomInt(100000, 1000000).toString();
+  }
+
+  // bcrypt-hash the OTP for at-rest storage. Re-uses BCRYPT_ROUNDS so the
+  // operator has one knob for all password-like material.
+  private static async hashOtp(code: string): Promise<string> {
+    const saltRounds = parseInt(process.env['BCRYPT_ROUNDS'] || '12', 10);
+    return bcrypt.hash(code, saltRounds);
+  }
+
+  // Constant-time compare via bcrypt. Returns false if hash is NULL/empty.
+  private static async compareOtp(
+    plaintext: string,
+    hash: string | null | undefined,
+  ): Promise<boolean> {
+    if (!hash) return false;
+    try {
+      return await bcrypt.compare(plaintext, hash);
+    } catch {
+      return false;
+    }
   }
 
   // Find teachers by location with distance calculation

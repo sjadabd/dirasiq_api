@@ -14,7 +14,6 @@ import { GeocodingService } from '../services/geocoding.service';
 import { QrService } from '../services/qr.service';
 import { AcademicYearService } from '../services/super_admin/academic-year.service';
 import {
-  ApiResponse,
   LoginRequest,
   RegisterStudentRequest,
   RegisterSuperAdminRequest,
@@ -23,398 +22,111 @@ import {
   UserStatus,
   UserType,
 } from '../types';
+import { ApiError, ErrorCodes } from '../utils/api-error';
 import { ImageService } from '../utils/image.service';
+import { logger } from '../utils/logger';
+
+// Canonical return for OAuth login/signup flows. The `isNewUser` discriminator
+// lets the controller pick the right success message ("login successful" vs
+// "account created") without baking message strings into the service layer.
+export type OAuthResult = {
+  user: any;
+  token: string;
+  isNewUser: boolean;
+  isProfileComplete: boolean;
+  requiresProfileCompletion: boolean;
+  activeAcademicYear: unknown;
+};
 
 export class AuthService {
-  // Register super admin
   static async registerSuperAdmin(
     data: RegisterSuperAdminRequest
-  ): Promise<ApiResponse> {
-    try {
-      // Check if super admin already exists
-      const superAdminExists = await UserModel.superAdminExists();
-      if (superAdminExists) {
-        return {
-          success: false,
-          message: 'السوبر أدمن موجود بالفعل',
-          errors: ['السوبر أدمن موجود بالفعل'],
-        };
-      }
-
-      // Create super admin
-      const superAdmin = await UserModel.create({
-        name: data.name,
-        email: data.email,
-        password: data.password,
-        userType: UserType.SUPER_ADMIN,
-        status: UserStatus.ACTIVE,
-      });
-
-      return {
-        success: true,
-        message: 'تم تسجيل السوبر أدمن بنجاح',
-        data: {
-          user: this.sanitizeUser(superAdmin),
-        },
-      };
-    } catch (error) {
-      console.error('Error registering super admin:', error);
-      return {
-        success: false,
-        message: 'فشل في العملية',
-        errors: ['حدث خطأ في الخادم'],
-      };
+  ): Promise<{ user: any }> {
+    if (await UserModel.superAdminExists()) {
+      throw new ApiError(
+        400,
+        'السوبر أدمن موجود بالفعل',
+        ErrorCodes.SUPER_ADMIN_EXISTS
+      );
     }
+    const { user: superAdmin } = await UserModel.create({
+      name: data.name,
+      email: data.email,
+      password: data.password,
+      userType: UserType.SUPER_ADMIN,
+      status: UserStatus.ACTIVE,
+    });
+    return { user: this.sanitizeUser(superAdmin) };
   }
 
-  // Apple Sign-in authentication
+  /**
+   * Apple Sign-In: log in or create a user from a verified Apple identity
+   * payload. The discriminator `isNewUser` lets the controller pick the
+   * right success message ("login successful" vs "account created").
+   */
   static async appleAuth(
     appleData: any,
     userType: 'teacher' | 'student'
-  ): Promise<ApiResponse> {
-    try {
-      const { email, name, sub } = appleData;
+  ): Promise<OAuthResult> {
+    const { email, name, sub } = appleData;
+    const existingUser = await UserModel.findByEmail(email);
 
-      // Check if user already exists
-      const existingUser = await UserModel.findByEmail(email);
-
-      if (existingUser) {
-        if (existingUser.authProvider !== 'apple') {
-          return {
-            success: false,
-            message:
-              'قمت بانشاء الحساب باستخدام طريقة أخرى الرجاء تسجيل الدخول بنفس الطريقة',
-            errors: [
-              'قمت بانشاء الحساب باستخدام البريد/Google الرجاء تسجيل الدخول بنفس الطريقة',
-            ],
-          };
-        }
-
-        // User exists, check user type
-        if (
-          existingUser.userType !==
-          (userType === 'teacher' ? UserType.TEACHER : UserType.STUDENT)
-        ) {
-          return {
-            success: false,
-            message: 'نوع المستخدم لا يتطابق مع الحساب الموجود',
-            errors: ['User type mismatch with existing account'],
-          };
-        }
-
-        // Check profile completeness
-        const isProfileComplete = this.isProfileComplete(existingUser);
-
-        // Active academic year
-        const academicYearResponse = await AcademicYearService.getActive();
-        const activeAcademicYear = academicYearResponse.success
-          ? academicYearResponse.data?.academicYear
-          : null;
-
-        // Enhanced user
-        const enhancedUser = await this.getEnhancedUserData(existingUser);
-
-        // Ensure teacher QR
-        try {
-          if (existingUser.userType === UserType.TEACHER) {
-            await QrService.ensureTeacherQr(existingUser.id);
-          }
-        } catch (e) {
-          console.error(
-            'Auto-ensure teacher QR (apple existing user) failed:',
-            e
-          );
-        }
-
-        // Generate JWT and store token with OneSignal playerId
-        const jwtSecret = process.env['JWT_SECRET'];
-        if (!jwtSecret) console.warn('⚠️ Missing JWT_SECRET in environment!');
-        // سياسة انتهاء الصلاحية: الطلاب صلاحية طويلة جداً، غير ذلك 7 أيام كما هو
-        let appleExistingExpiresAt = new Date(
-          Date.now() + 7 * 24 * 60 * 60 * 1000
+    if (existingUser) {
+      if (existingUser.authProvider !== 'apple') {
+        throw new ApiError(
+          409,
+          'قمت بانشاء الحساب باستخدام طريقة أخرى الرجاء تسجيل الدخول بنفس الطريقة',
+          ErrorCodes.PROVIDER_MISMATCH
         );
-        let appleExistingToken: string;
-        if (existingUser.userType === UserType.STUDENT) {
-          const days = parseInt(
-            process.env['STUDENT_TOKEN_TTL_DAYS'] || '36500',
-            10
-          );
-          appleExistingExpiresAt = new Date(
-            Date.now() + days * 24 * 60 * 60 * 1000
-          );
-          appleExistingToken = jwt.sign(
-            {
-              userId: existingUser.id,
-              userType: existingUser.userType,
-              email: existingUser.email,
-            },
-            jwtSecret || 'fallback-secret',
-            { expiresIn: `${days}d` }
-          );
-        } else {
-          appleExistingToken = jwt.sign(
-            {
-              userId: existingUser.id,
-              userType: existingUser.userType,
-              email: existingUser.email,
-            },
-            jwtSecret || 'fallback-secret',
-            { expiresIn: '7d' }
-          );
-        }
-
-        await TokenModel.create(
-          existingUser.id,
-          appleExistingToken,
-          appleExistingExpiresAt,
-          appleData.oneSignalPlayerId
-        );
-
-        return {
-          success: true,
-          message: 'تم تسجيل الدخول بنجاح',
-          data: {
-            user: {
-              ...enhancedUser,
-              studyYear: activeAcademicYear?.year,
-            },
-            token: appleExistingToken,
-            isNewUser: false,
-            isProfileComplete,
-            requiresProfileCompletion: !isProfileComplete,
-            activeAcademicYear,
-          },
-        };
       }
-
-      // Create new user
-      const tempPassword = `apple_${sub}_${randomUUID()}`;
-      const hashedPassword = await bcrypt.hash(tempPassword, 12);
-
-      let newUser: User;
-      if (userType === 'teacher') {
-        newUser = await UserModel.create({
-          name,
-          email,
-          password: hashedPassword,
-          userType: UserType.TEACHER,
-          status: UserStatus.ACTIVE,
-
-          authProvider: 'apple',
-          oauthProviderId: sub,
-
-          phone: '',
-          address: '',
-          bio: '',
-          experienceYears: 0,
-          deviceInfo: 'Apple SignIn',
-        });
-
-        // Auto-create free subscription and QR
-        try {
-          const freePackage = await SubscriptionPackageModel.getFreePackage();
-          if (freePackage) {
-            const startDate = new Date();
-            const endDate = new Date(startDate);
-            endDate.setDate(
-              endDate.getDate() + Number(freePackage.durationDays || 30)
-            );
-
-            await TeacherSubscriptionModel.create({
-              teacherId: newUser.id,
-              subscriptionPackageId: freePackage.id,
-              startDate,
-              endDate,
-            });
-          }
-        } catch (subErr) {
-          console.error(
-            'Failed to auto-create free subscription for Apple teacher:',
-            subErr
-          );
-        }
-
-        try {
-          await QrService.ensureTeacherQr(newUser.id);
-        } catch (e) {
-          console.error(
-            'Auto-ensure teacher QR (apple new teacher) failed:',
-            e
-          );
-        }
-      } else {
-        newUser = await UserModel.create({
-          name,
-          email,
-          password: hashedPassword,
-          userType: UserType.STUDENT,
-          status: UserStatus.ACTIVE,
-
-          authProvider: 'apple',
-          oauthProviderId: sub,
-
-          studentPhone: '',
-          parentPhone: '',
-          schoolName: '',
-        });
-      }
-
-      // Active academic year
-      const academicYearResponse = await AcademicYearService.getActive();
-      const activeAcademicYear = academicYearResponse.success
-        ? academicYearResponse.data?.academicYear
-        : null;
-
-      const enhancedUser = await this.getEnhancedUserData(newUser);
-
-      const jwtSecret2 = process.env['JWT_SECRET'];
-      if (!jwtSecret2) console.warn('⚠️ Missing JWT_SECRET in environment!');
-      // سياسة انتهاء الصلاحية: الطلاب صلاحية طويلة جداً، غير ذلك 7 أيام كما هو
-      let appleNewExpiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-      let appleNewToken: string;
-      if (newUser.userType === UserType.STUDENT) {
-        const days = parseInt(
-          process.env['STUDENT_TOKEN_TTL_DAYS'] || '36500',
-          10
-        );
-        appleNewExpiresAt = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
-        appleNewToken = jwt.sign(
-          {
-            userId: newUser.id,
-            userType: newUser.userType,
-            email: newUser.email,
-          },
-          jwtSecret2 || 'fallback-secret',
-          { expiresIn: `${days}d` }
-        );
-      } else {
-        appleNewToken = jwt.sign(
-          {
-            userId: newUser.id,
-            userType: newUser.userType,
-            email: newUser.email,
-          },
-          jwtSecret2 || 'fallback-secret',
-          { expiresIn: '7d' }
+      const expected =
+        userType === 'teacher' ? UserType.TEACHER : UserType.STUDENT;
+      if (existingUser.userType !== expected) {
+        throw new ApiError(
+          409,
+          'نوع المستخدم لا يتطابق مع الحساب الموجود',
+          ErrorCodes.USER_TYPE_MISMATCH
         );
       }
 
-      await TokenModel.create(
-        newUser.id,
-        appleNewToken,
-        appleNewExpiresAt,
-        appleData.oneSignalPlayerId
+      try {
+        if (existingUser.userType === UserType.TEACHER) {
+          await QrService.ensureTeacherQr(existingUser.id);
+        }
+      } catch (err) {
+        logger.warn({ err }, 'auto-ensure teacher QR on apple login failed');
+      }
+
+      return this.buildOAuthSession(
+        existingUser,
+        appleData.oneSignalPlayerId,
+        false
       );
-
-      return {
-        success: true,
-        message: 'تم إنشاء الحساب وتسجيل الدخول بنجاح',
-        data: {
-          user: {
-            ...enhancedUser,
-            studyYear: activeAcademicYear?.year,
-          },
-          token: appleNewToken,
-          isNewUser: true,
-          isProfileComplete: false,
-          requiresProfileCompletion: true,
-          activeAcademicYear,
-        },
-      };
-    } catch (error) {
-      console.error('Error in appleAuth service:', error);
-      return {
-        success: false,
-        message: 'حدث خطأ في الخادم',
-        errors: ['حدث خطأ في الخادم'],
-      };
     }
-  }
 
-  // Register teacher
-  static async registerTeacher(
-    data: RegisterTeacherRequest
-  ): Promise<ApiResponse> {
-    try {
-      // Normalize email and pre-check duplicates
-      const emailLower = (data.email || '').toLowerCase();
-      const existingProvider =
-        await UserModel.getAuthProviderByEmail(emailLower);
-      if (existingProvider) {
-        return {
-          success: false,
-          message:
-            existingProvider === 'google'
-              ? 'هذا البريد مسجّل عبر Google، الرجاء تسجيل الدخول باستخدام Google'
-              : 'البريد الإلكتروني مستخدم مسبقاً',
-          errors: [
-            existingProvider === 'google'
-              ? 'Email already registered via Google'
-              : 'Email already exists',
-          ],
-        };
-      }
+    // New user — create with a random throwaway password (auth happens via
+    // the apple provider id, not the password). Then return a fresh session.
+    const tempPassword = `apple_${sub}_${randomUUID()}`;
+    const hashedPassword = await bcrypt.hash(tempPassword, 12);
 
-      // Create teacher
-      const teacherData: Partial<User> = {
-        name: data.name,
-        email: emailLower,
-        password: data.password,
+    let newUser: User;
+    if (userType === 'teacher') {
+      const created = await UserModel.create({
+        name,
+        email,
+        password: hashedPassword,
         userType: UserType.TEACHER,
-        status: UserStatus.PENDING,
-      };
+        status: UserStatus.ACTIVE,
+        authProvider: 'apple',
+        oauthProviderId: sub,
+        phone: '',
+        address: '',
+        bio: '',
+        experienceYears: 0,
+        deviceInfo: 'Apple SignIn',
+      });
+      newUser = created.user;
 
-      // Add teacher-specific fields
-      if (data.phone) teacherData.phone = data.phone;
-      if (data.address) teacherData.address = data.address;
-      if (data.bio) teacherData.bio = data.bio;
-      if (data.experienceYears)
-        teacherData.experienceYears = data.experienceYears;
-      if (data.visitorId) teacherData.visitorId = data.visitorId;
-      if (data.deviceInfo) teacherData.deviceInfo = data.deviceInfo;
-      if (data.latitude !== undefined) teacherData.latitude = data.latitude;
-      if (data.longitude !== undefined) teacherData.longitude = data.longitude;
-
-      // Add location fields directly from request or use geocoding service
-      if (data.formattedAddress)
-        teacherData.formattedAddress = data.formattedAddress;
-      if (data.country) teacherData.country = data.country;
-      if (data.city) teacherData.city = data.city;
-      if (data.state) teacherData.state = data.state;
-      if (data.zipcode) teacherData.zipcode = data.zipcode;
-      if (data.streetName) teacherData.streetName = data.streetName;
-      if (data.suburb) teacherData.suburb = data.suburb;
-      if (data.locationConfidence !== undefined)
-        teacherData.locationConfidence = data.locationConfidence;
-
-      // Get location details using geocoding service if coordinates provided but no address details
-      if (data.latitude && data.longitude && !data.formattedAddress) {
-        try {
-          const geocodingService = new GeocodingService();
-          const locationDetails = await geocodingService.getLocationDetails(
-            data.latitude,
-            data.longitude
-          );
-
-          if (locationDetails) {
-            teacherData.formattedAddress = locationDetails.formattedAddress;
-            teacherData.country = locationDetails.country;
-            teacherData.city = locationDetails.city;
-            teacherData.state = locationDetails.state;
-            teacherData.zipcode = locationDetails.zipcode;
-            teacherData.streetName = locationDetails.streetName;
-            teacherData.suburb = locationDetails.suburb;
-            teacherData.locationConfidence = locationDetails.confidence;
-          }
-        } catch (error) {
-          console.error('Error getting location details:', error);
-          // Continue with registration even if geocoding fails
-        }
-      }
-
-      const teacher = await UserModel.create(teacherData);
-
-      // ✅ إنشاء اشتراك مجاني تلقائيًا للمعلم الجديد (مثلاً 20 طالب لمدة 30 يومًا حسب جدول الباقات)
       try {
         const freePackage = await SubscriptionPackageModel.getFreePackage();
         if (freePackage) {
@@ -423,519 +135,561 @@ export class AuthService {
           endDate.setDate(
             endDate.getDate() + Number(freePackage.durationDays || 30)
           );
-
           await TeacherSubscriptionModel.create({
-            teacherId: teacher.id,
+            teacherId: newUser.id,
             subscriptionPackageId: freePackage.id,
             startDate,
             endDate,
           });
-        } else {
-          console.warn(
-            'No free subscription package found. Skipping auto-subscription for teacher.'
-          );
         }
-      } catch (subErr) {
-        console.error(
-          'Failed to auto-create free subscription for teacher:',
-          subErr
+      } catch (err) {
+        logger.warn({ err }, 'failed to auto-create free subscription for apple teacher');
+      }
+
+      try {
+        await QrService.ensureTeacherQr(newUser.id);
+      } catch (err) {
+        logger.warn({ err }, 'auto-ensure teacher QR (apple new teacher) failed');
+      }
+    } else {
+      const created = await UserModel.create({
+        name,
+        email,
+        password: hashedPassword,
+        userType: UserType.STUDENT,
+        status: UserStatus.ACTIVE,
+        authProvider: 'apple',
+        oauthProviderId: sub,
+        studentPhone: '',
+        parentPhone: '',
+        schoolName: '',
+      });
+      newUser = created.user;
+    }
+
+    return this.buildOAuthSession(newUser, appleData.oneSignalPlayerId, true);
+  }
+
+  // Register teacher
+  static async registerTeacher(
+    data: RegisterTeacherRequest
+  ): Promise<{ user: Partial<User> }> {
+    // Normalize email and pre-check duplicates. PROVIDER_MISMATCH is a
+    // distinct error code so the client can suggest the correct sign-in path.
+    const emailLower = (data.email || '').toLowerCase();
+    const existingProvider =
+      await UserModel.getAuthProviderByEmail(emailLower);
+    if (existingProvider === 'google') {
+      throw new ApiError(
+        409,
+        'هذا البريد مسجّل عبر Google، الرجاء تسجيل الدخول باستخدام Google',
+        ErrorCodes.PROVIDER_MISMATCH
+      );
+    }
+    if (existingProvider) {
+      throw new ApiError(
+        409,
+        'البريد الإلكتروني مستخدم مسبقاً',
+        ErrorCodes.EMAIL_ALREADY_EXISTS
+      );
+    }
+
+    const teacherData: Partial<User> = {
+      name: data.name,
+      email: emailLower,
+      password: data.password,
+      userType: UserType.TEACHER,
+      status: UserStatus.PENDING,
+    };
+
+    if (data.phone) teacherData.phone = data.phone;
+    if (data.address) teacherData.address = data.address;
+    if (data.bio) teacherData.bio = data.bio;
+    if (data.experienceYears)
+      teacherData.experienceYears = data.experienceYears;
+    if (data.visitorId) teacherData.visitorId = data.visitorId;
+    if (data.deviceInfo) teacherData.deviceInfo = data.deviceInfo;
+    if (data.latitude !== undefined) teacherData.latitude = data.latitude;
+    if (data.longitude !== undefined) teacherData.longitude = data.longitude;
+
+    if (data.formattedAddress)
+      teacherData.formattedAddress = data.formattedAddress;
+    if (data.country) teacherData.country = data.country;
+    if (data.city) teacherData.city = data.city;
+    if (data.state) teacherData.state = data.state;
+    if (data.zipcode) teacherData.zipcode = data.zipcode;
+    if (data.streetName) teacherData.streetName = data.streetName;
+    if (data.suburb) teacherData.suburb = data.suburb;
+    if (data.locationConfidence !== undefined)
+      teacherData.locationConfidence = data.locationConfidence;
+
+    // Best-effort geocoding — if it fails we still create the account; the
+    // client can complete location details later via /complete-profile.
+    if (data.latitude && data.longitude && !data.formattedAddress) {
+      try {
+        const geocodingService = new GeocodingService();
+        const locationDetails = await geocodingService.getLocationDetails(
+          data.latitude,
+          data.longitude
+        );
+
+        if (locationDetails) {
+          teacherData.formattedAddress = locationDetails.formattedAddress;
+          teacherData.country = locationDetails.country;
+          teacherData.city = locationDetails.city;
+          teacherData.state = locationDetails.state;
+          teacherData.zipcode = locationDetails.zipcode;
+          teacherData.streetName = locationDetails.streetName;
+          teacherData.suburb = locationDetails.suburb;
+          teacherData.locationConfidence = locationDetails.confidence;
+        }
+      } catch (err) {
+        logger.warn({ err }, 'geocoding failed during teacher registration');
+      }
+    }
+
+    let teacher: User;
+    let plaintextVerificationCode: string | null | undefined;
+    try {
+      const created = await UserModel.create(teacherData);
+      teacher = created.user;
+      plaintextVerificationCode = created.plaintextVerificationCode;
+    } catch (err) {
+      // Race: someone registered with the same email between the precheck and
+      // the INSERT. Translate the unique-violation marker to a 409.
+      if (err instanceof Error && err.message === 'EMAIL_ALREADY_EXISTS') {
+        throw new ApiError(
+          409,
+          'البريد الإلكتروني مستخدم مسبقاً',
+          ErrorCodes.EMAIL_ALREADY_EXISTS
         );
       }
-
-      // Create teacher grade relationships
-      if (data.gradeIds && data.gradeIds.length > 0 && data.studyYear) {
-        try {
-          await TeacherGradeModel.createMany(
-            teacher.id,
-            data.gradeIds,
-            data.studyYear
-          );
-        } catch (error) {
-          console.error('Error creating teacher grade relationships:', error);
-          // Continue with registration even if grade relationships fail
-        }
-      }
-
-      // Get verification code from database
-      const verificationCode = await UserModel.getVerificationCode(emailLower);
-
-      // Send verification email
-      const emailSent = await sendVerificationEmail(
-        data.email,
-        verificationCode || '',
-        data.name
-      );
-
-      if (!emailSent) {
-        return {
-          success: false,
-          message: 'فشل في إرسال البريد الإلكتروني',
-          errors: ['فشل في إرسال البريد الإلكتروني'],
-        };
-      }
-
-      return {
-        success: true,
-        message: 'تم تسجيل المعلم بنجاح',
-        data: {
-          user: this.sanitizeUser(teacher),
-        },
-      };
-    } catch (error: any) {
-      console.error('Error registering teacher:', error);
-      if (error instanceof Error && error.message === 'EMAIL_ALREADY_EXISTS') {
-        return {
-          success: false,
-          message: 'البريد الإلكتروني مستخدم مسبقاً',
-          errors: ['Email already exists'],
-        };
-      }
-      return {
-        success: false,
-        message: 'فشل في العملية',
-        errors: ['حدث خطأ في الخادم'],
-      };
+      throw err;
     }
+
+    // Best-effort: auto-grant the free subscription tier. Failure here does
+    // not block registration; the teacher can subscribe later.
+    try {
+      const freePackage = await SubscriptionPackageModel.getFreePackage();
+      if (freePackage) {
+        const startDate = new Date();
+        const endDate = new Date(startDate);
+        endDate.setDate(
+          endDate.getDate() + Number(freePackage.durationDays || 30)
+        );
+        await TeacherSubscriptionModel.create({
+          teacherId: teacher.id,
+          subscriptionPackageId: freePackage.id,
+          startDate,
+          endDate,
+        });
+      } else {
+        logger.warn('No free subscription package found; skipping auto-subscription for teacher');
+      }
+    } catch (err) {
+      logger.warn({ err }, 'failed to auto-create free subscription for teacher');
+    }
+
+    // Best-effort: create teacher↔grade relationships.
+    if (data.gradeIds && data.gradeIds.length > 0 && data.studyYear) {
+      try {
+        await TeacherGradeModel.createMany(
+          teacher.id,
+          data.gradeIds,
+          data.studyYear
+        );
+      } catch (err) {
+        logger.warn({ err }, 'failed to create teacher grade relationships');
+      }
+    }
+
+    // Email delivery is part of the contract — if we can't deliver the OTP
+    // the account is unreachable. Surface this as a 502.
+    const emailSent = await sendVerificationEmail(
+      data.email,
+      plaintextVerificationCode || '',
+      data.name,
+    );
+    if (!emailSent) {
+      throw new ApiError(
+        502,
+        'فشل في إرسال البريد الإلكتروني',
+        ErrorCodes.EMAIL_SEND_FAILED
+      );
+    }
+
+    return { user: this.sanitizeUser(teacher) };
   }
 
   // Register student
   static async registerStudent(
     data: RegisterStudentRequest
-  ): Promise<ApiResponse> {
-    try {
-      // Normalize email and pre-check duplicates
-      const emailLower = (data.email || '').toLowerCase();
-      const existingProvider =
-        await UserModel.getAuthProviderByEmail(emailLower);
-      if (existingProvider) {
-        return {
-          success: false,
-          message:
-            existingProvider === 'google'
-              ? 'هذا البريد مسجّل عبر Google، الرجاء تسجيل الدخول باستخدام Google'
-              : 'البريد الإلكتروني مستخدم مسبقاً',
-          errors: [
-            existingProvider === 'google'
-              ? 'Email already registered via Google'
-              : 'Email already exists',
-          ],
-        };
-      }
-
-      // Create student
-      const studentData: Partial<User> = {
-        name: data.name,
-        email: emailLower,
-        password: data.password,
-        userType: UserType.STUDENT,
-        status: UserStatus.PENDING,
-      };
-
-      // Add student-specific fields
-      if (data.studentPhone) studentData.studentPhone = data.studentPhone;
-      if (data.parentPhone) studentData.parentPhone = data.parentPhone;
-      if (data.schoolName) studentData.schoolName = data.schoolName;
-      if (data.gender) studentData.gender = data.gender;
-      if (data.birthDate) studentData.birthDate = new Date(data.birthDate);
-      if (data.latitude !== undefined) studentData.latitude = data.latitude;
-      if (data.longitude !== undefined) studentData.longitude = data.longitude;
-
-      // Add location fields directly from request or use geocoding service
-      if (data.formattedAddress)
-        studentData.formattedAddress = data.formattedAddress;
-      if (data.country) studentData.country = data.country;
-      if (data.city) studentData.city = data.city;
-      if (data.state) studentData.state = data.state;
-      if (data.zipcode) studentData.zipcode = data.zipcode;
-      if (data.streetName) studentData.streetName = data.streetName;
-      if (data.suburb) studentData.suburb = data.suburb;
-      if (data.locationConfidence !== undefined)
-        studentData.locationConfidence = data.locationConfidence;
-
-      // Get location details using geocoding service if coordinates provided but no address details
-      if (data.latitude && data.longitude && !data.formattedAddress) {
-        try {
-          const geocodingService = new GeocodingService();
-          const locationDetails = await geocodingService.getLocationDetails(
-            data.latitude,
-            data.longitude
-          );
-
-          if (locationDetails) {
-            studentData.formattedAddress = locationDetails.formattedAddress;
-            studentData.country = locationDetails.country;
-            studentData.city = locationDetails.city;
-            studentData.state = locationDetails.state;
-            studentData.zipcode = locationDetails.zipcode;
-            studentData.streetName = locationDetails.streetName;
-            studentData.suburb = locationDetails.suburb;
-            studentData.locationConfidence = locationDetails.confidence;
-          }
-        } catch (error) {
-          console.error('Error getting location details:', error);
-          // Continue with registration even if geocoding fails
-        }
-      }
-
-      const student = await UserModel.create(studentData);
-
-      // Create student grade relationship
-      try {
-        await StudentGradeModel.create({
-          studentId: student.id,
-          gradeId: data.gradeId,
-          studyYear: data.studyYear,
-        });
-      } catch (error) {
-        console.error('Error creating student grade relationship:', error);
-        // Continue with registration even if grade relationship fails
-      }
-
-      // Get verification code from database
-      const verificationCode = await UserModel.getVerificationCode(emailLower);
-
-      // Send verification email
-      const emailSent = await sendVerificationEmail(
-        data.email,
-        verificationCode || '',
-        data.name
+  ): Promise<{ user: Partial<User> }> {
+    const emailLower = (data.email || '').toLowerCase();
+    const existingProvider =
+      await UserModel.getAuthProviderByEmail(emailLower);
+    if (existingProvider === 'google') {
+      throw new ApiError(
+        409,
+        'هذا البريد مسجّل عبر Google، الرجاء تسجيل الدخول باستخدام Google',
+        ErrorCodes.PROVIDER_MISMATCH
       );
-
-      if (!emailSent) {
-        return {
-          success: false,
-          message: 'فشل في إرسال البريد الإلكتروني',
-          errors: ['فشل في إرسال البريد الإلكتروني'],
-        };
-      }
-
-      return {
-        success: true,
-        message: 'تم تسجيل الطالب بنجاح',
-        data: {
-          user: this.sanitizeUser(student),
-        },
-      };
-    } catch (error: any) {
-      console.error('Error registering student:', error);
-      if (error instanceof Error && error.message === 'EMAIL_ALREADY_EXISTS') {
-        return {
-          success: false,
-          message: 'البريد الإلكتروني مستخدم مسبقاً',
-          errors: ['Email already exists'],
-        };
-      }
-      return {
-        success: false,
-        message: 'فشل في العملية',
-        errors: ['حدث خطأ في الخادم'],
-      };
     }
+    if (existingProvider) {
+      throw new ApiError(
+        409,
+        'البريد الإلكتروني مستخدم مسبقاً',
+        ErrorCodes.EMAIL_ALREADY_EXISTS
+      );
+    }
+
+    const studentData: Partial<User> = {
+      name: data.name,
+      email: emailLower,
+      password: data.password,
+      userType: UserType.STUDENT,
+      status: UserStatus.PENDING,
+    };
+
+    if (data.studentPhone) studentData.studentPhone = data.studentPhone;
+    if (data.parentPhone) studentData.parentPhone = data.parentPhone;
+    if (data.schoolName) studentData.schoolName = data.schoolName;
+    if (data.gender) studentData.gender = data.gender;
+    if (data.birthDate) studentData.birthDate = new Date(data.birthDate);
+    if (data.latitude !== undefined) studentData.latitude = data.latitude;
+    if (data.longitude !== undefined) studentData.longitude = data.longitude;
+
+    if (data.formattedAddress)
+      studentData.formattedAddress = data.formattedAddress;
+    if (data.country) studentData.country = data.country;
+    if (data.city) studentData.city = data.city;
+    if (data.state) studentData.state = data.state;
+    if (data.zipcode) studentData.zipcode = data.zipcode;
+    if (data.streetName) studentData.streetName = data.streetName;
+    if (data.suburb) studentData.suburb = data.suburb;
+    if (data.locationConfidence !== undefined)
+      studentData.locationConfidence = data.locationConfidence;
+
+    // Best-effort geocoding.
+    if (data.latitude && data.longitude && !data.formattedAddress) {
+      try {
+        const geocodingService = new GeocodingService();
+        const locationDetails = await geocodingService.getLocationDetails(
+          data.latitude,
+          data.longitude
+        );
+
+        if (locationDetails) {
+          studentData.formattedAddress = locationDetails.formattedAddress;
+          studentData.country = locationDetails.country;
+          studentData.city = locationDetails.city;
+          studentData.state = locationDetails.state;
+          studentData.zipcode = locationDetails.zipcode;
+          studentData.streetName = locationDetails.streetName;
+          studentData.suburb = locationDetails.suburb;
+          studentData.locationConfidence = locationDetails.confidence;
+        }
+      } catch (err) {
+        logger.warn({ err }, 'geocoding failed during student registration');
+      }
+    }
+
+    let student: User;
+    let plaintextVerificationCode: string | null | undefined;
+    try {
+      const created = await UserModel.create(studentData);
+      student = created.user;
+      plaintextVerificationCode = created.plaintextVerificationCode;
+    } catch (err) {
+      if (err instanceof Error && err.message === 'EMAIL_ALREADY_EXISTS') {
+        throw new ApiError(
+          409,
+          'البريد الإلكتروني مستخدم مسبقاً',
+          ErrorCodes.EMAIL_ALREADY_EXISTS
+        );
+      }
+      throw err;
+    }
+
+    // Best-effort: student↔grade relationship.
+    try {
+      await StudentGradeModel.create({
+        studentId: student.id,
+        gradeId: data.gradeId,
+        studyYear: data.studyYear,
+      });
+    } catch (err) {
+      logger.warn({ err }, 'failed to create student grade relationship');
+    }
+
+    const emailSent = await sendVerificationEmail(
+      data.email,
+      plaintextVerificationCode || '',
+      data.name,
+    );
+    if (!emailSent) {
+      throw new ApiError(
+        502,
+        'فشل في إرسال البريد الإلكتروني',
+        ErrorCodes.EMAIL_SEND_FAILED
+      );
+    }
+
+    return { user: this.sanitizeUser(student) };
   }
 
-  // Login user
-  static async login(data: LoginRequest): Promise<ApiResponse> {
-    try {
-      // Find user by email
-      const user = await UserModel.findByEmail(data.email);
-      if (!user) {
-        return {
-          success: false,
-          message: 'بيانات الدخول غير صحيحة',
-          errors: ['بيانات الدخول غير صحيحة'],
-        };
-      }
-
-      // Check if user is active
-      if (user.status !== UserStatus.ACTIVE) {
-        return {
-          success: false,
-          message: 'الحساب غير مفعل',
-          errors: [
-            'الحساب غير مفعل، يرجى التحقق من بريدك الإلكتروني أو التواصل مع الدعم',
-          ],
-        };
-      }
-
-      if (user.authProvider && user.authProvider !== 'email') {
-        return {
-          success: false,
-          message:
-            'قمت بإنشاء الحساب باستخدام مزود خارجي الرجاء تسجيل الدخول بنفس الطريقة',
-          errors: [
-            'قمت بإنشاء الحساب باستخدام مزود خارجي الرجاء تسجيل الدخول بنفس الطريقة',
-          ],
-        };
-      }
-
-      // Verify password
-      const isPasswordValid = await bcrypt.compare(
-        data.password,
-        user.password
+  static async login(data: LoginRequest): Promise<{
+    user: any;
+    token: string;
+    isProfileComplete: boolean;
+    requiresProfileCompletion: boolean;
+    activeAcademicYear: unknown;
+  }> {
+    const user = await UserModel.findByEmail(data.email);
+    if (!user) {
+      throw new ApiError(401, 'بيانات الدخول غير صحيحة', ErrorCodes.INVALID_CREDENTIALS);
+    }
+    if (user.status !== UserStatus.ACTIVE) {
+      throw new ApiError(
+        401,
+        'الحساب غير مفعل، يرجى التحقق من بريدك الإلكتروني أو التواصل مع الدعم',
+        ErrorCodes.ACCOUNT_INACTIVE
       );
-      if (!isPasswordValid) {
-        return {
-          success: false,
-          message: 'بيانات الدخول غير صحيحة',
-          errors: ['بيانات الدخول غير صحيحة'],
-        };
-      }
+    }
+    if (user.authProvider && user.authProvider !== 'email') {
+      throw new ApiError(
+        401,
+        'قمت بإنشاء الحساب باستخدام مزود خارجي الرجاء تسجيل الدخول بنفس الطريقة',
+        ErrorCodes.PROVIDER_MISMATCH
+      );
+    }
+    const isPasswordValid = await bcrypt.compare(data.password, user.password);
+    if (!isPasswordValid) {
+      throw new ApiError(401, 'بيانات الدخول غير صحيحة', ErrorCodes.INVALID_CREDENTIALS);
+    }
 
-      // Check if profile is complete
-      const isProfileComplete = this.isProfileComplete(user);
+    const isProfileComplete = this.isProfileComplete(user);
+    const activeAcademicYear =
+      (await AcademicYearService.getActive())?.academicYear ?? null;
+    const enhancedUser = await this.getEnhancedUserData(user);
 
-      // Get active academic year
-      const academicYearResponse = await AcademicYearService.getActive();
-      const activeAcademicYear = academicYearResponse.success
-        ? academicYearResponse.data?.academicYear
-        : null;
-
-      // Get enhanced user data
-      const enhancedUser = await this.getEnhancedUserData(user);
-
-      // Ensure teacher QR exists (once) for teachers
-      try {
-        if (user.userType === UserType.TEACHER) {
-          await QrService.ensureTeacherQr(user.id);
-        }
-      } catch (e) {
-        console.error('Auto-ensure teacher QR on login failed:', e);
-      }
-
-      // حدد سياسة انتهاء الصلاحية حسب نوع المستخدم
-      const now = new Date();
-      let expiresAt: Date;
-      let expiresInSeconds: number;
+    try {
       if (user.userType === UserType.TEACHER) {
-        // المعلّم: انتهاء عند الساعة 4 صباحاً لليوم التالي
-        const tomorrow = new Date(now);
-        tomorrow.setDate(tomorrow.getDate() + 1);
-        tomorrow.setHours(4, 0, 0, 0);
-        expiresAt = tomorrow;
-        expiresInSeconds = Math.max(
-          60,
-          Math.floor((expiresAt.getTime() - now.getTime()) / 1000)
-        );
-      } else {
-        // الطالب: مدة طويلة جداً (افتراضياً 36500 يوم ≈ 100 سنة) ويمكن ضبطها عبر ENV
-        const days = parseInt(
-          process.env['STUDENT_TOKEN_TTL_DAYS'] || '36500',
-          10
-        );
-        expiresAt = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
-        expiresInSeconds = days * 24 * 60 * 60;
+        await QrService.ensureTeacherQr(user.id);
       }
+    } catch (err) {
+      logger.warn({ err }, 'auto-ensure teacher QR on login failed');
+    }
 
-      // إنشاء التوكن وفق مدة الصلاحية المحددة
-      const token = await this.generateToken(user, expiresInSeconds);
+    const now = new Date();
+    let expiresAt: Date;
+    let expiresInSeconds: number;
+    if (user.userType === UserType.TEACHER) {
+      // Teacher: token expires at 4am the next morning.
+      const tomorrow = new Date(now);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      tomorrow.setHours(4, 0, 0, 0);
+      expiresAt = tomorrow;
+      expiresInSeconds = Math.max(60, Math.floor((expiresAt.getTime() - now.getTime()) / 1000));
+    } else {
+      // Student: very long TTL by default (env-configurable).
+      const days = parseInt(process.env['STUDENT_TOKEN_TTL_DAYS'] || '36500', 10);
+      expiresAt = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
+      expiresInSeconds = days * 24 * 60 * 60;
+    }
 
-      // ✅ خزّن التوكن والـ Player ID مع الجلسة مرة واحدة
-      await TokenModel.create(
-        user.id,
-        token,
-        expiresAt,
-        data.oneSignalPlayerId
+    const token = await this.generateToken(user, expiresInSeconds);
+    await TokenModel.create(user.id, token, expiresAt, data.oneSignalPlayerId);
+
+    return {
+      user: { ...enhancedUser, studyYear: activeAcademicYear?.year },
+      token,
+      isProfileComplete,
+      requiresProfileCompletion: !isProfileComplete,
+      activeAcademicYear,
+    };
+  }
+
+  // Logout — throws if the token row can't be found (already expired / fake).
+  static async logout(token: string): Promise<void> {
+    const deleted = await TokenModel.deleteByToken(token);
+    if (!deleted) {
+      throw new ApiError(
+        401,
+        'التوكن غير موجود أو منتهي الصلاحية',
+        ErrorCodes.TOKEN_INVALID
       );
-
-      return {
-        success: true,
-        message: 'تم تسجيل الدخول بنجاح',
-        data: {
-          user: {
-            ...enhancedUser,
-            studyYear: activeAcademicYear?.year,
-          },
-          token,
-          isProfileComplete,
-          requiresProfileCompletion: !isProfileComplete,
-          activeAcademicYear,
-        },
-      };
-    } catch (error) {
-      console.error('Error during login:', error);
-      return {
-        success: false,
-        message: 'فشل في المصادقة',
-        errors: ['حدث خطأ في الخادم'],
-      };
     }
   }
 
-  // Logout user
-  static async logout(token: string): Promise<ApiResponse> {
-    try {
-      const deleted = await TokenModel.deleteByToken(token);
+  /**
+   * Verify email for teacher or student. Throws `ApiError` with a stable
+   * machine-readable code on every failure:
+   *   - `LOCKED`        → 429 (too many wrong attempts)
+   *   - `CODE_EXPIRED`  → 400
+   *   - `INVALID_CODE`  → 400 (generic; covers not-found / no-code / wrong)
+   *
+   * The generic INVALID_CODE response prevents account enumeration.
+   */
+  static async verifyEmail(email: string, code: string): Promise<void> {
+    const result = await UserModel.verifyEmail(email, code);
 
-      if (!deleted) {
-        return {
-          success: false,
-          message: 'التوكن غير صحيح',
-          errors: ['التوكن غير موجود أو منتهي الصلاحية'],
-        };
-      }
-
-      return {
-        success: true,
-        message: 'تم تسجيل الخروج بنجاح',
-      };
-    } catch (error) {
-      console.error('Error during logout:', error);
-      return {
-        success: false,
-        message: 'فشل في المصادقة',
-        errors: ['حدث خطأ في الخادم'],
-      };
-    }
-  }
-
-  // Verify email for teacher or student
-  static async verifyEmail(email: string, code: string): Promise<ApiResponse> {
-    try {
-      const verified = await UserModel.verifyEmail(email, code);
-
-      if (!verified) {
-        return {
-          success: false,
-          message: 'فشل في التحقق من البريد الإلكتروني',
-          errors: ['انتهت صلاحية الرمز'],
-        };
-      }
-
-      // If teacher, ensure QR exists now that account is active
-      try {
-        const u = await UserModel.findByEmail(email);
-        if (u && u.userType === UserType.TEACHER) {
-          await QrService.ensureTeacherQr(u.id);
-        }
-      } catch (e) {
-        console.error('Auto-ensure teacher QR on verifyEmail failed:', e);
-      }
-
-      return {
-        success: true,
-        message: 'تم التحقق من البريد الإلكتروني بنجاح',
-      };
-    } catch (error) {
-      console.error('Error verifying email:', error);
-      return {
-        success: false,
-        message: 'فشل في التحقق من البريد الإلكتروني',
-        errors: ['حدث خطأ في الخادم'],
-      };
-    }
-  }
-
-  // Resend verification code for teacher or student
-  static async resendVerificationCode(email: string): Promise<ApiResponse> {
-    try {
-      const resent = await UserModel.resendVerificationCode(email);
-
-      if (!resent) {
-        return {
-          success: false,
-          message: 'فشل في التحقق من البريد الإلكتروني',
-          errors: ['البريد الإلكتروني غير محقق'],
-        };
-      }
-
-      // Get updated user to get new verification code
-      const updatedUser = await UserModel.findByEmail(email);
-      if (updatedUser) {
-        const verificationCode = await UserModel.getVerificationCode(email);
-        await sendVerificationEmail(
-          email,
-          verificationCode || '',
-          updatedUser.name
+    if (!result.ok) {
+      if (result.reason === 'locked') {
+        throw new ApiError(
+          429,
+          'تم تجاوز عدد المحاولات المسموح. يرجى طلب رمز جديد',
+          ErrorCodes.CODE_LOCKED
         );
       }
-
-      return {
-        success: true,
-        message: 'تم إرسال رمز التحقق بنجاح',
-      };
-    } catch (error) {
-      console.error('Error resending verification code:', error);
-      return {
-        success: false,
-        message: 'فشل في التحقق من البريد الإلكتروني',
-        errors: ['حدث خطأ في الخادم'],
-      };
-    }
-  }
-
-  // Request password reset
-  static async requestPasswordReset(email: string): Promise<ApiResponse> {
-    try {
-      const resetCode = await UserModel.setPasswordResetCode(email);
-
-      if (!resetCode) {
-        return {
-          success: false,
-          message: 'المستخدم غير موجود',
-          errors: ['المستخدم غير موجود'],
-        };
-      }
-
-      const user = await UserModel.findByEmail(email);
-      if (user) {
-        const emailSent = await sendPasswordResetEmail(
-          email,
-          resetCode,
-          user.name
+      if (result.reason === 'expired') {
+        throw new ApiError(
+          400,
+          'انتهت صلاحية الرمز. يرجى طلب رمز جديد',
+          ErrorCodes.CODE_EXPIRED
         );
-
-        if (!emailSent) {
-          return {
-            success: false,
-            message: 'فشل في إرسال البريد الإلكتروني',
-            errors: ['فشل في إرسال البريد الإلكتروني'],
-          };
-        }
       }
+      throw new ApiError(400, 'رمز التحقق غير صحيح', ErrorCodes.INVALID_CODE);
+    }
 
-      return {
-        success: true,
-        message: 'تم إرسال رمز إعادة تعيين كلمة المرور بنجاح',
-      };
-    } catch (error) {
-      console.error('Error requesting password reset:', error);
-      return {
-        success: false,
-        message: 'فشل في إعادة تعيين كلمة المرور',
-        errors: ['حدث خطأ في الخادم'],
-      };
+    // Best-effort: ensure teacher QR exists now that the account is active.
+    try {
+      const u = await UserModel.findByEmail(email);
+      if (u && u.userType === UserType.TEACHER) {
+        await QrService.ensureTeacherQr(u.id);
+      }
+    } catch (err) {
+      logger.warn({ err }, 'auto-ensure teacher QR on verifyEmail failed');
     }
   }
 
-  // Reset password
+  /**
+   * Issue a fresh verification OTP and email it. The model returns the
+   * plaintext code so we can send it; the database keeps only the hash.
+   */
+  static async resendVerificationCode(email: string): Promise<void> {
+    const plaintextCode = await UserModel.resendVerificationCode(email);
+    if (!plaintextCode) {
+      throw new ApiError(
+        400,
+        'البريد الإلكتروني غير محقق',
+        ErrorCodes.EMAIL_NOT_VERIFIED
+      );
+    }
+    const updatedUser = await UserModel.findByEmail(email);
+    if (updatedUser) {
+      await sendVerificationEmail(email, plaintextCode, updatedUser.name);
+    }
+  }
+
+  static async requestPasswordReset(email: string): Promise<void> {
+    const resetCode = await UserModel.setPasswordResetCode(email);
+    if (!resetCode) {
+      throw new ApiError(404, 'المستخدم غير موجود', ErrorCodes.NOT_FOUND);
+    }
+    const user = await UserModel.findByEmail(email);
+    if (user) {
+      const emailSent = await sendPasswordResetEmail(email, resetCode, user.name);
+      if (!emailSent) {
+        throw new ApiError(
+          502,
+          'فشل في إرسال البريد الإلكتروني',
+          ErrorCodes.EMAIL_SEND_FAILED
+        );
+      }
+    }
+  }
+
+  /**
+   * Reset password using the OTP delivered by requestPasswordReset. Same
+   * discriminated handling as verifyEmail (LOCKED / CODE_EXPIRED / INVALID_CODE).
+   */
   static async resetPassword(
     email: string,
     code: string,
     newPassword: string
-  ): Promise<ApiResponse> {
-    try {
-      const reset = await UserModel.resetPassword(email, code, newPassword);
-
-      if (!reset) {
-        return {
-          success: false,
-          message: 'رمز إعادة التعيين غير صحيح أو منتهي الصلاحية',
-          errors: ['رمز إعادة التعيين غير صحيح أو منتهي الصلاحية'],
-        };
+  ): Promise<void> {
+    const result = await UserModel.resetPassword(email, code, newPassword);
+    if (!result.ok) {
+      if (result.reason === 'locked') {
+        throw new ApiError(
+          429,
+          'تم تجاوز عدد المحاولات المسموح. يرجى طلب رمز جديد',
+          ErrorCodes.CODE_LOCKED
+        );
       }
-
-      return {
-        success: true,
-        message: 'تم إعادة تعيين كلمة المرور بنجاح',
-      };
-    } catch (error) {
-      console.error('Error resetting password:', error);
-      return {
-        success: false,
-        message: 'فشل في إعادة تعيين كلمة المرور',
-        errors: ['حدث خطأ في الخادم'],
-      };
+      if (result.reason === 'expired') {
+        throw new ApiError(
+          400,
+          'انتهت صلاحية الرمز. يرجى طلب رمز جديد',
+          ErrorCodes.CODE_EXPIRED
+        );
+      }
+      throw new ApiError(
+        400,
+        'رمز إعادة التعيين غير صحيح',
+        ErrorCodes.INVALID_CODE
+      );
     }
+  }
+
+  /**
+   * Shared session-build path for OAuth flows (Google + Apple). Handles the
+   * active-academic-year lookup, enhanced user payload, token TTL policy
+   * (students get a multi-year token; everyone else gets 7 days), JWT
+   * signing, and persistence of the token row with the OneSignal player id.
+   */
+  private static async buildOAuthSession(
+    user: User,
+    oneSignalPlayerId: string | undefined,
+    isNewUser: boolean
+  ): Promise<OAuthResult> {
+    const activeAcademicYear =
+      (await AcademicYearService.getActive())?.academicYear ?? null;
+    const enhancedUser = await this.getEnhancedUserData(user);
+    const isProfileComplete = isNewUser
+      ? false
+      : this.isProfileComplete(user);
+
+    const jwtSecret = process.env['JWT_SECRET'] || 'fallback-secret';
+    if (!process.env['JWT_SECRET']) {
+      logger.warn('Missing JWT_SECRET in environment; using fallback');
+    }
+
+    let expiresAt: Date;
+    let signOptions: jwt.SignOptions;
+    if (user.userType === UserType.STUDENT) {
+      const days = parseInt(
+        process.env['STUDENT_TOKEN_TTL_DAYS'] || '36500',
+        10
+      );
+      expiresAt = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+      signOptions = { expiresIn: `${days}d` } as jwt.SignOptions;
+    } else {
+      expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+      signOptions = { expiresIn: '7d' } as jwt.SignOptions;
+    }
+
+    const token = jwt.sign(
+      {
+        userId: user.id,
+        userType: user.userType,
+        email: user.email,
+      },
+      jwtSecret,
+      signOptions
+    );
+
+    await TokenModel.create(user.id, token, expiresAt, oneSignalPlayerId);
+
+    return {
+      user: { ...enhancedUser, studyYear: activeAcademicYear?.year },
+      token,
+      isNewUser,
+      isProfileComplete,
+      requiresProfileCompletion: !isProfileComplete,
+      activeAcademicYear,
+    };
   }
 
   // Generate JWT token (without saving to DB)
@@ -988,531 +742,337 @@ export class AuthService {
     return false;
   }
 
-  // Google OAuth authentication
+  /**
+   * Google OAuth: log in or create a user from verified Google profile data.
+   * Mirrors appleAuth but also supports a `referralCode` for new teachers.
+   */
   static async googleAuth(
     googleData: any,
     userType: 'teacher' | 'student'
-  ): Promise<ApiResponse> {
-    try {
-      const { email, name, sub } = googleData;
+  ): Promise<OAuthResult> {
+    const { email, name, sub } = googleData;
+    const existingUser = await UserModel.findByEmail(email);
 
-      // Check if user already exists
-      const existingUser = await UserModel.findByEmail(email);
-
-      if (existingUser) {
-        if (existingUser.authProvider !== 'google') {
-          return {
-            success: false,
-            message:
-              'قمت بانشاء الحساب باستخدام البريد وكلمة المرور الرجاء تسجيل الدخول بنفس الطريقة',
-            errors: [
-              'قمت بانشاء الحساب باستخدام البريد وكلمة المرور الرجاء تسجيل الدخول بنفس الطريقة',
-            ],
-          };
-        }
-
-        // User exists, check if user type matches
-        if (
-          existingUser.userType !==
-          (userType === 'teacher' ? UserType.TEACHER : UserType.STUDENT)
-        ) {
-          return {
-            success: false,
-            message: 'نوع المستخدم لا يتطابق مع الحساب الموجود',
-            errors: ['User type mismatch with existing account'],
-          };
-        }
-
-        // Check if profile is complete
-        const isProfileComplete = this.isProfileComplete(existingUser);
-
-        // Get active academic year
-        const academicYearResponse = await AcademicYearService.getActive();
-        const activeAcademicYear = academicYearResponse.success
-          ? academicYearResponse.data?.academicYear
-          : null;
-
-        // Get enhanced user data
-        const enhancedUser = await this.getEnhancedUserData(existingUser);
-
-        // Ensure teacher QR exists (once)
-        try {
-          if (existingUser.userType === UserType.TEACHER) {
-            await QrService.ensureTeacherQr(existingUser.id);
-          }
-        } catch (e) {
-          console.error(
-            'Auto-ensure teacher QR (google existing user) failed:',
-            e
-          );
-        }
-
-        // Generate JWT token for existing user with policy: students very long TTL
-        const jwtSecretG = process.env['JWT_SECRET'] || 'fallback-secret';
-        let gExistingExpiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-        let gExistingToken: string;
-        if (existingUser.userType === UserType.STUDENT) {
-          const days = parseInt(
-            process.env['STUDENT_TOKEN_TTL_DAYS'] || '36500',
-            10
-          );
-          gExistingExpiresAt = new Date(
-            Date.now() + days * 24 * 60 * 60 * 1000
-          );
-          gExistingToken = jwt.sign(
-            {
-              userId: existingUser.id,
-              userType: existingUser.userType,
-              email: existingUser.email,
-            },
-            jwtSecretG,
-            { expiresIn: `${days}d` }
-          );
-        } else {
-          gExistingToken = jwt.sign(
-            {
-              userId: existingUser.id,
-              userType: existingUser.userType,
-              email: existingUser.email,
-            },
-            jwtSecretG,
-            { expiresIn: '7d' }
-          );
-        }
-
-        // Store token in database
-        await TokenModel.create(
-          existingUser.id,
-          gExistingToken,
-          gExistingExpiresAt,
-          googleData.oneSignalPlayerId
+    if (existingUser) {
+      if (existingUser.authProvider !== 'google') {
+        throw new ApiError(
+          409,
+          'قمت بانشاء الحساب باستخدام البريد وكلمة المرور الرجاء تسجيل الدخول بنفس الطريقة',
+          ErrorCodes.PROVIDER_MISMATCH
         );
-
-        return {
-          success: true,
-          message: 'تم تسجيل الدخول بنجاح',
-          data: {
-            user: {
-              ...enhancedUser,
-              studyYear: activeAcademicYear?.year,
-            },
-            token: gExistingToken,
-            isNewUser: false,
-            isProfileComplete,
-            requiresProfileCompletion: !isProfileComplete,
-            activeAcademicYear: activeAcademicYear,
-          },
-        };
       }
-
-      // User doesn't exist, create new user
-      const tempPassword = `google_${sub}_${Date.now()}`; // Temporary password
-      const hashedPassword = await bcrypt.hash(tempPassword, 12);
-
-      let newUser: User;
-
-      if (userType === 'teacher') {
-        newUser = await UserModel.create({
-          name,
-          email,
-          password: hashedPassword,
-          userType: UserType.TEACHER,
-          status: UserStatus.ACTIVE,
-
-          // ✅ بيانات مزود الخدمة
-          authProvider: 'google',
-          oauthProviderId: sub,
-
-          // باقي الحقول
-          phone: '',
-          address: '',
-          bio: '',
-          experienceYears: 0,
-          deviceInfo: 'Google OAuth',
-        });
-
-        // 👉 ربط إحالة المعلم إن وُجد referralCode وتم إرساله من الفرونت
-        try {
-          const referralCode = (googleData as any).referralCode as
-            | string
-            | undefined;
-
-          if (referralCode && typeof referralCode === 'string') {
-            const referrer = await UserModel.findById(referralCode);
-
-            if (
-              referrer &&
-              referrer.userType === UserType.TEACHER &&
-              referrer.id !== newUser.id
-            ) {
-              await TeacherReferralModel.createPending({
-                referrerTeacherId: referrer.id,
-                referredTeacherId: newUser.id,
-                referralCodeUsed: referralCode,
-              });
-            }
-          }
-        } catch (refErr) {
-          console.error(
-            'Error creating teacher referral for Google auth:',
-            refErr
-          );
-          // لا نفشل إنشاء المستخدم بسبب مشكلة في الإحالة
-        }
-
-        // ✅ إنشاء اشتراك مجاني تلقائيًا للمعلم الجديد عبر Google
-        try {
-          const freePackage = await SubscriptionPackageModel.getFreePackage();
-          if (freePackage) {
-            const startDate = new Date();
-            const endDate = new Date(startDate);
-            endDate.setDate(
-              endDate.getDate() + Number(freePackage.durationDays || 30)
-            );
-
-            await TeacherSubscriptionModel.create({
-              teacherId: newUser.id,
-              subscriptionPackageId: freePackage.id,
-              startDate,
-              endDate,
-            });
-          } else {
-            console.warn(
-              'No free subscription package found (Google). Skipping auto-subscription.'
-            );
-          }
-        } catch (subErr) {
-          console.error(
-            'Failed to auto-create free subscription for Google teacher:',
-            subErr
-          );
-        }
-
-        // ✅ توليد QR للمعلم الجديد عبر Google
-        try {
-          await QrService.ensureTeacherQr(newUser.id);
-        } catch (e) {
-          console.error(
-            'Auto-ensure teacher QR (google new teacher) failed:',
-            e
-          );
-        }
-      } else {
-        newUser = await UserModel.create({
-          name,
-          email,
-          password: hashedPassword,
-          userType: UserType.STUDENT,
-          status: UserStatus.ACTIVE,
-
-          // ✅ بيانات مزود الخدمة
-          authProvider: 'google',
-          oauthProviderId: sub,
-
-          studentPhone: '',
-          parentPhone: '',
-          schoolName: '',
-        });
-      }
-
-      // Get active academic year
-      const academicYearResponse = await AcademicYearService.getActive();
-      const activeAcademicYear = academicYearResponse.success
-        ? academicYearResponse.data?.academicYear
-        : null;
-
-      // Get enhanced user data
-      const enhancedUser = await this.getEnhancedUserData(newUser);
-
-      // Generate JWT token for new user with policy: students very long TTL
-      const jwtSecretG2 = process.env['JWT_SECRET'] || 'fallback-secret';
-      let gNewExpiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-      let gNewToken: string;
-      if (newUser.userType === UserType.STUDENT) {
-        const days = parseInt(
-          process.env['STUDENT_TOKEN_TTL_DAYS'] || '36500',
-          10
-        );
-        gNewExpiresAt = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
-        gNewToken = jwt.sign(
-          {
-            userId: newUser.id,
-            userType: newUser.userType,
-            email: newUser.email,
-          },
-          jwtSecretG2,
-          { expiresIn: `${days}d` }
-        );
-      } else {
-        gNewToken = jwt.sign(
-          {
-            userId: newUser.id,
-            userType: newUser.userType,
-            email: newUser.email,
-          },
-          jwtSecretG2,
-          { expiresIn: '7d' }
+      const expected =
+        userType === 'teacher' ? UserType.TEACHER : UserType.STUDENT;
+      if (existingUser.userType !== expected) {
+        throw new ApiError(
+          409,
+          'نوع المستخدم لا يتطابق مع الحساب الموجود',
+          ErrorCodes.USER_TYPE_MISMATCH
         );
       }
 
-      // Store token in database
-      await TokenModel.create(
-        newUser.id,
-        gNewToken,
-        gNewExpiresAt,
-        googleData.oneSignalPlayerId
+      try {
+        if (existingUser.userType === UserType.TEACHER) {
+          await QrService.ensureTeacherQr(existingUser.id);
+        }
+      } catch (err) {
+        logger.warn({ err }, 'auto-ensure teacher QR on google login failed');
+      }
+
+      return this.buildOAuthSession(
+        existingUser,
+        googleData.oneSignalPlayerId,
+        false
       );
-
-      return {
-        success: true,
-        message: 'تم إنشاء الحساب وتسجيل الدخول بنجاح',
-        data: {
-          user: {
-            ...enhancedUser,
-            studyYear: activeAcademicYear?.year,
-          },
-          token: gNewToken,
-          isNewUser: true,
-          isProfileComplete: false,
-          requiresProfileCompletion: true,
-          activeAcademicYear: activeAcademicYear,
-        },
-      };
-    } catch (error) {
-      console.error('Error in googleAuth service:', error);
-      return {
-        success: false,
-        message: 'حدث خطأ في الخادم',
-        errors: ['حدث خطأ في الخادم'],
-      };
     }
+
+    // New user — provider id is the auth method; the password is throwaway.
+    const tempPassword = `google_${sub}_${Date.now()}`;
+    const hashedPassword = await bcrypt.hash(tempPassword, 12);
+
+    let newUser: User;
+    if (userType === 'teacher') {
+      const created = await UserModel.create({
+        name,
+        email,
+        password: hashedPassword,
+        userType: UserType.TEACHER,
+        status: UserStatus.ACTIVE,
+        authProvider: 'google',
+        oauthProviderId: sub,
+        phone: '',
+        address: '',
+        bio: '',
+        experienceYears: 0,
+        deviceInfo: 'Google OAuth',
+      });
+      newUser = created.user;
+
+      // Best-effort referral linking. Never fail the signup over this.
+      try {
+        const referralCode = (googleData as any).referralCode as
+          | string
+          | undefined;
+        if (referralCode && typeof referralCode === 'string') {
+          const referrer = await UserModel.findById(referralCode);
+          if (
+            referrer &&
+            referrer.userType === UserType.TEACHER &&
+            referrer.id !== newUser.id
+          ) {
+            await TeacherReferralModel.createPending({
+              referrerTeacherId: referrer.id,
+              referredTeacherId: newUser.id,
+              referralCodeUsed: referralCode,
+            });
+          }
+        }
+      } catch (err) {
+        logger.warn({ err }, 'failed to create teacher referral for google auth');
+      }
+
+      try {
+        const freePackage = await SubscriptionPackageModel.getFreePackage();
+        if (freePackage) {
+          const startDate = new Date();
+          const endDate = new Date(startDate);
+          endDate.setDate(
+            endDate.getDate() + Number(freePackage.durationDays || 30)
+          );
+          await TeacherSubscriptionModel.create({
+            teacherId: newUser.id,
+            subscriptionPackageId: freePackage.id,
+            startDate,
+            endDate,
+          });
+        }
+      } catch (err) {
+        logger.warn({ err }, 'failed to auto-create free subscription for google teacher');
+      }
+
+      try {
+        await QrService.ensureTeacherQr(newUser.id);
+      } catch (err) {
+        logger.warn({ err }, 'auto-ensure teacher QR (google new teacher) failed');
+      }
+    } else {
+      const created = await UserModel.create({
+        name,
+        email,
+        password: hashedPassword,
+        userType: UserType.STUDENT,
+        status: UserStatus.ACTIVE,
+        authProvider: 'google',
+        oauthProviderId: sub,
+        studentPhone: '',
+        parentPhone: '',
+        schoolName: '',
+      });
+      newUser = created.user;
+    }
+
+    return this.buildOAuthSession(newUser, googleData.oneSignalPlayerId, true);
   }
 
-  // Complete profile for Google OAuth users
+  /**
+   * Complete an OAuth-bootstrapped user's profile (role-aware). Throws if
+   * the user is missing or the role is unsupported; otherwise returns the
+   * enhanced user shape plus profile-completeness flags.
+   */
   static async completeProfile(
     userId: string,
     userType: string,
     profileData: any
-  ): Promise<ApiResponse> {
-    try {
-      const user = await UserModel.findById(userId);
-      if (!user) {
-        return {
-          success: false,
-          message: 'المستخدم غير موجود',
-          errors: ['User not found'],
-        };
-      }
+  ): Promise<{
+    user: any;
+    isProfileComplete: boolean;
+    requiresProfileCompletion: boolean;
+    locationDetails: unknown;
+  }> {
+    const user = await UserModel.findById(userId);
+    if (!user) {
+      throw new ApiError(404, 'المستخدم غير موجود', ErrorCodes.NOT_FOUND);
+    }
+    if (userType !== 'teacher' && userType !== 'student') {
+      throw new ApiError(
+        400,
+        'نوع المستخدم غير صحيح',
+        ErrorCodes.USER_TYPE_MISMATCH
+      );
+    }
 
-      // Extract location data
+    const {
+      latitude,
+      longitude,
+      address,
+      formattedAddress,
+      country,
+      city,
+      state,
+      zipcode,
+      streetName,
+      suburb,
+      locationConfidence,
+    } = profileData;
+
+    let locationDetails: any = null;
+    if (latitude && longitude) {
+      try {
+        const geocodingService = new GeocodingService();
+        locationDetails = await geocodingService.getLocationDetails(
+          latitude,
+          longitude
+        );
+      } catch (err) {
+        logger.warn({ err }, 'geocoding failed during completeProfile');
+      }
+    }
+
+    const updateData: any = {
+      latitude: Number(latitude),
+      longitude: Number(longitude),
+    };
+
+    if (locationDetails) {
+      updateData.formatted_address = locationDetails.formattedAddress;
+      updateData.country = locationDetails.country;
+      updateData.city = locationDetails.city;
+      updateData.state = locationDetails.state;
+      updateData.zipcode = locationDetails.zipcode;
+      updateData.street_name = locationDetails.streetName;
+      updateData.suburb = locationDetails.suburb;
+      updateData.location_confidence = locationDetails.confidence;
+      updateData.address = address || locationDetails.formattedAddress;
+    } else {
+      if (formattedAddress) updateData.formatted_address = formattedAddress;
+      if (country) updateData.country = country;
+      if (city) updateData.city = city;
+      if (state) updateData.state = state;
+      if (zipcode) updateData.zipcode = zipcode;
+      if (streetName) updateData.street_name = streetName;
+      if (suburb) updateData.suburb = suburb;
+      if (locationConfidence !== undefined)
+        updateData.location_confidence = Number(locationConfidence);
+      if (address) updateData.address = address;
+    }
+
+    // Best-effort: persist a new avatar if one was supplied as base64.
+    try {
+      const profileImageBase64 = profileData?.profileImageBase64 as
+        | string
+        | undefined;
+      if (
+        profileImageBase64 &&
+        profileImageBase64.startsWith('data:image/')
+      ) {
+        try {
+          const existing = await UserModel.findById(userId);
+          const oldPath =
+            (existing as any)?.profileImagePath ||
+            (existing as any)?.profile_image_path;
+          if (oldPath) await ImageService.deleteUserAvatar(oldPath);
+        } catch (err) {
+          logger.warn({ err }, 'could not delete old user avatar');
+        }
+        const savedPath = await ImageService.saveUserAvatar(
+          profileImageBase64,
+          `avatar_${user.id}`
+        );
+        updateData.profile_image_path = savedPath;
+      }
+    } catch (err) {
+      logger.warn({ err }, 'failed to process profile avatar (completeProfile)');
+    }
+
+    if (userType === 'teacher') {
       const {
-        latitude,
-        longitude,
-        address,
-        formattedAddress,
-        country,
-        city,
-        state,
-        zipcode,
-        streetName,
-        suburb,
-        locationConfidence,
+        name,
+        phone,
+        address: tAddress,
+        bio,
+        experienceYears,
+        gradeIds,
+        studyYear,
+        gender,
+        birthDate,
       } = profileData;
 
-      // Get location details from coordinates using GeocodingService
-      let locationDetails = null;
-      if (latitude && longitude) {
+      if (name) updateData.name = name;
+      if (phone) updateData.phone = phone;
+      if (tAddress) updateData.address = tAddress;
+      if (bio) updateData.bio = bio;
+      if (experienceYears !== undefined && experienceYears !== null) {
+        const exp = Number(experienceYears);
+        if (!Number.isNaN(exp)) updateData.experience_years = exp;
+      }
+      if (gender) updateData.gender = gender;
+      if (birthDate) updateData.birth_date = birthDate;
+
+      const updatedUser = await UserModel.update(userId, updateData);
+
+      if (Array.isArray(gradeIds) && gradeIds.length > 0 && studyYear) {
         try {
-          const geocodingService = new GeocodingService();
-          locationDetails = await geocodingService.getLocationDetails(
-            latitude,
-            longitude
-          );
-        } catch (error) {
-          console.error('Error getting location details:', error);
+          await TeacherGradeModel.createMany(userId, gradeIds, studyYear);
+        } catch (err) {
+          logger.warn({ err }, 'failed to create teacher grade relationships (completeProfile)');
         }
       }
 
-      // Prepare user update data with location information
-      const updateData: any = {
-        latitude: Number(latitude),
-        longitude: Number(longitude),
-      };
-
-      if (locationDetails) {
-        updateData.formatted_address = locationDetails.formattedAddress;
-        updateData.country = locationDetails.country;
-        updateData.city = locationDetails.city;
-        updateData.state = locationDetails.state;
-        updateData.zipcode = locationDetails.zipcode;
-        updateData.street_name = locationDetails.streetName;
-        updateData.suburb = locationDetails.suburb;
-        updateData.location_confidence = locationDetails.confidence;
-        updateData.address = address || locationDetails.formattedAddress;
-      } else {
-        if (formattedAddress) updateData.formatted_address = formattedAddress;
-        if (country) updateData.country = country;
-        if (city) updateData.city = city;
-        if (state) updateData.state = state;
-        if (zipcode) updateData.zipcode = zipcode;
-        if (streetName) updateData.street_name = streetName;
-        if (suburb) updateData.suburb = suburb;
-        if (locationConfidence !== undefined)
-          updateData.location_confidence = Number(locationConfidence);
-        if (address) updateData.address = address;
-      }
-
-      // Handle profile avatar if provided (base64): delete old file then save new
-      try {
-        const profileImageBase64 = profileData?.profileImageBase64 as
-          | string
-          | undefined;
-        if (
-          profileImageBase64 &&
-          profileImageBase64.startsWith('data:image/')
-        ) {
-          // delete old avatar if exists
-          try {
-            const existing = await UserModel.findById(userId);
-            const oldPath =
-              (existing as any)?.profileImagePath ||
-              (existing as any)?.profile_image_path;
-            if (oldPath) await ImageService.deleteUserAvatar(oldPath);
-          } catch (delErr) {
-            console.warn('Could not delete old user avatar:', delErr);
-          }
-          const savedPath = await ImageService.saveUserAvatar(
-            profileImageBase64,
-            `avatar_${user.id}`
-          );
-          updateData.profile_image_path = savedPath;
-        }
-      } catch (e) {
-        console.error('Failed to process profile avatar (completeProfile):', e);
-      }
-
-      // 👇 هنا الجزء الخاص بالمعلم
-      if (userType === 'teacher') {
-        const {
-          name,
-          phone,
-          address,
-          bio,
-          experienceYears,
-          gradeIds,
-          studyYear,
-          gender,
-          birthDate,
-        } = profileData;
-
-        if (name) updateData.name = name;
-        if (phone) updateData.phone = phone;
-        if (address) updateData.address = address;
-        if (bio) updateData.bio = bio;
-        if (experienceYears !== undefined && experienceYears !== null) {
-          const exp = Number(experienceYears);
-          if (!Number.isNaN(exp)) updateData.experience_years = exp;
-        }
-        if (gender) updateData.gender = gender;
-        if (birthDate) updateData.birth_date = birthDate;
-
-        // Update teacher profile
-        const updatedUser = await UserModel.update(userId, updateData);
-
-        // Create/replace teacher grade relationships if provided
-        if (Array.isArray(gradeIds) && gradeIds.length > 0 && studyYear) {
-          try {
-            await TeacherGradeModel.createMany(userId, gradeIds, studyYear);
-          } catch (error) {
-            console.error(
-              'Error creating teacher grade relationships (completeProfile):',
-              error
-            );
-          }
-        }
-
-        const isProfileComplete = updatedUser
-          ? this.isProfileComplete(updatedUser)
-          : false;
-        const enhancedUser = updatedUser
-          ? await this.getEnhancedUserData(updatedUser)
-          : null;
-
-        return {
-          success: true,
-          message: 'تم تحديث الملف الشخصي بنجاح',
-          data: {
-            user: enhancedUser,
-            isProfileComplete,
-            requiresProfileCompletion: !isProfileComplete,
-            locationDetails: locationDetails,
-          },
-        };
-      }
-
-      // 👇 هنا الجزء الخاص بالطالب فقط
-      if (userType === 'student') {
-        const {
-          name,
-          gradeId,
-          studyYear,
-          studentPhone,
-          parentPhone,
-          schoolName,
-          gender,
-          birthDate,
-        } = profileData;
-
-        // Add student-specific data
-        if (name) updateData.name = name;
-        if (studentPhone) updateData.student_phone = studentPhone;
-        if (parentPhone) updateData.parent_phone = parentPhone;
-        if (schoolName) updateData.school_name = schoolName;
-        if (gender) updateData.gender = gender;
-        if (birthDate) updateData.birth_date = birthDate;
-
-        // Update student profile
-        const updatedUser = await UserModel.update(userId, updateData);
-
-        // UPSERT student grade
-        await StudentGradeModel.create({
-          studentId: userId,
-          gradeId,
-          studyYear,
-        });
-
-        const isProfileComplete = updatedUser
-          ? this.isProfileComplete(updatedUser)
-          : false;
-        const enhancedUser = updatedUser
-          ? await this.getEnhancedUserData(updatedUser)
-          : null;
-
-        return {
-          success: true,
-          message: 'تم تحديث الملف الشخصي بنجاح',
-          data: {
-            user: enhancedUser,
-            isProfileComplete,
-            requiresProfileCompletion: !isProfileComplete,
-            locationDetails: locationDetails,
-          },
-        };
-      }
+      const isProfileComplete = updatedUser
+        ? this.isProfileComplete(updatedUser)
+        : false;
+      const enhancedUser = updatedUser
+        ? await this.getEnhancedUserData(updatedUser)
+        : null;
 
       return {
-        success: false,
-        message: 'نوع المستخدم غير صحيح',
-        errors: ['Invalid user type'],
-      };
-    } catch (error) {
-      console.error('Error in completeProfile service:', error);
-      return {
-        success: false,
-        message: 'حدث خطأ في الخادم',
-        errors: ['حدث خطأ في الخادم'],
+        user: enhancedUser,
+        isProfileComplete,
+        requiresProfileCompletion: !isProfileComplete,
+        locationDetails,
       };
     }
+
+    // Student branch.
+    const {
+      name,
+      gradeId,
+      studyYear,
+      studentPhone,
+      parentPhone,
+      schoolName,
+      gender,
+      birthDate,
+    } = profileData;
+
+    if (name) updateData.name = name;
+    if (studentPhone) updateData.student_phone = studentPhone;
+    if (parentPhone) updateData.parent_phone = parentPhone;
+    if (schoolName) updateData.school_name = schoolName;
+    if (gender) updateData.gender = gender;
+    if (birthDate) updateData.birth_date = birthDate;
+
+    const updatedUser = await UserModel.update(userId, updateData);
+
+    await StudentGradeModel.create({
+      studentId: userId,
+      gradeId,
+      studyYear,
+    });
+
+    const isProfileComplete = updatedUser
+      ? this.isProfileComplete(updatedUser)
+      : false;
+    const enhancedUser = updatedUser
+      ? await this.getEnhancedUserData(updatedUser)
+      : null;
+
+    return {
+      user: enhancedUser,
+      isProfileComplete,
+      requiresProfileCompletion: !isProfileComplete,
+      locationDetails,
+    };
   }
 
   // Sanitize user data (remove sensitive information)
@@ -1600,10 +1160,8 @@ export class AuthService {
     if (user.userType === 'student') {
       try {
         // Get active academic year
-        const academicYearResponse = await AcademicYearService.getActive();
-        const activeAcademicYear = academicYearResponse.success
-          ? academicYearResponse.data?.academicYear
-          : null;
+        const activeAcademicYear =
+          (await AcademicYearService.getActive())?.academicYear ?? null;
 
         // Fetch student grades
         const studentGrades = await StudentGradeModel.findByStudentId(user.id);
@@ -1683,198 +1241,177 @@ export class AuthService {
     };
   }
 
+  /**
+   * Update a role-restricted subset of a user's profile. Accepts both
+   * camelCase and snake_case keys from the client and normalises to the
+   * snake_case shape expected by the model. Geocoding fills any missing
+   * address fields when lat/lng are provided alone.
+   */
   static async updateProfile(
     userId: string,
     userType: string,
     profileData: any
-  ): Promise<any> {
-    try {
-      const user = await UserModel.findById(userId);
-      if (!user) {
-        return {
-          success: false,
-          message: 'المستخدم غير موجود',
-          errors: ['المستخدم غير موجود'],
-        };
-      }
-
-      // ✅ تحديد الحقول المسموح بها حسب الدور
-      let allowedFields: string[];
-      if (userType === 'teacher') {
-        allowedFields = [
-          'name',
-          'phone',
-          'bio',
-          'experience_years',
-          'latitude',
-          'longitude',
-          'address',
-          'formatted_address',
-          'country',
-          'city',
-          'state',
-          'zipcode',
-          'street_name',
-          'suburb',
-          'location_confidence',
-        ];
-      } else if (userType === 'student') {
-        allowedFields = [
-          'name',
-          'student_phone',
-          'parent_phone',
-          'school_name',
-          'gender',
-          'birth_date',
-          'address',
-          'latitude',
-          'longitude',
-          'formatted_address',
-          'country',
-          'city',
-          'state',
-          'zipcode',
-          'street_name',
-          'suburb',
-          'location_confidence',
-        ];
-      } else {
-        return {
-          success: false,
-          message: 'نوع المستخدم غير مدعوم',
-          errors: ['نوع المستخدم غير مدعوم'],
-        };
-      }
-
-      // ✅ فلترة البيانات حسب الدور
-      const filteredData: Record<string, any> = {};
-      for (const [key, value] of Object.entries(profileData)) {
-        if (allowedFields.includes(key)) {
-          filteredData[key] = value;
-        }
-      }
-
-      // ✅ دعم الحقول بصيغة camelCase القادمة من العميل عبر تحويلها إلى snake_case المتوقعة من الـ Model
-      const camelToSnakeMap: Record<string, string> = {
-        formattedAddress: 'formatted_address',
-        streetName: 'street_name',
-        locationConfidence: 'location_confidence',
-        birthDate: 'birth_date',
-        parentPhone: 'parent_phone',
-        studentPhone: 'student_phone',
-        schoolName: 'school_name',
-      };
-      for (const [camel, snake] of Object.entries(camelToSnakeMap)) {
-        if (profileData[camel] !== undefined && allowedFields.includes(snake)) {
-          filteredData[snake] = profileData[camel];
-        }
-      }
-
-      // ✅ إذا تم إرسال lat/lng ولم تُرسل تفاصيل العنوان، نجري Geocoding لملء الحقول
-      const hasLat =
-        profileData.latitude !== undefined && profileData.latitude !== null;
-      const hasLng =
-        profileData.longitude !== undefined && profileData.longitude !== null;
-      const hasAnyAddressField =
-        profileData.formatted_address !== undefined ||
-        profileData.formattedAddress !== undefined ||
-        profileData.country !== undefined ||
-        profileData.city !== undefined ||
-        profileData.state !== undefined ||
-        profileData.zipcode !== undefined ||
-        profileData.street_name !== undefined ||
-        profileData.streetName !== undefined ||
-        profileData.suburb !== undefined ||
-        profileData.location_confidence !== undefined ||
-        profileData.locationConfidence !== undefined ||
-        profileData.address !== undefined;
-
-      if (hasLat && hasLng && !hasAnyAddressField) {
-        try {
-          const geocodingService = new GeocodingService();
-          const latNum = Number(profileData.latitude);
-          const lngNum = Number(profileData.longitude);
-          const details = await geocodingService.getLocationDetails(
-            latNum,
-            lngNum
-          );
-          if (details) {
-            filteredData['formatted_address'] = details.formattedAddress;
-            filteredData['country'] = details.country;
-            filteredData['city'] = details.city;
-            filteredData['state'] = details.state;
-            filteredData['zipcode'] = details.zipcode;
-            filteredData['street_name'] = details.streetName;
-            filteredData['suburb'] = details.suburb;
-            filteredData['location_confidence'] = details.confidence;
-            // العنوان النصي: إن وُجد في الطلب نفضّله، وإلا نضع formattedAddress
-            if (profileData.address !== undefined) {
-              filteredData['address'] = profileData.address;
-            } else if (details.formattedAddress) {
-              filteredData['address'] = details.formattedAddress;
-            }
-          }
-        } catch (geoErr) {
-          console.error('Geocoding on updateProfile failed:', geoErr);
-        }
-      }
-
-      // ✅ معالجة صورة الملف الشخصي (base64) إن وُجدت ضمن نفس الطلب
-      try {
-        const raw = profileData?.profileImageBase64 as string | undefined;
-        if (raw) {
-          // بعض العملاء يرسلون Base64 بدون بادئة data: → نطبّعها كصورة jpeg افتراضياً
-          const base64 = raw.startsWith('data:image/')
-            ? raw
-            : `data:image/jpeg;base64,${raw}`;
-
-          // احذف الصورة القديمة إن وُجدت
-          const oldPath =
-            (user as any)?.profileImagePath ||
-            (user as any)?.profile_image_path;
-          if (oldPath) {
-            try {
-              await ImageService.deleteUserAvatar(oldPath);
-            } catch (delErr) {
-              console.warn('delete avatar (updateProfile):', delErr);
-            }
-          }
-
-          // احفظ الصورة الجديدة ومرّر المسار لقاعدة البيانات
-          const savedPath = await ImageService.saveUserAvatar(
-            base64,
-            `avatar_${user.id}`
-          );
-          filteredData['profile_image_path'] = savedPath;
-        }
-      } catch (imgErr) {
-        console.error(
-          'Failed processing profile avatar (updateProfile):',
-          imgErr
-        );
-      }
-
-      const updatedUser = await UserModel.update(userId, filteredData);
-      if (!updatedUser) {
-        return {
-          success: false,
-          message: 'فشل في تحديث بيانات المستخدم',
-          errors: ['فشل في تحديث بيانات المستخدم'],
-        };
-      }
-
-      return {
-        success: true,
-        message: 'تم تحديث البيانات بنجاح',
-        data: { user: updatedUser },
-      };
-    } catch (error) {
-      console.error('Error in updateProfile service:', error);
-      return {
-        success: false,
-        message: 'حدث خطأ في الخادم',
-        errors: ['حدث خطأ في الخادم'],
-      };
+  ): Promise<{ user: any }> {
+    const user = await UserModel.findById(userId);
+    if (!user) {
+      throw new ApiError(404, 'المستخدم غير موجود', ErrorCodes.NOT_FOUND);
     }
+
+    let allowedFields: string[];
+    if (userType === 'teacher') {
+      allowedFields = [
+        'name',
+        'phone',
+        'bio',
+        'experience_years',
+        'latitude',
+        'longitude',
+        'address',
+        'formatted_address',
+        'country',
+        'city',
+        'state',
+        'zipcode',
+        'street_name',
+        'suburb',
+        'location_confidence',
+      ];
+    } else if (userType === 'student') {
+      allowedFields = [
+        'name',
+        'student_phone',
+        'parent_phone',
+        'school_name',
+        'gender',
+        'birth_date',
+        'address',
+        'latitude',
+        'longitude',
+        'formatted_address',
+        'country',
+        'city',
+        'state',
+        'zipcode',
+        'street_name',
+        'suburb',
+        'location_confidence',
+      ];
+    } else {
+      throw new ApiError(
+        400,
+        'نوع المستخدم غير مدعوم',
+        ErrorCodes.USER_TYPE_MISMATCH
+      );
+    }
+
+    const filteredData: Record<string, any> = {};
+    for (const [key, value] of Object.entries(profileData)) {
+      if (allowedFields.includes(key)) {
+        filteredData[key] = value;
+      }
+    }
+
+    const camelToSnakeMap: Record<string, string> = {
+      formattedAddress: 'formatted_address',
+      streetName: 'street_name',
+      locationConfidence: 'location_confidence',
+      birthDate: 'birth_date',
+      parentPhone: 'parent_phone',
+      studentPhone: 'student_phone',
+      schoolName: 'school_name',
+    };
+    for (const [camel, snake] of Object.entries(camelToSnakeMap)) {
+      if (profileData[camel] !== undefined && allowedFields.includes(snake)) {
+        filteredData[snake] = profileData[camel];
+      }
+    }
+
+    const hasLat =
+      profileData.latitude !== undefined && profileData.latitude !== null;
+    const hasLng =
+      profileData.longitude !== undefined && profileData.longitude !== null;
+    const hasAnyAddressField =
+      profileData.formatted_address !== undefined ||
+      profileData.formattedAddress !== undefined ||
+      profileData.country !== undefined ||
+      profileData.city !== undefined ||
+      profileData.state !== undefined ||
+      profileData.zipcode !== undefined ||
+      profileData.street_name !== undefined ||
+      profileData.streetName !== undefined ||
+      profileData.suburb !== undefined ||
+      profileData.location_confidence !== undefined ||
+      profileData.locationConfidence !== undefined ||
+      profileData.address !== undefined;
+
+    if (hasLat && hasLng && !hasAnyAddressField) {
+      try {
+        const geocodingService = new GeocodingService();
+        const latNum = Number(profileData.latitude);
+        const lngNum = Number(profileData.longitude);
+        const details = await geocodingService.getLocationDetails(
+          latNum,
+          lngNum
+        );
+        if (details) {
+          filteredData['formatted_address'] = details.formattedAddress;
+          filteredData['country'] = details.country;
+          filteredData['city'] = details.city;
+          filteredData['state'] = details.state;
+          filteredData['zipcode'] = details.zipcode;
+          filteredData['street_name'] = details.streetName;
+          filteredData['suburb'] = details.suburb;
+          filteredData['location_confidence'] = details.confidence;
+          if (profileData.address !== undefined) {
+            filteredData['address'] = profileData.address;
+          } else if (details.formattedAddress) {
+            filteredData['address'] = details.formattedAddress;
+          }
+        }
+      } catch (err) {
+        logger.warn({ err }, 'geocoding failed during updateProfile');
+      }
+    }
+
+    // Best-effort: persist a new avatar if one was supplied as base64.
+    try {
+      const raw = profileData?.profileImageBase64 as string | undefined;
+      if (raw) {
+        // Some clients send base64 without the data: prefix; normalise.
+        const base64 = raw.startsWith('data:image/')
+          ? raw
+          : `data:image/jpeg;base64,${raw}`;
+
+        const oldPath =
+          (user as any)?.profileImagePath ||
+          (user as any)?.profile_image_path;
+        if (oldPath) {
+          try {
+            await ImageService.deleteUserAvatar(oldPath);
+          } catch (err) {
+            logger.warn({ err }, 'failed to delete old avatar (updateProfile)');
+          }
+        }
+
+        const savedPath = await ImageService.saveUserAvatar(
+          base64,
+          `avatar_${user.id}`
+        );
+        filteredData['profile_image_path'] = savedPath;
+      }
+    } catch (err) {
+      logger.warn({ err }, 'failed to process profile avatar (updateProfile)');
+    }
+
+    const updatedUser = await UserModel.update(userId, filteredData);
+    if (!updatedUser) {
+      throw new ApiError(
+        500,
+        'فشل في تحديث بيانات المستخدم',
+        ErrorCodes.INTERNAL_ERROR
+      );
+    }
+
+    return { user: updatedUser };
   }
 }

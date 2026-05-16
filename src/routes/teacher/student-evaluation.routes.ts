@@ -1,22 +1,42 @@
 import { Router } from 'express';
+
 import { TeacherStudentEvaluationController } from '../../controllers/teacher/student-evaluation.controller';
-import { authenticateToken, requireTeacher } from '../../middleware/auth.middleware';
+import { validate } from '../../middleware/validate.middleware';
+import { asyncHandler } from '../../utils/async-handler';
+import { idParamSchema } from '../../schemas/common.schemas';
+import {
+  evaluationBulkUpsertSchema,
+  evaluationListQuerySchema,
+  evaluationStudentsWithEvalQuerySchema,
+  evaluationUpdateSchema,
+} from '../../schemas/teacher.schemas';
 
 const router = Router();
 
-// Bulk upsert evaluations for multiple students on a specific date
-router.post('/bulk-upsert', authenticateToken, requireTeacher, TeacherStudentEvaluationController.bulkUpsert);
-
-// Update single evaluation
-router.patch('/:id', authenticateToken, requireTeacher, TeacherStudentEvaluationController.update);
-
-// List evaluations for the teacher (filters: studentId, from, to, page, limit)
-router.get('/', authenticateToken, requireTeacher, TeacherStudentEvaluationController.list);
-
-// List teacher's students with their evaluation for a specific date, filtered by courseId/sessionId
-router.get('/students-with-eval', authenticateToken, requireTeacher, TeacherStudentEvaluationController.studentsWithEvaluation);
-
-// Get single evaluation by id (teacher-owned)
-router.get('/:id', authenticateToken, requireTeacher, TeacherStudentEvaluationController.getById);
+router.post(
+  '/bulk-upsert',
+  validate({ body: evaluationBulkUpsertSchema }),
+  asyncHandler(TeacherStudentEvaluationController.bulkUpsert)
+);
+router.patch(
+  '/:id',
+  validate({ params: idParamSchema, body: evaluationUpdateSchema }),
+  asyncHandler(TeacherStudentEvaluationController.update)
+);
+router.get(
+  '/',
+  validate({ query: evaluationListQuerySchema }),
+  asyncHandler(TeacherStudentEvaluationController.list)
+);
+router.get(
+  '/students-with-eval',
+  validate({ query: evaluationStudentsWithEvalQuerySchema }),
+  asyncHandler(TeacherStudentEvaluationController.studentsWithEvaluation)
+);
+router.get(
+  '/:id',
+  validate({ params: idParamSchema }),
+  asyncHandler(TeacherStudentEvaluationController.getById)
+);
 
 export default router;

@@ -1,695 +1,501 @@
-import { Request, Response } from 'express';
+import type { Request, Response } from 'express';
 import fs from 'fs';
 import path from 'path';
+
 import pool from '../../config/database';
 import { AcademicYearModel } from '../../models/academic-year.model';
-import { AssignmentModel, SubmissionType } from '../../models/assignment.model';
+import { AssignmentModel, type SubmissionType } from '../../models/assignment.model';
 import { NotificationModel } from '../../models/notification.model';
 import { UserModel } from '../../models/user.model';
 import { AssignmentService } from '../../services/assignment.service';
 import { NotificationService } from '../../services/notification.service';
+import { ApiError, ErrorCodes } from '../../utils/api-error';
+import { ok, paginated } from '../../utils/response.util';
+import { buildPaginationMeta, parsePagination } from '../../utils/pagination';
 import { saveBase64File } from '../../utils/file.util';
 
+const ASSIGNMENTS_DIR = path.join(process.cwd(), 'public', 'uploads', 'assignments');
+const ALLOWED_SUBMISSION_TYPES = new Set<SubmissionType>(['text', 'file', 'link', 'mixed']);
+
+const normalizeSubmissionType = (raw: string | undefined, fallback: SubmissionType): SubmissionType => {
+  if (!raw) return fallback;
+  const lower = raw.toLowerCase();
+  if (['paper', 'online', 'electronic'].includes(lower)) return 'mixed';
+  return ALLOWED_SUBMISSION_TYPES.has(lower as SubmissionType)
+    ? (lower as SubmissionType)
+    : 'mixed';
+};
+
+const fetchService = (): AssignmentService => new AssignmentService();
+
+const requireOwnership = async (assignmentId: string, teacherId: string) => {
+  const service = fetchService();
+  const item = await service.getById(assignmentId);
+  if (!item) {
+    throw new ApiError(404, 'الواجب غير موجود', ErrorCodes.NOT_FOUND);
+  }
+  if (String(item.teacher_id) !== teacherId) {
+    throw new ApiError(403, 'الوصول مرفوض', ErrorCodes.FORBIDDEN);
+  }
+  return item;
+};
+
+const fetchStudentsBasic = async (ids: string[]): Promise<Array<{ id: string; name: string }>> => {
+  const result: Array<{ id: string; name: string }> = [];
+  for (const id of ids) {
+    const u = await UserModel.findById(id);
+    if (u) result.push({ id: String(u.id), name: String((u as any).name || '') });
+  }
+  return result;
+};
+
 export class TeacherAssignmentController {
-  static getService(): AssignmentService {
-    return new AssignmentService();
+  // -------------------------------------------------------------------------
+  // GET /api/teacher/assignments
+  // -------------------------------------------------------------------------
+  static async list(req: Request, res: Response): Promise<void> {
+    const teacherId = req.user.id as string;
+    const { page, limit } = parsePagination(req.query);
+    const activeYear = await AcademicYearModel.getActive();
+    const studyYear = activeYear?.year ?? null;
+    const service = fetchService();
+    const result = await service.listByTeacher(teacherId, page, limit, studyYear);
+    res
+      .status(200)
+      .json(paginated(result.data, buildPaginationMeta(result.total, page, limit), 'تم جلب الواجبات'));
   }
 
+  // -------------------------------------------------------------------------
+  // GET /api/teacher/assignments/:id
+  // -------------------------------------------------------------------------
+  static async getById(req: Request, res: Response): Promise<void> {
+    const id = req.params['id'] as string;
+    const service = fetchService();
+    const item = await service.getById(id);
+    if (!item) {
+      throw new ApiError(404, 'الواجب غير موجود', ErrorCodes.NOT_FOUND);
+    }
+    res.status(200).json(ok(item, 'تم جلب الواجب'));
+  }
+
+  // -------------------------------------------------------------------------
   // GET /api/teacher/assignments/:id/students
-  // Returns list of students relevant to this assignment:
-  // - If visibility = specific_students: returns recipients
-  // - If visibility = all_students: returns confirmed course bookings (students) for assignment.course_id
+  // -------------------------------------------------------------------------
   static async students(req: Request, res: Response): Promise<void> {
-    try {
-      const me = req.user;
-      if (!me) { res.status(401).json({ success: false, message: 'غير مصادق' }); return; }
-      const id = String(req.params['id']);
-      const service = TeacherAssignmentController.getService();
-      const item = await service.getById(id);
-      if (!item) { res.status(404).json({ success: false, message: 'غير موجود' }); return; }
-      if (String(item.teacher_id) !== String(me.id)) { res.status(403).json({ success: false, message: 'غير مصرح' }); return; }
+    const teacherId = req.user.id as string;
+    const id = req.params['id'] as string;
+    const item = await requireOwnership(id, teacherId);
 
-      if (item.visibility === 'specific_students') {
-        const ids = await AssignmentModel.getRecipientIds(id);
-        const students: { id: string; name: string }[] = [];
-        for (const sid of ids) {
-          const u = await UserModel.findById(sid);
-          if (u) students.push({ id: String(u.id), name: String((u as any).name || '') });
-        }
-        res.status(200).json({ success: true, data: students });
-        return;
-      }
-
-      // all_students: fetch confirmed students by course_id
-      const q = `
-        SELECT u.id::text AS id, u.name AS name
-        FROM course_bookings cb
-        JOIN users u ON u.id = cb.student_id AND u.user_type = 'student' AND u.deleted_at IS NULL
-        WHERE cb.course_id = $1 AND cb.teacher_id = $2 AND cb.status = 'confirmed' AND cb.is_deleted = false
-        ORDER BY u.name ASC
-      `;
-      const rows = (await pool.query(q, [String(item.course_id), String(me.id)])).rows;
-      res.status(200).json({ success: true, data: rows });
-    } catch (error) {
-      console.error('Error get assignment students:', error);
-      res.status(500).json({ success: false, message: 'خطأ داخلي في الخادم' });
+    if (item.visibility === 'specific_students') {
+      const ids = await AssignmentModel.getRecipientIds(id);
+      const students = await fetchStudentsBasic(ids);
+      res.status(200).json(ok(students, 'الطلاب المستهدفون بالواجب'));
+      return;
     }
+
+    const q = `
+      SELECT u.id::text AS id, u.name AS name
+      FROM course_bookings cb
+      JOIN users u ON u.id = cb.student_id AND u.user_type = 'student' AND u.deleted_at IS NULL
+      WHERE cb.course_id = $1 AND cb.teacher_id = $2 AND cb.status = 'confirmed' AND cb.is_deleted = false
+      ORDER BY u.name ASC
+    `;
+    const rows = (await pool.query(q, [String(item.course_id), teacherId])).rows;
+    res.status(200).json(ok(rows, 'الطلاب المستهدفون بالواجب'));
   }
 
+  // -------------------------------------------------------------------------
   // GET /api/teacher/assignments/:id/overview
-  // Returns assignment details, recipients (if visibility is specific_students), and all submissions with basic student info
+  // -------------------------------------------------------------------------
   static async overview(req: Request, res: Response): Promise<void> {
-    try {
-      const me = req.user;
-      if (!me) { res.status(401).json({ success: false, message: 'غير مصادق' }); return; }
-      const id = String(req.params['id']);
-      const service = TeacherAssignmentController.getService();
-      const item = await service.getById(id);
-      if (!item) { res.status(404).json({ success: false, message: 'غير موجود' }); return; }
-      if (String(item.teacher_id) !== String(me.id)) { res.status(403).json({ success: false, message: 'غير مصرح' }); return; }
+    const teacherId = req.user.id as string;
+    const id = req.params['id'] as string;
+    const item = await requireOwnership(id, teacherId);
 
-      // Recipients (only when visibility is specific_students)
-      let recipients: { id: string; name: string }[] = [];
-      if (item.visibility === 'specific_students') {
-        const ids = await AssignmentModel.getRecipientIds(id);
-        for (const sid of ids) {
-          const u = await UserModel.findById(sid);
-          if (u) recipients.push({ id: String(u.id), name: String((u as any).name || '') });
-        }
-      }
-
-      // All submissions for this assignment
-      const submissions = await AssignmentModel.listSubmissionsByAssignment(id);
-
-      // Attach basic student info to submissions
-      const studentIds = Array.from(new Set(submissions.map((s: any) => String(s.student_id))));
-      const studentMap = new Map<string, { id: string; name: string }>();
-      for (const sid of studentIds) {
-        const u = await UserModel.findById(sid);
-        if (u) studentMap.set(String(u.id), { id: String(u.id), name: String((u as any).name || '') });
-      }
-      const submissionsWithStudent = submissions.map((s: any) => ({
-        ...s,
-        student: studentMap.get(String(s.student_id)) || { id: String(s.student_id), name: '' },
-      }));
-
-      res.status(200).json({ success: true, data: { assignment: item, recipients, submissions: submissionsWithStudent } });
-    } catch (error) {
-      console.error('Error get assignment overview:', error);
-      res.status(500).json({ success: false, message: 'خطأ داخلي في الخادم' });
+    let recipients: Array<{ id: string; name: string }> = [];
+    if (item.visibility === 'specific_students') {
+      const ids = await AssignmentModel.getRecipientIds(id);
+      recipients = await fetchStudentsBasic(ids);
     }
+
+    const submissions = await AssignmentModel.listSubmissionsByAssignment(id);
+    const studentIds = Array.from(new Set(submissions.map((s: any) => String(s.student_id))));
+    const studentMap = new Map<string, { id: string; name: string }>();
+    for (const sid of studentIds) {
+      const u = await UserModel.findById(sid);
+      if (u) studentMap.set(String(u.id), { id: String(u.id), name: String((u as any).name || '') });
+    }
+    const submissionsWithStudent = submissions.map((s: any) => ({
+      ...s,
+      student: studentMap.get(String(s.student_id)) || { id: String(s.student_id), name: '' },
+    }));
+
+    res
+      .status(200)
+      .json(ok({ assignment: item, recipients, submissions: submissionsWithStudent }, 'تفاصيل الواجب'));
   }
 
+  // -------------------------------------------------------------------------
   // GET /api/teacher/assignments/:id/recipients
+  // -------------------------------------------------------------------------
   static async recipients(req: Request, res: Response): Promise<void> {
-    try {
-      const me = req.user;
-      if (!me) { res.status(401).json({ success: false, message: 'غير مصادق' }); return; }
-      const id = String(req.params['id']);
-      // ensure assignment exists and belongs to this teacher
-      const service = TeacherAssignmentController.getService();
-      const item = await service.getById(id);
-      if (!item) { res.status(404).json({ success: false, message: 'غير موجود' }); return; }
-      if (String(item.teacher_id) !== String(me.id)) { res.status(403).json({ success: false, message: 'غير مصرح' }); return; }
-      const recipientIds = await AssignmentModel.getRecipientIds(id);
-      const recipients: { id: string; name: string }[] = [];
-      for (const rid of recipientIds) {
-        const u = await UserModel.findById(rid);
-        if (u) recipients.push({ id: String(u.id), name: String((u as any).name || '') });
-      }
-      res.status(200).json({ success: true, data: recipients });
-    } catch (error) {
-      console.error('Error list recipients:', error);
-      res.status(500).json({ success: false, message: 'خطأ داخلي في الخادم' });
-    }
+    const teacherId = req.user.id as string;
+    const id = req.params['id'] as string;
+    await requireOwnership(id, teacherId);
+    const recipientIds = await AssignmentModel.getRecipientIds(id);
+    const recipients = await fetchStudentsBasic(recipientIds);
+    res.status(200).json(ok(recipients, 'المستلمون'));
   }
 
+  // -------------------------------------------------------------------------
   // GET /api/teacher/assignments/:assignmentId/submission/:studentId
+  // -------------------------------------------------------------------------
   static async getStudentSubmission(req: Request, res: Response): Promise<void> {
-    try {
-      const me = req.user;
-      if (!me) { res.status(401).json({ success: false, message: 'غير مصادق' }); return; }
-      const assignmentId = String(req.params['assignmentId']);
-      const studentId = String(req.params['studentId']);
-      // ensure assignment exists and belongs to this teacher
-      const service = TeacherAssignmentController.getService();
-      const item = await service.getById(assignmentId);
-      if (!item) { res.status(404).json({ success: false, message: 'غير موجود' }); return; }
-      if (String(item.teacher_id) !== String(me.id)) { res.status(403).json({ success: false, message: 'غير مصرح' }); return; }
-      const sub = await AssignmentModel.getSubmission(assignmentId, studentId);
-      res.status(200).json({ success: true, data: sub });
-    } catch (error) {
-      console.error('Error get student submission:', error);
-      res.status(500).json({ success: false, message: 'خطأ داخلي في الخادم' });
-    }
+    const teacherId = req.user.id as string;
+    const assignmentId = req.params['assignmentId'] as string;
+    const studentId = req.params['studentId'] as string;
+    await requireOwnership(assignmentId, teacherId);
+    const submission = await AssignmentModel.getSubmission(assignmentId, studentId);
+    res.status(200).json(ok(submission, 'تسليم الطالب'));
   }
 
+  // -------------------------------------------------------------------------
   // POST /api/teacher/assignments
+  // -------------------------------------------------------------------------
   static async create(req: Request, res: Response): Promise<void> {
-    try {
-      const me = req.user;
-      if (!me) {
-        res.status(401).json({ success: false, message: 'غير مصادق' });
-        return;
-      }
+    const teacherId = req.user.id as string;
+    const body = req.body as Record<string, any>;
 
-      const {
-        course_id,
-        subject_id,
-        session_id,
-        title,
-        description,
-        assigned_date,
-        due_date,
-        submission_type,
-        attachments,
-        resources,
-        max_score,
-        is_active,
-        visibility,
-        study_year,
-        grade_id,
-        recipients, // { studentIds: string[] }
-      } = req.body || {};
+    const submissionType = normalizeSubmissionType(body['submission_type'], 'mixed');
+    const deliveryMode = body['delivery_mode'] ?? (typeof body['submission_type'] === 'string' ? body['submission_type'] : 'mixed');
+    const normalizedDelivery = ['paper', 'electronic', 'mixed'].includes(String(deliveryMode).toLowerCase())
+      ? String(deliveryMode).toLowerCase()
+      : 'mixed';
 
-      if (!course_id || !title) {
-        res
-          .status(400)
-          .json({ success: false, message: 'course_id و title مطلوبة' });
-        return;
-      }
-
-      // Normalize/validate submission_type to match DB constraint (text|file|link|mixed)
-      const rawSubmissionType = String(submission_type ?? 'mixed').toLowerCase();
-      const allowedSubmissionTypes = new Set<SubmissionType>(['text', 'file', 'link', 'mixed']);
-      const normalizedSubmissionType: SubmissionType = (rawSubmissionType === 'paper'
-        ? 'mixed'
-        : (allowedSubmissionTypes.has(rawSubmissionType as SubmissionType) ? (rawSubmissionType as SubmissionType) : 'mixed'));
-
-      // Process attachments: save any base64 files to /public/uploads/assignments and replace with URL
-      let processedAttachments = attachments ?? {};
-      try {
-        const baseDir = path.join(
-          process.cwd(),
-          'public',
-          'uploads',
-          'assignments'
-        );
-        if (attachments && Array.isArray(attachments.files)) {
-          const files = [] as any[];
-          for (const f of attachments.files) {
-            if (
-              f &&
-              typeof f === 'object' &&
-              typeof f.base64 === 'string' &&
-              f.base64.length > 0
-            ) {
-              const savedPath = await saveBase64File(f.base64, baseDir, f.name);
-              const filename = path.basename(savedPath);
-              files.push({
-                type: f.type ?? 'file',
-                name: f.name ?? filename,
-                url: `/uploads/assignments/${filename}`,
-                size: f.size ?? undefined,
-              });
-            } else {
-              files.push(f);
-            }
-          }
-          processedAttachments = { ...attachments, files };
+    let processedAttachments = body['attachments'] ?? {};
+    if (body['attachments'] && Array.isArray(body['attachments'].files)) {
+      const files: any[] = [];
+      for (const f of body['attachments'].files) {
+        if (f && typeof f.base64 === 'string' && f.base64.length > 0) {
+          const savedPath = await saveBase64File(f.base64, ASSIGNMENTS_DIR, f.name);
+          const filename = path.basename(savedPath);
+          files.push({
+            type: f.type ?? 'file',
+            name: f.name ?? filename,
+            url: `/uploads/assignments/${filename}`,
+            size: f.size,
+          });
+        } else {
+          files.push(f);
         }
-      } catch (e) {
-        console.error('Error processing assignment attachments:', e);
-        // proceed without transforming if saving failed; you can choose to throw if required
       }
+      processedAttachments = { ...body['attachments'], files };
+    }
+    processedAttachments = {
+      ...processedAttachments,
+      meta: { ...(processedAttachments.meta || {}), delivery_mode: normalizedDelivery },
+    };
 
-      // Add delivery_mode into attachments.meta for frontend logic (paper|electronic|mixed)
-      const rawDeliveryMode = String((req.body?.delivery_mode ?? rawSubmissionType) || 'mixed').toLowerCase();
-      const deliveryMode = ['paper', 'electronic', 'mixed'].includes(rawDeliveryMode) ? rawDeliveryMode : 'mixed';
-      processedAttachments = {
-        ...(processedAttachments || {}),
-        meta: {
-          ...((processedAttachments && processedAttachments.meta) || {}),
-          delivery_mode: deliveryMode,
-        },
-      };
+    const activeYear = await AcademicYearModel.getActive();
+    const resolvedStudyYear = body['study_year'] ?? activeYear?.year ?? null;
 
-      // Resolve study year: prefer provided value, else use active academic year
-      const activeYear = await AcademicYearModel.getActive();
-      const resolvedStudyYear = study_year ?? activeYear?.year ?? null;
+    const service = fetchService();
+    const assignment = await service.createAssignment({
+      course_id: String(body['course_id']),
+      subject_id: body['subject_id'] ? String(body['subject_id']) : null,
+      session_id: body['session_id'] ? String(body['session_id']) : null,
+      teacher_id: teacherId,
+      title: String(body['title']),
+      description: body['description'] ? String(body['description']) : null,
+      assigned_date: body['assigned_date'] ?? null,
+      due_date: body['due_date'] ?? null,
+      submission_type: submissionType,
+      attachments: processedAttachments,
+      resources: body['resources'] ?? [],
+      max_score: body['max_score'] ?? 100,
+      is_active: typeof body['is_active'] === 'boolean' ? body['is_active'] : true,
+      visibility: body['visibility'] ?? 'all_students',
+      study_year: resolvedStudyYear,
+      grade_id: body['grade_id'] ?? null,
+      created_by: teacherId,
+    });
 
-      const service = TeacherAssignmentController.getService();
-      const assignment = await service.createAssignment({
-        course_id: String(course_id),
-        subject_id: subject_id ? String(subject_id) : null,
-        session_id: session_id ? String(session_id) : null,
-        teacher_id: String(me.id),
-        title: String(title),
-        description: description ? String(description) : null,
-        assigned_date: assigned_date ?? null,
-        due_date: due_date ?? null,
-        submission_type: normalizedSubmissionType,
-        attachments: processedAttachments,
-        resources: resources ?? [],
-        max_score: max_score ?? 100,
-        is_active: typeof is_active === 'boolean' ? is_active : true,
-        visibility: visibility ?? 'all_students',
-        study_year: resolvedStudyYear,
-        grade_id: grade_id ?? null,
-        created_by: String(me.id),
-      });
+    const recipientStudentIds: string[] = Array.isArray(body['recipients']?.studentIds)
+      ? body['recipients'].studentIds.map((s: any) => String(s))
+      : [];
+    if (assignment.visibility === 'specific_students' && recipientStudentIds.length) {
+      await service.setRecipients(assignment.id, recipientStudentIds);
+    }
 
-      // Set recipients if provided and visibility specific_students
-      if (
-        assignment.visibility === 'specific_students' &&
-        recipients?.studentIds?.length
-      ) {
-        await service.setRecipients(
-          assignment.id,
-          recipients.studentIds.map((s: any) => String(s))
-        );
-      }
-
-      // Send notifications (restricted to enrolled students)
+    try {
       const notif = req.app.get('notificationService') as NotificationService;
       const baseMsg = `تم إنشاء واجب جديد: ${assignment.title}`;
       if (assignment.visibility === 'all_students') {
-        try {
-          const qRecipients = `
-            SELECT u.id::text AS id
-            FROM course_bookings cb
-            JOIN users u ON u.id = cb.student_id AND u.user_type = 'student' AND u.deleted_at IS NULL
-            WHERE cb.course_id = $1 AND cb.teacher_id = $2 AND cb.status = 'confirmed' AND cb.is_deleted = false
-          `;
-          const r = await pool.query(qRecipients, [String(assignment.course_id), String(me.id)]);
-          const recipientIds = r.rows.map((row: any) => String(row.id));
-          if (recipientIds.length) {
-            await notif.createAndSendNotification({
-              title: 'واجب جديد',
-              message: baseMsg,
-              type: 'assignment_due' as any,
-              priority: 'medium',
-              recipientType: 'specific_students' as any,
-              recipientIds,
-              data: {
-                assignmentId: assignment.id,
-                dueDate: assignment.due_date,
-                subType: 'homework',
-              },
-              createdBy: String(me.id),
-            });
-          }
-        } catch (e) {
-          console.error('Error sending enrolled-only notifications (create):', e);
+        const qRecipients = `
+          SELECT u.id::text AS id
+          FROM course_bookings cb
+          JOIN users u ON u.id = cb.student_id AND u.user_type = 'student' AND u.deleted_at IS NULL
+          WHERE cb.course_id = $1 AND cb.teacher_id = $2 AND cb.status = 'confirmed' AND cb.is_deleted = false
+        `;
+        const r = await pool.query(qRecipients, [String(assignment.course_id), teacherId]);
+        const recipientIds = r.rows.map((row: any) => String(row.id));
+        if (recipientIds.length) {
+          await notif.createAndSendNotification({
+            title: 'واجب جديد',
+            message: baseMsg,
+            type: 'assignment_due' as any,
+            priority: 'medium',
+            recipientType: 'specific_students' as any,
+            recipientIds,
+            data: { assignmentId: assignment.id, dueDate: assignment.due_date, subType: 'homework' },
+            createdBy: teacherId,
+          });
         }
-      } else if (
-        assignment.visibility === 'specific_students' &&
-        recipients?.studentIds?.length
-      ) {
+      } else if (assignment.visibility === 'specific_students' && recipientStudentIds.length) {
         await notif.createAndSendNotification({
           title: 'واجب جديد',
           message: baseMsg,
           type: 'assignment_due' as any,
           priority: 'medium',
           recipientType: 'specific_students' as any,
-          recipientIds: recipients.studentIds.map((s: any) => String(s)),
-          data: {
-            assignmentId: assignment.id,
-            dueDate: assignment.due_date,
-            subType: 'homework',
-          },
-          createdBy: String(me.id),
+          recipientIds: recipientStudentIds,
+          data: { assignmentId: assignment.id, dueDate: assignment.due_date, subType: 'homework' },
+          createdBy: teacherId,
         });
       }
-
-      res.status(201).json({ success: true, data: assignment });
-    } catch (error) {
-      console.error('Error creating assignment:', error);
-      res.status(500).json({ success: false, message: 'خطأ داخلي في الخادم' });
+    } catch (err) {
+      req.log?.warn({ err }, 'assignment create notification failed');
     }
+
+    res.status(201).json(ok(assignment, 'تم إنشاء الواجب'));
   }
 
-  // GET /api/teacher/assignments
-  static async list(req: Request, res: Response): Promise<void> {
-    try {
-      const me = req.user;
-      if (!me) {
-        res.status(401).json({ success: false, message: 'غير مصادق' });
-        return;
-      }
-      const page = parseInt(String((req.query as any)['page'] ?? '1'), 10);
-      const limit = parseInt(String((req.query as any)['limit'] ?? '20'), 10);
-      const service = TeacherAssignmentController.getService();
-      // filter by active study year
-      const activeYear = await AcademicYearModel.getActive();
-      const studyYear = activeYear?.year ?? null;
-      const result = await service.listByTeacher(String(me.id), page, limit, studyYear);
-      res
-        .status(200)
-        .json({
-          success: true,
-          data: result.data,
-          pagination: { page, limit, total: result.total },
-        });
-    } catch (error) {
-      console.error('Error listing assignments:', error);
-      res.status(500).json({ success: false, message: 'خطأ داخلي في الخادم' });
-    }
-  }
-
-  // GET /api/teacher/assignments/:id
-  static async getById(req: Request, res: Response): Promise<void> {
-    try {
-      const id = String(req.params['id']);
-      const service = TeacherAssignmentController.getService();
-      const item = await service.getById(id);
-      if (!item) {
-        res.status(404).json({ success: false, message: 'غير موجود' });
-        return;
-      }
-      res.status(200).json({ success: true, data: item });
-    } catch (error) {
-      console.error('Error get assignment:', error);
-      res.status(500).json({ success: false, message: 'خطأ داخلي في الخادم' });
-    }
-  }
-
+  // -------------------------------------------------------------------------
   // PATCH /api/teacher/assignments/:id
+  // -------------------------------------------------------------------------
   static async update(req: Request, res: Response): Promise<void> {
-    try {
-      const id = String(req.params['id']);
-      const service = TeacherAssignmentController.getService();
+    const teacherId = req.user.id as string;
+    const id = req.params['id'] as string;
+    const existing = await requireOwnership(id, teacherId);
 
-      // Load existing to know old attachments for cleanup rules
-      const existing = await service.getById(id);
-      if (!existing) {
-        res.status(404).json({ success: false, message: 'غير موجود' });
-        return;
-      }
+    const body = req.body as Record<string, any>;
+    let processedAttachments = body['attachments'];
 
-      const body = req.body || {};
-      let processedAttachments = body.attachments;
+    if (body['attachments'] && Array.isArray(body['attachments'].files)) {
+      const incomingFiles = body['attachments'].files as any[];
+      const keptUrls = new Set<string>();
+      const newFiles: any[] = [];
 
-      // If attachments provided, process base64 and compute deletions
-      if (body.attachments && Array.isArray(body.attachments.files)) {
-        const baseDir = path.join(
-          process.cwd(),
-          'public',
-          'uploads',
-          'assignments'
-        );
-        const incomingFiles = body.attachments.files as any[];
-
-        const keptUrls = new Set<string>();
-        const newFiles: any[] = [];
-
-        // Build newFiles: convert base64 -> saved URL, keep URL entries as is and track kept URLs
-        for (const f of incomingFiles) {
-          if (
-            f &&
-            typeof f === 'object' &&
-            typeof f.base64 === 'string' &&
-            f.base64.length > 0
-          ) {
-            const savedPath = await saveBase64File(f.base64, baseDir, f.name);
-            const filename = path.basename(savedPath);
-            newFiles.push({
-              type: f.type ?? 'file',
-              name: f.name ?? filename,
-              url: `/uploads/assignments/${filename}`,
-              size: f.size ?? undefined,
-            });
-          } else if (f && typeof f.url === 'string') {
-            newFiles.push(f);
-            keptUrls.add(f.url);
-          } else {
-            newFiles.push(f);
-          }
+      for (const f of incomingFiles) {
+        if (f && typeof f.base64 === 'string' && f.base64.length > 0) {
+          const savedPath = await saveBase64File(f.base64, ASSIGNMENTS_DIR, f.name);
+          const filename = path.basename(savedPath);
+          newFiles.push({
+            type: f.type ?? 'file',
+            name: f.name ?? filename,
+            url: `/uploads/assignments/${filename}`,
+            size: f.size,
+          });
+        } else if (f && typeof f.url === 'string') {
+          newFiles.push(f);
+          keptUrls.add(f.url);
+        } else {
+          newFiles.push(f);
         }
-
-        // Delete old files that are not kept by URL
-        const oldFiles: any[] =
-          existing.attachments && Array.isArray(existing.attachments.files)
-            ? existing.attachments.files
-            : [];
-        for (const ofile of oldFiles) {
-          const url: string | undefined = ofile?.url;
-          if (
-            url &&
-            url.startsWith('/uploads/assignments/') &&
-            !keptUrls.has(url)
-          ) {
-            try {
-              const abs = path.join(process.cwd(), 'public', url);
-              if (fs.existsSync(abs)) {
-                fs.unlinkSync(abs);
-              }
-            } catch (e) {
-              console.error('Failed to delete old assignment file:', url, e);
-            }
-          }
-        }
-
-        processedAttachments = { ...body.attachments, files: newFiles };
       }
 
-      // Normalize submission_type to match DB constraint on update as well
-      const rawSubmissionType = typeof body.submission_type === 'string' ? String(body.submission_type).toLowerCase() : undefined;
-      const allowedSubmissionTypes = new Set<SubmissionType>(['text', 'file', 'link', 'mixed']);
-      const normalizedSubmissionType: SubmissionType | undefined = rawSubmissionType
-        ? (['paper', 'online', 'electronic'].includes(rawSubmissionType)
-          ? 'mixed'
-          : (allowedSubmissionTypes.has(rawSubmissionType as SubmissionType) ? (rawSubmissionType as SubmissionType) : undefined))
-        : undefined;
-
-      const patchPayload = {
-        ...body,
-        ...(processedAttachments !== undefined ? { attachments: processedAttachments } : {}),
-        ...(normalizedSubmissionType ? { submission_type: normalizedSubmissionType } : {}),
-      };
-
-      const updated = await service.update(id, patchPayload as any);
-      if (!updated) {
-        res.status(404).json({ success: false, message: 'غير موجود' });
-        return;
-      }
-
-      // Notify students about assignment update
-      try {
-        const notif = req.app.get('notificationService') as NotificationService;
-        const baseMsg = `تم تعديل الواجب: ${updated.title}`;
-        if (updated.visibility === 'all_students') {
+      const oldFiles: any[] =
+        existing.attachments && Array.isArray(existing.attachments.files) ? existing.attachments.files : [];
+      for (const ofile of oldFiles) {
+        const url: string | undefined = ofile?.url;
+        if (url && url.startsWith('/uploads/assignments/') && !keptUrls.has(url)) {
           try {
-            const qRecipients = `
-              SELECT u.id::text AS id
-              FROM course_bookings cb
-              JOIN users u ON u.id = cb.student_id AND u.user_type = 'student' AND u.deleted_at IS NULL
-              WHERE cb.course_id = $1 AND cb.teacher_id = $2 AND cb.status = 'confirmed' AND cb.is_deleted = false
-            `;
-            const r = await pool.query(qRecipients, [String(updated.course_id), String(existing?.teacher_id ?? '')]);
-            const recipientIds = r.rows.map((row: any) => String(row.id));
-            if (recipientIds.length) {
-              await notif.createAndSendNotification({
-                title: 'تحديث واجب',
-                message: baseMsg,
-                type: 'assignment_due' as any,
-                priority: 'medium',
-                recipientType: 'specific_students' as any,
-                recipientIds,
-                data: {
-                  assignmentId: updated.id,
-                  dueDate: updated.due_date,
-                  subType: 'homework',
-                },
-                createdBy: String(existing?.teacher_id ?? ''),
-              });
-            }
-          } catch (e) {
-            console.error('Error sending enrolled-only notifications (update):', e);
-          }
-        } else if (updated.visibility === 'specific_students') {
-          const recipientIds = await AssignmentModel.getRecipientIds(
-            updated.id
-          );
-          if (recipientIds.length) {
-            await notif.createAndSendNotification({
-              title: 'تحديث واجب',
-              message: baseMsg,
-              type: 'assignment_due' as any,
-              priority: 'medium',
-              recipientType: 'specific_students' as any,
-              recipientIds,
-              data: {
-                assignmentId: updated.id,
-                dueDate: updated.due_date,
-                subType: 'homework',
-              },
-              createdBy: String(existing?.teacher_id ?? ''),
-            });
+            const abs = path.join(process.cwd(), 'public', url);
+            if (fs.existsSync(abs)) fs.unlinkSync(abs);
+          } catch (err) {
+            req.log?.warn({ err, url }, 'failed to delete old assignment file');
           }
         }
-      } catch (e) {
-        console.error('Error sending assignment update notification:', e);
       }
-      res.status(200).json({ success: true, data: updated });
-    } catch (error) {
-      console.error('Error update assignment:', error);
-      res.status(500).json({ success: false, message: 'خطأ داخلي في الخادم' });
+      processedAttachments = { ...body['attachments'], files: newFiles };
     }
-  }
 
-  // DELETE /api/teacher/assignments/:id
-  static async remove(req: Request, res: Response): Promise<void> {
+    const submissionType = typeof body['submission_type'] === 'string'
+      ? normalizeSubmissionType(body['submission_type'], existing.submission_type)
+      : undefined;
+
+    const patchPayload = {
+      ...body,
+      ...(processedAttachments !== undefined ? { attachments: processedAttachments } : {}),
+      ...(submissionType ? { submission_type: submissionType } : {}),
+    };
+
+    const service = fetchService();
+    const updated = await service.update(id, patchPayload as any);
+    if (!updated) {
+      throw new ApiError(404, 'الواجب غير موجود', ErrorCodes.NOT_FOUND);
+    }
+
     try {
-      const id = String(req.params['id']);
-      const service = TeacherAssignmentController.getService();
-      const ok = await service.softDelete(id);
-      if (!ok) {
-        res.status(404).json({ success: false, message: 'غير موجود' });
-        return;
-      }
-      // Soft-delete related notifications to avoid stale items in user inbox
-      try {
-        const affected = await NotificationModel.softDeleteByAssignmentId(id);
-        if (affected > 0) {
-          console.info(
-            `Notifications soft-deleted for assignment ${id}: ${affected}`
-          );
-        }
-      } catch (e) {
-        console.error(
-          'Error soft-deleting notifications for assignment:',
-          id,
-          e
+      const notif = req.app.get('notificationService') as NotificationService;
+      const baseMsg = `تم تعديل الواجب: ${updated.title}`;
+      if (updated.visibility === 'all_students') {
+        const r = await pool.query(
+          `SELECT u.id::text AS id
+             FROM course_bookings cb
+             JOIN users u ON u.id = cb.student_id AND u.user_type = 'student' AND u.deleted_at IS NULL
+            WHERE cb.course_id = $1 AND cb.teacher_id = $2 AND cb.status = 'confirmed' AND cb.is_deleted = false`,
+          [String(updated.course_id), teacherId]
         );
-      }
-      res.status(200).json({ success: true, message: 'تم الحذف' });
-    } catch (error) {
-      console.error('Error delete assignment:', error);
-      res.status(500).json({ success: false, message: 'خطأ داخلي في الخادم' });
-    }
-  }
-
-  // PUT /api/teacher/assignments/:id/recipients
-  static async setRecipients(req: Request, res: Response): Promise<void> {
-    try {
-      const id = String(req.params['id']);
-      const { studentIds } = req.body || {};
-      if (!Array.isArray(studentIds)) {
-        res.status(400).json({ success: false, message: 'studentIds[] مطلوب' });
-        return;
-      }
-      const service = TeacherAssignmentController.getService();
-      const existing = await service.getById(id);
-      if (!existing) {
-        res.status(404).json({ success: false, message: 'غير موجود' });
-        return;
-      }
-
-      const ids = studentIds.map((s: any) => String(s));
-
-      if (ids.length === 0) {
-        // Safe default: make visibility specific_students with empty recipients → hidden from all students
-        if (existing.visibility !== 'specific_students') {
-          await service.update(id, { visibility: 'specific_students' as any });
-        }
-        // Compute removed recipients to notify
-        const oldRecipientIds = await AssignmentModel.getRecipientIds(id);
-        await service.setRecipients(id, []);
-        // Notify removed students that the assignment was revoked
-        try {
-          if (oldRecipientIds.length) {
-            const notif = req.app.get('notificationService') as NotificationService;
-            await notif.createAndSendNotification({
-              title: 'إلغاء واجب',
-              message: `تم إلغاء الواجب: ${existing.title}`,
-              type: 'assignment_due' as any,
-              priority: 'medium',
-              recipientType: 'specific_students' as any,
-              recipientIds: oldRecipientIds,
-              data: { assignmentId: existing.id, dueDate: existing.due_date, subType: 'homework' },
-              createdBy: String(existing.teacher_id),
-            });
-          }
-        } catch (e) {
-          console.error('Error notifying removed recipients on empty set:', e);
-        }
-        res.status(200).json({ success: true, message: 'تم تفريغ المستلمين وتحويل الرؤية إلى طلاب محددين (مخفي للجميع)' });
-        return;
-      }
-
-      // Non-empty: ensure visibility is specific_students then set recipients
-      if (existing.visibility !== 'specific_students') {
-        await service.update(id, { visibility: 'specific_students' as any });
-      }
-      // Compute added/removed sets
-      const oldRecipientIds = await AssignmentModel.getRecipientIds(id);
-      const newSet = new Set(ids);
-      const oldSet = new Set(oldRecipientIds);
-      const added: string[] = ids.filter((x) => !oldSet.has(x));
-      const removed: string[] = oldRecipientIds.filter((x) => !newSet.has(x));
-
-      await service.setRecipients(id, ids);
-
-      // Send notifications
-      try {
-        const notif = req.app.get('notificationService') as NotificationService;
-        if (added.length) {
+        const recipientIds = r.rows.map((row: any) => String(row.id));
+        if (recipientIds.length) {
           await notif.createAndSendNotification({
-            title: 'واجب جديد',
-            message: `تم تعيين واجب لك: ${existing.title}`,
+            title: 'تحديث واجب',
+            message: baseMsg,
             type: 'assignment_due' as any,
             priority: 'medium',
             recipientType: 'specific_students' as any,
-            recipientIds: added,
-            data: { assignmentId: existing.id, dueDate: existing.due_date, subType: 'homework' },
-            createdBy: String(existing.teacher_id),
+            recipientIds,
+            data: { assignmentId: updated.id, dueDate: updated.due_date, subType: 'homework' },
+            createdBy: teacherId,
           });
         }
-        if (removed.length) {
+      } else if (updated.visibility === 'specific_students') {
+        const recipientIds = await AssignmentModel.getRecipientIds(updated.id);
+        if (recipientIds.length) {
+          await notif.createAndSendNotification({
+            title: 'تحديث واجب',
+            message: baseMsg,
+            type: 'assignment_due' as any,
+            priority: 'medium',
+            recipientType: 'specific_students' as any,
+            recipientIds,
+            data: { assignmentId: updated.id, dueDate: updated.due_date, subType: 'homework' },
+            createdBy: teacherId,
+          });
+        }
+      }
+    } catch (err) {
+      req.log?.warn({ err }, 'assignment update notification failed');
+    }
+
+    res.status(200).json(ok(updated, 'تم تحديث الواجب'));
+  }
+
+  // -------------------------------------------------------------------------
+  // DELETE /api/teacher/assignments/:id
+  // -------------------------------------------------------------------------
+  static async remove(req: Request, res: Response): Promise<void> {
+    const id = req.params['id'] as string;
+    const service = fetchService();
+    const success = await service.softDelete(id);
+    if (!success) {
+      throw new ApiError(404, 'الواجب غير موجود', ErrorCodes.NOT_FOUND);
+    }
+    try {
+      await NotificationModel.softDeleteByAssignmentId(id);
+    } catch (err) {
+      req.log?.warn({ err, id }, 'failed to soft-delete notifications for assignment');
+    }
+    res.status(200).json(ok(null, 'تم الحذف'));
+  }
+
+  // -------------------------------------------------------------------------
+  // PUT /api/teacher/assignments/:id/recipients
+  // -------------------------------------------------------------------------
+  static async setRecipients(req: Request, res: Response): Promise<void> {
+    const id = req.params['id'] as string;
+    const { studentIds } = req.body as { studentIds: string[] };
+    const service = fetchService();
+    const existing = await service.getById(id);
+    if (!existing) {
+      throw new ApiError(404, 'الواجب غير موجود', ErrorCodes.NOT_FOUND);
+    }
+    const ids = studentIds.map((s) => String(s));
+
+    if (ids.length === 0) {
+      if (existing.visibility !== 'specific_students') {
+        await service.update(id, { visibility: 'specific_students' as any });
+      }
+      const oldRecipientIds = await AssignmentModel.getRecipientIds(id);
+      await service.setRecipients(id, []);
+      try {
+        if (oldRecipientIds.length) {
+          const notif = req.app.get('notificationService') as NotificationService;
           await notif.createAndSendNotification({
             title: 'إلغاء واجب',
             message: `تم إلغاء الواجب: ${existing.title}`,
             type: 'assignment_due' as any,
             priority: 'medium',
             recipientType: 'specific_students' as any,
-            recipientIds: removed,
+            recipientIds: oldRecipientIds,
             data: { assignmentId: existing.id, dueDate: existing.due_date, subType: 'homework' },
             createdBy: String(existing.teacher_id),
           });
         }
-      } catch (e) {
-        console.error('Error sending recipient change notifications:', e);
+      } catch (err) {
+        req.log?.warn({ err }, 'recipient removal notification failed');
       }
-      res.status(200).json({ success: true, message: 'تم تحديث قائمة المستلمين (طلاب محددين)' });
-    } catch (error) {
-      console.error('Error set recipients:', error);
-      res.status(500).json({ success: false, message: 'خطأ داخلي في الخادم' });
+      res.status(200).json(ok(null, 'تم تفريغ المستلمين وتحويل الرؤية إلى طلاب محددين (مخفي للجميع)'));
+      return;
     }
+
+    if (existing.visibility !== 'specific_students') {
+      await service.update(id, { visibility: 'specific_students' as any });
+    }
+    const oldRecipientIds = await AssignmentModel.getRecipientIds(id);
+    const newSet = new Set(ids);
+    const oldSet = new Set(oldRecipientIds);
+    const added = ids.filter((x) => !oldSet.has(x));
+    const removed = oldRecipientIds.filter((x) => !newSet.has(x));
+    await service.setRecipients(id, ids);
+
+    try {
+      const notif = req.app.get('notificationService') as NotificationService;
+      if (added.length) {
+        await notif.createAndSendNotification({
+          title: 'واجب جديد',
+          message: `تم تعيين واجب لك: ${existing.title}`,
+          type: 'assignment_due' as any,
+          priority: 'medium',
+          recipientType: 'specific_students' as any,
+          recipientIds: added,
+          data: { assignmentId: existing.id, dueDate: existing.due_date, subType: 'homework' },
+          createdBy: String(existing.teacher_id),
+        });
+      }
+      if (removed.length) {
+        await notif.createAndSendNotification({
+          title: 'إلغاء واجب',
+          message: `تم إلغاء الواجب: ${existing.title}`,
+          type: 'assignment_due' as any,
+          priority: 'medium',
+          recipientType: 'specific_students' as any,
+          recipientIds: removed,
+          data: { assignmentId: existing.id, dueDate: existing.due_date, subType: 'homework' },
+          createdBy: String(existing.teacher_id),
+        });
+      }
+    } catch (err) {
+      req.log?.warn({ err }, 'recipient change notification failed');
+    }
+
+    res.status(200).json(ok(null, 'تم تحديث قائمة المستلمين (طلاب محددين)'));
   }
 
+  // -------------------------------------------------------------------------
   // PUT /api/teacher/assignments/:assignmentId/grade/:studentId
+  // -------------------------------------------------------------------------
   static async grade(req: Request, res: Response): Promise<void> {
-    try {
-      const me = req.user;
-      if (!me) {
-        res.status(401).json({ success: false, message: 'غير مصادق' });
-        return;
-      }
-      const assignmentId = String(req.params['assignmentId']);
-      const studentId = String(req.params['studentId']);
-      const { score, feedback } = req.body || {};
-      const service = TeacherAssignmentController.getService();
-      const updated = await service.grade(
-        assignmentId,
-        studentId,
-        Number(score),
-        String(me.id),
-        feedback
-      );
+    const teacherId = req.user.id as string;
+    const assignmentId = req.params['assignmentId'] as string;
+    const studentId = req.params['studentId'] as string;
+    const { score, feedback } = req.body as { score: number; feedback?: string };
+    const service = fetchService();
+    const updated = await service.grade(assignmentId, studentId, Number(score), teacherId, feedback);
 
-      // Notify student of grade
-      if (updated) {
+    if (updated) {
+      try {
         const notif = req.app.get('notificationService') as NotificationService;
         await notif.createAndSendNotification({
           title: 'نتيجة واجبك',
@@ -699,14 +505,12 @@ export class TeacherAssignmentController {
           recipientType: 'specific_students' as any,
           recipientIds: [studentId],
           data: { assignmentId, subType: 'homework' },
-          createdBy: String(me.id),
+          createdBy: teacherId,
         });
+      } catch (err) {
+        req.log?.warn({ err }, 'assignment grade notification failed');
       }
-
-      res.status(200).json({ success: true, data: updated });
-    } catch (error) {
-      console.error('Error grade submission:', error);
-      res.status(500).json({ success: false, message: 'خطأ داخلي في الخادم' });
     }
+    res.status(200).json(ok(updated, 'تم تقييم الواجب'));
   }
 }

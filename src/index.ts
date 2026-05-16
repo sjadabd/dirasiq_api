@@ -4,8 +4,9 @@ import dotenv from 'dotenv';
 import express from 'express';
 import rateLimit from 'express-rate-limit';
 import helmet from 'helmet';
-import morgan from 'morgan';
 import path from 'path';
+import pinoHttp from 'pino-http';
+
 import { initializeDatabase } from './database/init';
 import authRoutes from './routes/auth.routes';
 import notificationRoutes from './routes/notification.routes';
@@ -27,6 +28,11 @@ import userOnesignalRoutes from './routes/user-onesignal.routes';
 import { notificationCronService } from './services/notification-cron.service';
 import { NotificationService } from './services/notification.service';
 
+import { requestId } from './middleware/request-id.middleware';
+import { errorHandler, notFoundHandler } from './middleware/error.middleware';
+import { logger } from './utils/logger';
+import { ok } from './utils/response.util';
+
 // =====================================================
 // 🔹 Load Environment Variables
 // =====================================================
@@ -36,6 +42,41 @@ app.set('etag', false);
 app.set('trust proxy', 1);
 const PORT: number = parseInt(process.env['PORT'] || '3000', 10);
 const NODE_ENV: string = process.env['NODE_ENV'] || 'development';
+
+// =====================================================
+// 🔹 Request ID (must precede logger / routes)
+// =====================================================
+app.use(requestId);
+
+// =====================================================
+// 🔹 Structured request logger (pino-http)
+//
+// One JSON line per request, correlated with the X-Request-ID set above.
+// Emitted on response finish; includes status, response time, method, and url.
+// =====================================================
+app.use(
+  pinoHttp({
+    logger,
+    genReqId: (req) => (req as express.Request).id,
+    customLogLevel: (_req, res, err) => {
+      if (err || res.statusCode >= 500) return 'error';
+      if (res.statusCode >= 400) return 'warn';
+      return 'info';
+    },
+    // Quiet down the per-request message; we still get method, url, status.
+    customSuccessMessage: (req, res) => `${req.method} ${req.url} ${res.statusCode}`,
+    customErrorMessage: (req, res) => `${req.method} ${req.url} ${res.statusCode}`,
+    // Strip noisy fields from the auto-serialized req/res objects.
+    serializers: {
+      req: (req) => ({
+        id: req.id,
+        method: req.method,
+        url: req.url,
+      }),
+      res: (res) => ({ statusCode: res.statusCode }),
+    },
+  })
+);
 
 // =====================================================
 // 🔹 Secure and Explicit CORS Configuration
@@ -52,54 +93,57 @@ app.use(
     origin: (origin, callback) => {
       if (!origin) return callback(null, true);
       if (allowedOrigins.includes(origin)) return callback(null, true);
-      console.warn(`❌ Blocked CORS request from: ${origin}`);
+      logger.warn({ origin }, 'CORS rejected');
       return callback(new Error('CORS not allowed for this origin'), false);
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-ID'],
+    exposedHeaders: ['X-Request-ID'],
   })
 );
 
-// ✅ Ensure CORS headers always exist
-app.use((req, res, next): void => {
-  res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
-  res.header(
-    'Access-Control-Allow-Methods',
-    'GET, POST, PUT, DELETE, PATCH, OPTIONS'
-  );
-  res.header(
-    'Access-Control-Allow-Headers',
-    'Origin, X-Requested-With, Content-Type, Accept, Authorization'
-  );
-
-  if (req.method === 'OPTIONS') {
-    res.sendStatus(204);
-    return;
-  }
-
-  next();
-});
+// NOTE: a manual `res.header('Access-Control-Allow-Origin', req.headers.origin || '*')`
+// block previously lived here. It defeated the allowlist above — any Origin would
+// receive a permissive CORS header. Removed 2026-05-15 (Phase 0).
 
 // =====================================================
-// 🔹 Security Middleware
+// 🔹 Security Middleware (Helmet) — Phase 0
 // =====================================================
 app.use(
   helmet({
     crossOriginResourcePolicy: { policy: 'cross-origin' },
     crossOriginEmbedderPolicy: false,
-    contentSecurityPolicy: false,
+    contentSecurityPolicy: {
+      useDefaults: true,
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        imgSrc: ["'self'", 'data:', 'blob:'],
+        connectSrc: ["'self'"],
+        objectSrc: ["'none'"],
+        baseUri: ["'none'"],
+        frameAncestors: ["'none'"],
+        formAction: ["'self'"],
+        upgradeInsecureRequests: NODE_ENV === 'production' ? [] : null,
+      },
+    },
   })
 );
 
 // =====================================================
-// 🔹 Logging & Compression
+// 🔹 Compression
 // =====================================================
-app.use(morgan(NODE_ENV === 'development' ? 'dev' : 'combined'));
 app.use(compression());
 
 // =====================================================
 // 🔹 Inject content_url into every JSON response
+//
+// Preserved from the pre-Phase-1 era: dashboard + Flutter clients read
+// `content_url` from the top level of every response to resolve relative
+// asset paths. The wrapper attaches it after the canonical envelope is
+// built, so it lives outside ApiResponse.data and stays backwards-compatible.
 // =====================================================
 const APP_URL = process.env['APP_URL'] || 'https://api.mulhimiq.com/';
 app.use((_req, res, next) => {
@@ -114,7 +158,7 @@ app.use((_req, res, next) => {
 });
 
 // =====================================================
-// 🔹 Rate Limiting (ممكن تبقيه لحماية الـ API)
+// 🔹 Rate Limiting (global; per-endpoint stricter limits land in Phase 1.x)
 // =====================================================
 const limiter = rateLimit({
   windowMs: parseInt(process.env['RATE_LIMIT_WINDOW_MS'] || '900000', 10),
@@ -122,13 +166,13 @@ const limiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   validate: {
-    xForwardedForHeader: false, // ✅ توقف التحذير نهائياً
+    xForwardedForHeader: false,
   },
 });
 app.use(limiter);
 
 // =====================================================
-// 🔹 Core Middleware (بدون أي limits للملفات)
+// 🔹 Core Middleware
 // =====================================================
 app.use(
   express.json({
@@ -166,12 +210,15 @@ app.get('/delete-account', (_req, res) => {
 // 🔹 Health Check
 // =====================================================
 app.get('/health', (_req, res) => {
-  res.status(200).json({
-    success: true,
-    message: '🚀 Server running successfully',
-    timestamp: new Date().toISOString(),
-    environment: NODE_ENV,
-  });
+  res.status(200).json(
+    ok(
+      {
+        timestamp: new Date().toISOString(),
+        environment: NODE_ENV,
+      },
+      'Server is running'
+    )
+  );
 });
 
 // =====================================================
@@ -188,9 +235,9 @@ try {
     restApiKey: oneSignalRestApiKey,
   });
   app.set('notificationService', notificationService);
-  console.log('✅ NotificationService initialized');
+  logger.info('NotificationService initialized');
 } catch (e) {
-  console.warn('⚠️ NotificationService not initialized:', e);
+  logger.warn({ err: e }, 'NotificationService not initialized');
 }
 
 // =====================================================
@@ -215,31 +262,10 @@ app.use('/api/super-admin/settings', superAdminSettingsRoutes);
 app.use('/api/payments/wayl', waylRoutes);
 
 // =====================================================
-// 🔹 Error Handling
+// 🔹 404 + Global Error Handler (must be LAST)
 // =====================================================
-app.use('*', (req, res) => {
-  res.status(404).json({
-    success: false,
-    message: 'المسار غير موجود',
-    path: req.originalUrl,
-  });
-});
-
-app.use(
-  (
-    error: any,
-    _req: express.Request,
-    res: express.Response,
-    _next: express.NextFunction
-  ) => {
-    console.error('Global error:', error);
-    res.status(error.status || 500).json({
-      success: false,
-      message: error.message || 'حدث خطأ في الخادم',
-      ...(NODE_ENV === 'development' && { stack: error.stack }),
-    });
-  }
-);
+app.use('*', notFoundHandler);
+app.use(errorHandler);
 
 // =====================================================
 // 🔹 Start Server and Initialize DB
@@ -250,11 +276,10 @@ async function startServer() {
     notificationCronService.start();
 
     app.listen(PORT, '0.0.0.0', () => {
-      console.log(`🚀 Server running on http://localhost:${PORT}`);
-      console.log(`🔗 Health check: http://localhost:${PORT}/health`);
+      logger.info({ port: PORT }, `Server running on http://localhost:${PORT}`);
     });
   } catch (error) {
-    console.error('❌ Failed to start server:', error);
+    logger.fatal({ err: error }, 'Failed to start server');
     process.exit(1);
   }
 }
@@ -265,7 +290,10 @@ async function startServer() {
 process.on('SIGTERM', () => process.exit(0));
 process.on('SIGINT', () => process.exit(0));
 
-// =====================================================
-// 🔹 Launch!
-// =====================================================
-startServer();
+// Only start if invoked directly — keeps `import app from './index'` in tests
+// from spinning up the server.
+if (require.main === module) {
+  startServer();
+}
+
+export default app;

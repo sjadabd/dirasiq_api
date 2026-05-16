@@ -24,7 +24,7 @@
     "noPropertyAccessFromIndexSignature": true,
     "noUncheckedIndexedAccess": true,
     "baseUrl": "./src",
-    "types": ["node"],        // ✅ هذا هو السطر المهم الجديد
+    "types": ["node", "jest"],
     "paths": {
       "@/*": ["*"],
       "@/config/*": ["config/*"],

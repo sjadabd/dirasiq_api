@@ -1,42 +1,79 @@
 import { Router } from 'express';
+
 import { TeacherCourseBookingController } from '../../controllers/teacher/course-booking.controller';
-import { authenticateToken } from '../../middleware/auth.middleware';
+import { validate } from '../../middleware/validate.middleware';
+import { asyncHandler } from '../../utils/async-handler';
+import { idParamSchema } from '../../schemas/common.schemas';
+import {
+  bookingConfirmBodySchema,
+  bookingPreApproveBodySchema,
+  bookingReactivateBodySchema,
+  bookingRejectBodySchema,
+  bookingStatsQuerySchema,
+  bookingTeacherResponseBodySchema,
+  teacherBookingsListQuerySchema,
+} from '../../schemas/teacher.schemas';
 
 const router = Router();
 
-// Apply authentication middleware to all routes
-router.use(authenticateToken);
+// Static paths first to avoid the `:id` matcher swallowing them.
+router.get(
+  '/subscription/remaining-students',
+  asyncHandler(TeacherCourseBookingController.getRemainingStudents)
+);
 
-// Get remaining students capacity (static path should come before ':id')
-router.get('/subscription/remaining-students', TeacherCourseBookingController.getRemainingStudents);
+router.get(
+  '/stats/summary',
+  validate({ query: bookingStatsQuerySchema }),
+  asyncHandler(TeacherCourseBookingController.getBookingStats)
+);
 
-// Get pending booking statistics (place before ':id')
-router.get('/stats/summary', TeacherCourseBookingController.getBookingStats);
+router.get(
+  '/',
+  validate({ query: teacherBookingsListQuerySchema }),
+  asyncHandler(TeacherCourseBookingController.getMyBookings)
+);
 
-// Get all bookings for the current teacher
-router.get('/', TeacherCourseBookingController.getMyBookings);
+router.get(
+  '/:id',
+  validate({ params: idParamSchema }),
+  asyncHandler(TeacherCourseBookingController.getBookingById)
+);
 
-// Get a specific booking by ID with details (dynamic route should come after static ones)
-router.get('/:id', TeacherCourseBookingController.getBookingById);
+router.patch(
+  '/:id/pre-approve',
+  validate({ params: idParamSchema, body: bookingPreApproveBodySchema }),
+  asyncHandler(TeacherCourseBookingController.preApproveBooking)
+);
 
-// Pre-approve a booking (موافقة أولية)
-router.patch('/:id/pre-approve', TeacherCourseBookingController.preApproveBooking);
+router.patch(
+  '/:id/confirm',
+  validate({ params: idParamSchema, body: bookingConfirmBodySchema }),
+  asyncHandler(TeacherCourseBookingController.confirmBooking)
+);
 
-// Confirm a booking (تأكيد الحجز)
-router.patch('/:id/confirm', TeacherCourseBookingController.confirmBooking);
+router.patch(
+  '/:id/reject',
+  validate({ params: idParamSchema, body: bookingRejectBodySchema }),
+  asyncHandler(TeacherCourseBookingController.rejectBooking)
+);
 
-// Reject a booking
-router.patch('/:id/reject', TeacherCourseBookingController.rejectBooking);
+router.patch(
+  '/:id/response',
+  validate({ params: idParamSchema, body: bookingTeacherResponseBodySchema }),
+  asyncHandler(TeacherCourseBookingController.updateTeacherResponse)
+);
 
-// Update teacher response for a booking
-router.patch('/:id/response', TeacherCourseBookingController.updateTeacherResponse);
+router.delete(
+  '/:id',
+  validate({ params: idParamSchema }),
+  asyncHandler(TeacherCourseBookingController.deleteBooking)
+);
 
-// Delete a booking (soft delete)
-router.delete('/:id', TeacherCourseBookingController.deleteBooking);
-
-// Reactivate a rejected booking
-router.patch('/:id/reactivate', TeacherCourseBookingController.reactivateBooking);
-
-// (moved static routes above)
+router.patch(
+  '/:id/reactivate',
+  validate({ params: idParamSchema, body: bookingReactivateBodySchema }),
+  asyncHandler(TeacherCourseBookingController.reactivateBooking)
+);
 
 export default router;

@@ -1,15 +1,45 @@
 import { Router } from 'express';
+
 import { TeacherExamController } from '../../controllers/teacher/exam.controller';
-import { authenticateToken, requireTeacher } from '../../middleware/auth.middleware';
+import { validate } from '../../middleware/validate.middleware';
+import { asyncHandler } from '../../utils/async-handler';
+import { examGradeParamsSchema, idParamSchema } from '../../schemas/common.schemas';
+import {
+  examCreateSchema,
+  examGradeBodySchema,
+  examListQuerySchema,
+  examStudentsQuerySchema,
+  examUpdateSchema,
+} from '../../schemas/teacher.schemas';
 
 const router = Router();
 
-router.post('/', authenticateToken, requireTeacher, TeacherExamController.create);
-router.get('/', authenticateToken, requireTeacher, TeacherExamController.list);
-router.get('/:id', authenticateToken, requireTeacher, TeacherExamController.getById);
-router.patch('/:id', authenticateToken, requireTeacher, TeacherExamController.update);
-router.delete('/:id', authenticateToken, requireTeacher, TeacherExamController.remove);
-router.get('/:id/students', authenticateToken, requireTeacher, TeacherExamController.students);
-router.put('/:examId/grade/:studentId', authenticateToken, requireTeacher, TeacherExamController.grade);
+router.post('/', validate({ body: examCreateSchema }), asyncHandler(TeacherExamController.create));
+router.get('/', validate({ query: examListQuerySchema }), asyncHandler(TeacherExamController.list));
+router.get(
+  '/:id',
+  validate({ params: idParamSchema }),
+  asyncHandler(TeacherExamController.getById)
+);
+router.patch(
+  '/:id',
+  validate({ params: idParamSchema, body: examUpdateSchema }),
+  asyncHandler(TeacherExamController.update)
+);
+router.delete(
+  '/:id',
+  validate({ params: idParamSchema }),
+  asyncHandler(TeacherExamController.remove)
+);
+router.get(
+  '/:id/students',
+  validate({ params: idParamSchema, query: examStudentsQuerySchema }),
+  asyncHandler(TeacherExamController.students)
+);
+router.put(
+  '/:examId/grade/:studentId',
+  validate({ params: examGradeParamsSchema, body: examGradeBodySchema }),
+  asyncHandler(TeacherExamController.grade)
+);
 
 export default router;

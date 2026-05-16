@@ -1,31 +1,59 @@
 import { Router } from 'express';
+
 import { StudentCourseBookingController } from '../../controllers/student/course-booking.controller';
-import { authenticateToken } from '../../middleware/auth.middleware';
+import { validate } from '../../middleware/validate.middleware';
+import { asyncHandler } from '../../utils/async-handler';
+import { idParamSchema } from '../../schemas/common.schemas';
+import {
+  createCourseBookingSchema,
+  studentBookingStatsQuerySchema,
+  studentBookingsListQuerySchema,
+  studentCancelBookingBodySchema,
+} from '../../schemas/student.schemas';
 
 const router = Router();
 
-// Apply authentication middleware to all routes
-router.use(authenticateToken);
+// Static path before `:id` matcher.
+router.get(
+  '/stats/summary',
+  validate({ query: studentBookingStatsQuerySchema }),
+  asyncHandler(StudentCourseBookingController.getBookingStats)
+);
 
-// Create a new course booking
-router.post('/', StudentCourseBookingController.createBooking);
+router.post(
+  '/',
+  validate({ body: createCourseBookingSchema }),
+  asyncHandler(StudentCourseBookingController.createBooking)
+);
 
-// Get all bookings for the current student
-router.get('/', StudentCourseBookingController.getMyBookings);
+router.get(
+  '/',
+  validate({ query: studentBookingsListQuerySchema }),
+  asyncHandler(StudentCourseBookingController.getMyBookings)
+);
 
-// Get a specific booking by ID
-router.get('/:id', StudentCourseBookingController.getBookingById);
+router.get(
+  '/:id',
+  validate({ params: idParamSchema }),
+  asyncHandler(StudentCourseBookingController.getBookingById)
+);
 
-// Cancel a booking
-router.patch('/:id/cancel', StudentCourseBookingController.cancelBooking);
+router.patch(
+  '/:id/cancel',
+  validate({ params: idParamSchema, body: studentCancelBookingBodySchema }),
+  asyncHandler(StudentCourseBookingController.cancelBooking)
+);
 
-// Reactivate a cancelled booking
-router.patch('/:id/reactivate', StudentCourseBookingController.reactivateBooking);
+router.patch(
+  '/:id/reactivate',
+  validate({ params: idParamSchema }),
+  asyncHandler(StudentCourseBookingController.reactivateBooking)
+);
 
-// Delete a booking (soft delete)
-router.delete('/:id', StudentCourseBookingController.deleteBooking);
-
-// Get booking statistics
-router.get('/stats/summary', StudentCourseBookingController.getBookingStats);
+router.delete(
+  '/:id',
+  validate({ params: idParamSchema }),
+  asyncHandler(StudentCourseBookingController.deleteBooking)
+);
 
 export default router;

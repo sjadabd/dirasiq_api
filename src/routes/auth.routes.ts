@@ -1,57 +1,144 @@
 import { Router } from 'express';
+
 import { AuthController } from '../controllers/auth.controller';
 import { authenticateToken } from '../middleware/auth.middleware';
+import { requireBootstrapToken } from '../middleware/bootstrap.middleware';
+import { validate } from '../middleware/validate.middleware';
 import { GoogleAuthService } from '../services/google-auth.service';
+import { ApiError, ErrorCodes } from '../utils/api-error';
+import { asyncHandler } from '../utils/async-handler';
+import { ok } from '../utils/response.util';
+
+import {
+  appleAuthSchema,
+  googleAuthSchema,
+  loginSchema,
+  registerStudentSchema,
+  registerSuperAdminSchema,
+  registerTeacherSchema,
+  requestPasswordResetSchema,
+  resendVerificationSchema,
+  resetPasswordSchema,
+  verifyEmailSchema,
+} from '../schemas/auth.schemas';
 
 const router = Router();
 
-// Public routes (no authentication required)
-router.post('/register/super-admin', AuthController.registerSuperAdmin);
-router.post('/register/teacher', AuthController.registerTeacher);
-router.post('/register/student', AuthController.registerStudent);
-router.post('/login', AuthController.login);
-router.post('/google-auth', AuthController.googleAuth);
-router.post('/apple-auth', AuthController.appleAuth);
-router.post('/verify-email', AuthController.verifyEmail);
-router.post('/resend-verification', AuthController.resendVerificationCode);
-router.post('/request-password-reset', AuthController.requestPasswordReset);
-router.post('/reset-password', AuthController.resetPassword);
-// ✅ Google OAuth callback (للتوافق مع إعدادات Google Console)
-router.get('/google/callback', async (req, res) => {
-  const code = req.query['code'] as string | undefined;
+// =============================================================================
+// Public — Registration
+// =============================================================================
 
-  if (!code) {
-    return res.status(400).json({
-      success: false,
-      message: 'Missing Google authorization code',
-    });
-  }
+// Super-admin registration is gated by BOOTSTRAP_TOKEN. With no env var set
+// the endpoint is 404 — see middleware/bootstrap.middleware.ts for rationale.
+router.post(
+  '/register/super-admin',
+  requireBootstrapToken,
+  validate({ body: registerSuperAdminSchema }),
+  asyncHandler(AuthController.registerSuperAdmin)
+);
 
-  const result = await GoogleAuthService.exchangeCodeForTokens(code);
+router.post(
+  '/register/teacher',
+  validate({ body: registerTeacherSchema }),
+  asyncHandler(AuthController.registerTeacher)
+);
 
-  if (!result.success) {
-    return res.status(400).json({
-      success: false,
-      message: 'Failed to exchange Google code',
-      error: result.error,
-    });
-  }
+router.post(
+  '/register/student',
+  validate({ body: registerStudentSchema }),
+  asyncHandler(AuthController.registerStudent)
+);
 
-  return res.status(200).json({
-    success: true,
-    message: '✅ Google OAuth successful',
-    user: result.user,
-    tokens: result.tokens,
-  });
-});
+// =============================================================================
+// Public — Session
+// =============================================================================
 
-// ✅ Apple Sign In redirect (للتوافق مع إعدادات Apple Services ID الجديدة)
-router.get('/apple-redirect', AuthController.appleCallback);
+router.post(
+  '/login',
+  validate({ body: loginSchema }),
+  asyncHandler(AuthController.login)
+);
 
+// =============================================================================
+// Public — OAuth
+// =============================================================================
 
-// Protected routes (authentication required)
-router.post('/logout', authenticateToken, AuthController.logout);
-router.post('/complete-profile', authenticateToken, AuthController.completeProfile);
-router.post('/update-profile', authenticateToken, AuthController.updateProfile);
+router.post(
+  '/google-auth',
+  validate({ body: googleAuthSchema }),
+  asyncHandler(AuthController.googleAuth)
+);
+
+router.post(
+  '/apple-auth',
+  validate({ body: appleAuthSchema }),
+  asyncHandler(AuthController.appleAuth)
+);
+
+// Google OAuth web callback. Apple's equivalent lives in the controller
+// because Apple sends form-encoded data with custom handling.
+router.get(
+  '/google/callback',
+  asyncHandler(async (req, res) => {
+    const code = req.query['code'] as string | undefined;
+    if (!code) {
+      throw new ApiError(400, 'Missing Google authorization code', ErrorCodes.INVALID_REQUEST);
+    }
+
+    // Throws ApiError on any Google failure.
+    const result = await GoogleAuthService.exchangeCodeForTokens(code);
+    res.status(200).json(
+      ok({ user: result.user, tokens: result.tokens }, 'Google OAuth successful')
+    );
+  })
+);
+
+router.get('/apple-redirect', asyncHandler(AuthController.appleCallback));
+
+// =============================================================================
+// Public — Verification + Password Reset
+// =============================================================================
+
+router.post(
+  '/verify-email',
+  validate({ body: verifyEmailSchema }),
+  asyncHandler(AuthController.verifyEmail)
+);
+
+router.post(
+  '/resend-verification',
+  validate({ body: resendVerificationSchema }),
+  asyncHandler(AuthController.resendVerificationCode)
+);
+
+router.post(
+  '/request-password-reset',
+  validate({ body: requestPasswordResetSchema }),
+  asyncHandler(AuthController.requestPasswordReset)
+);
+
+router.post(
+  '/reset-password',
+  validate({ body: resetPasswordSchema }),
+  asyncHandler(AuthController.resetPassword)
+);
+
+// =============================================================================
+// Authenticated
+// =============================================================================
+// completeProfile + updateProfile validate inside the controller because the
+// schema depends on req.user.userType (which authenticateToken provides).
+
+router.post('/logout', authenticateToken, asyncHandler(AuthController.logout));
+router.post(
+  '/complete-profile',
+  authenticateToken,
+  asyncHandler(AuthController.completeProfile)
+);
+router.post(
+  '/update-profile',
+  authenticateToken,
+  asyncHandler(AuthController.updateProfile)
+);
 
 export default router;

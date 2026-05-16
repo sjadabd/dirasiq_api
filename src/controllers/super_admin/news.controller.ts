@@ -1,351 +1,173 @@
-import { Request, Response } from 'express';
+import type { Request, Response } from 'express';
 import fs from 'fs';
 import path from 'path';
+
 import { NewsService } from '../../services/news.service';
-import { CreateNewsRequest, NewsType, UpdateNewsRequest } from '../../types';
+import { type CreateNewsRequest, NewsType, type UpdateNewsRequest } from '../../types';
 import { NotificationController } from '../notification.controller';
-import { RecipientType, NotificationType } from '../../models/notification.model';
+import { NotificationType, RecipientType } from '../../models/notification.model';
+import { ApiError, ErrorCodes } from '../../utils/api-error';
+import { ok } from '../../utils/response.util';
+
+const UPLOAD_DIR = path.resolve(process.cwd(), 'public', 'uploads', 'news');
+
+const MIME_TO_EXT: Record<string, string> = {
+  'image/jpeg': '.jpg',
+  'image/jpg': '.jpg',
+  'image/png': '.png',
+  'image/gif': '.gif',
+  'image/webp': '.webp',
+  'image/bmp': '.bmp',
+  'image/svg+xml': '.svg',
+};
+
+const saveBase64Image = async (base64Data: string): Promise<string> => {
+  const matches = base64Data.match(/^data:(image\/[-+\w.]+);base64,(.+)$/i);
+  if (!matches) {
+    throw new ApiError(400, 'بيانات الصورة غير صحيحة', ErrorCodes.VALIDATION_ERROR);
+  }
+  const mimeType = matches[1] as string;
+  const base64String = matches[2] as string;
+  const ext = MIME_TO_EXT[mimeType] || '.png';
+  const fileName = `news_${Date.now()}_${Math.random().toString(36).slice(2, 8)}${ext}`;
+  const filePath = path.join(UPLOAD_DIR, fileName);
+  await fs.promises.mkdir(UPLOAD_DIR, { recursive: true });
+  await fs.promises.writeFile(filePath, Buffer.from(base64String, 'base64'));
+  return `/uploads/news/${fileName}`;
+};
+
+const deleteLocalImageIfExists = async (publicPath: string | null | undefined): Promise<void> => {
+  if (!publicPath || typeof publicPath !== 'string') return;
+  if (!publicPath.startsWith('/uploads/news/')) return;
+  try {
+    const fileOnDisk = path.resolve(process.cwd(), 'public', publicPath.replace(/^\//, ''));
+    await fs.promises.unlink(fileOnDisk).catch(() => undefined);
+  } catch {
+    /* ignore */
+  }
+};
+
+const recipientTypeForNews = (newsType?: NewsType): RecipientType => {
+  switch (newsType) {
+    case NewsType.WEB:
+      return RecipientType.TEACHERS;
+    case NewsType.MOBILE:
+      return RecipientType.STUDENTS;
+    case NewsType.WEB_AND_MOBILE:
+    default:
+      return RecipientType.ALL;
+  }
+};
 
 export class NewsController {
-  // Save base64 image to disk under public/uploads/news and return public path '/uploads/news/<filename>'
-  private static async saveBase64Image(base64Data: string): Promise<string> {
-    // Validate and parse data URI
-    const matches = base64Data.match(/^data:(image\/[-+\w.]+);base64,(.+)$/i);
-    if (!matches) {
-      throw new Error('Invalid base64 image data');
+  // POST /api/news
+  static async create(req: Request, res: Response): Promise<void> {
+    const data = { ...(req.body as CreateNewsRequest) };
+
+    if (data.imageUrl && typeof data.imageUrl === 'string' && data.imageUrl.startsWith('data:image')) {
+      data.imageUrl = await saveBase64Image(data.imageUrl);
     }
-    const mimeType: string = matches[1] as string;
-    const base64String: string = matches[2] as string;
 
-    const ext = (() => {
-      const map: Record<string, string> = {
-        'image/jpeg': '.jpg',
-        'image/jpg': '.jpg',
-        'image/png': '.png',
-        'image/gif': '.gif',
-        'image/webp': '.webp',
-        'image/bmp': '.bmp',
-        'image/svg+xml': '.svg'
-      };
-      return map[mimeType as keyof typeof map] || '.png';
-    })();
+    const news = await NewsService.createNews(data);
 
-    const fileName = `news_${Date.now()}_${Math.random().toString(36).slice(2, 8)}${ext}`;
-    const uploadDir = path.resolve(process.cwd(), 'public', 'uploads', 'news');
-    const filePath = path.join(uploadDir, fileName);
+    // Fire-and-forget notification fan-out by news type. Never blocks success.
+    try {
+      const notif = new NotificationController();
+      const createdBy = (req.user?.id as string | undefined) || 'system';
+      await notif.createAndSendNotification({
+        title: '📰 خبر جديد!',
+        message: data.title || 'تمت إضافة خبر جديد في المنصة',
+        type: NotificationType.SYSTEM_ANNOUNCEMENT,
+        priority: 'medium',
+        recipientType: recipientTypeForNews(data.newsType),
+        data: {
+          newsId: news.id,
+          newsType: data.newsType,
+          url: `/news/${news.id}`,
+          imageUrl: news.imageUrl,
+        },
+        createdBy,
+      });
+    } catch (err) {
+      req.log?.warn({ err }, 'news creation notification failed');
+    }
 
-    await fs.promises.mkdir(uploadDir, { recursive: true });
-    const buffer = Buffer.from(base64String as string, 'base64');
-    await fs.promises.writeFile(filePath, buffer);
-
-    // Return public URL path used by the app
-    return `/uploads/news/${fileName}`;
+    res.status(201).json(ok(news, 'تم إنشاء الخبر بنجاح'));
   }
 
-  // Delete existing image file if it's a locally stored news image
-  private static async deleteLocalNewsImageIfExists(publicPath: string): Promise<void> {
-    try {
-      if (!publicPath || typeof publicPath !== 'string') return;
-      // Only allow deletion inside our news uploads folder
-      if (!publicPath.startsWith('/uploads/news/')) return;
-      const relative = publicPath.replace(/^\//, ''); // remove leading slash
-      const fileOnDisk = path.resolve(process.cwd(), 'public', relative.replace(/^uploads\//, 'uploads/'));
-      await fs.promises.unlink(fileOnDisk).catch(() => { });
-    } catch {
-      // Silently ignore delete errors
+  // GET /api/news/:id
+  static async getById(req: Request, res: Response): Promise<void> {
+    const id = req.params['id'] as string;
+    const news = await NewsService.getNewsById(id);
+    if (!news) {
+      throw new ApiError(404, 'الخبر غير موجود', ErrorCodes.NOT_FOUND);
     }
-  }
-  /**
-   * إنشاء خبر جديد
-   */
-  static async create(req: Request, res: Response) {
-    try {
-      const data: CreateNewsRequest = req.body;
-
-      // ✅ تحقق من نوع الخبر
-      if (data.newsType && !Object.values(NewsType).includes(data.newsType)) {
-        return res.status(400).json({
-          success: false,
-          message: 'Invalid newsType value'
-        });
-      }
-
-      // ✅ معالجة الصورة (base64)
-      if (data.imageUrl && typeof data.imageUrl === 'string' && data.imageUrl.startsWith('data:image')) {
-        try {
-          const savedPath = await NewsController.saveBase64Image(data.imageUrl);
-          data.imageUrl = savedPath;
-        } catch (e: any) {
-          return res.status(400).json({
-            success: false,
-            message: 'Invalid image data provided',
-            errors: [e.message]
-          });
-        }
-      }
-
-      // ✅ إنشاء الخبر
-      const news = await NewsService.createNews(data);
-
-      // ✅ بعد الإنشاء — أرسل الإشعارات حسب نوع الخبر
-      try {
-        const notificationController = new NotificationController();
-        const createdBy = (req as any).user?.id || 'system';
-
-        const recipientType = (() => {
-          switch (data.newsType) {
-            case NewsType.WEB:
-              return RecipientType.TEACHERS;
-            case NewsType.MOBILE:
-              return RecipientType.STUDENTS;
-            case NewsType.WEB_AND_MOBILE:
-            default:
-              return RecipientType.ALL;
-          }
-        })();
-
-        await notificationController.createAndSendNotification({
-          title: '📰 خبر جديد!',
-          message: data.title || 'تمت إضافة خبر جديد في المنصة',
-          type: NotificationType.SYSTEM_ANNOUNCEMENT,
-          priority: 'medium',
-          recipientType,
-          data: {
-            newsId: news.id,
-            newsType: data.newsType,
-            url: `/news/${news.id}`,
-            imageUrl: news.imageUrl,
-          },
-          createdBy,
-        });
-
-        console.log(`✅ Notification queued for news type: ${data.newsType}`);
-      } catch (notifyErr) {
-        console.warn('⚠️ Failed to send notification:', notifyErr);
-      }
-
-      return res.status(201).json({
-        success: true,
-        message: 'تم إنشاء الخبر بنجاح',
-        data: news,
-      });
-    } catch (error: any) {
-      console.error('❌ Error creating news:', error);
-      return res.status(500).json({
-        success: false,
-        message: 'حدث خطأ أثناء إنشاء الخبر',
-        errors: [error.message],
-      });
-    }
+    res.status(200).json(ok(news, 'تفاصيل الخبر'));
   }
 
+  // GET /api/news
+  static async getAll(req: Request, res: Response): Promise<void> {
+    const query = req.query as unknown as {
+      page?: number;
+      limit?: number;
+      search?: string;
+      isActive?: boolean;
+      newsType?: NewsType;
+    };
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 10;
 
-  /**
-   * جلب خبر واحد بالمعرف
-   */
-  static async getById(req: Request, res: Response) {
-    try {
-      const { id } = req.params as { id?: string };
-      if (!id) {
-        return res.status(400).json({
-          success: false,
-          message: 'معرف الخبر مفقود',
-        });
-      }
-      const news = await NewsService.getNewsById(id);
+    let newsTypes: NewsType[] | undefined;
+    if (query.newsType === NewsType.WEB) newsTypes = [NewsType.WEB, NewsType.WEB_AND_MOBILE];
+    else if (query.newsType === NewsType.MOBILE) newsTypes = [NewsType.MOBILE, NewsType.WEB_AND_MOBILE];
+    else if (query.newsType === NewsType.WEB_AND_MOBILE) newsTypes = [NewsType.WEB_AND_MOBILE];
 
-      if (!news) {
-        return res.status(404).json({
-          success: false,
-          message: 'الخبر غير موجود',
-        });
-      }
-
-      return res.json({
-        success: true,
-        data: news,
-      });
-    } catch (error: any) {
-      console.error('❌ Error fetching news by ID:', error);
-      return res.status(500).json({
-        success: false,
-        message: 'حدث خطأ أثناء جلب الخبر',
-        errors: [error.message],
-      });
-    }
+    const result = await NewsService.getAllNews(page, limit, query.search, query.isActive, newsTypes);
+    // Preserve the legacy contract — the dashboard reads `data: <result>` with
+    // its own pagination object inside.
+    res.status(200).json(ok(result, 'قائمة الأخبار'));
   }
 
-  /**
-   * جلب جميع الأخبار مع بحث وترقيم
-   */
-  static async getAll(req: Request, res: Response) {
-    try {
-      const page = parseInt(req.query['page'] as string) || 1;
-      const limit = parseInt(req.query['limit'] as string) || 10;
-      const search = req.query['search'] as string | undefined;
-      const isActive =
-        req.query['isActive'] !== undefined
-          ? (req.query['isActive'] as string) === 'true'
-          : undefined;
-      const newsTypeParam = req.query['newsType'] as string | undefined;
-      let newsTypes: NewsType[] | undefined = undefined;
-      if (newsTypeParam && (Object.values(NewsType) as string[]).includes(newsTypeParam)) {
-        const nt = newsTypeParam as NewsType;
-        if (nt === NewsType.WEB) {
-          newsTypes = [NewsType.WEB, NewsType.WEB_AND_MOBILE];
-        } else if (nt === NewsType.MOBILE) {
-          newsTypes = [NewsType.MOBILE, NewsType.WEB_AND_MOBILE];
-        } else if (nt === NewsType.WEB_AND_MOBILE) {
-          newsTypes = [NewsType.WEB_AND_MOBILE];
-        }
+  // PUT /api/news/:id
+  static async update(req: Request, res: Response): Promise<void> {
+    const id = req.params['id'] as string;
+    const data = { ...(req.body as UpdateNewsRequest) };
+
+    if (data.imageUrl && typeof data.imageUrl === 'string' && data.imageUrl.startsWith('data:image')) {
+      const current = await NewsService.getNewsById(id);
+      if (!current) {
+        throw new ApiError(404, 'الخبر غير موجود', ErrorCodes.NOT_FOUND);
       }
-
-      const result = await NewsService.getAllNews(page, limit, search, isActive, newsTypes);
-
-      return res.json({
-        success: true,
-        ...result,
-      });
-    } catch (error: any) {
-      console.error('❌ Error fetching all news:', error);
-      return res.status(500).json({
-        success: false,
-        message: 'حدث خطأ أثناء جلب الأخبار',
-        errors: [error.message],
-      });
+      if (current.imageUrl) {
+        await deleteLocalImageIfExists(current.imageUrl);
+      }
+      data.imageUrl = await saveBase64Image(data.imageUrl);
     }
+
+    const news = await NewsService.updateNews(id, data);
+    if (!news) {
+      throw new ApiError(404, 'الخبر غير موجود', ErrorCodes.NOT_FOUND);
+    }
+    res.status(200).json(ok(news, 'تم تحديث الخبر'));
   }
 
-  /**
-   * تحديث خبر
-   */
-  static async update(req: Request, res: Response) {
-    try {
-      const { id } = req.params as { id?: string };
-      if (!id) {
-        return res.status(400).json({
-          success: false,
-          message: 'معرف الخبر مفقود',
-        });
-      }
-      const data: UpdateNewsRequest = req.body;
-      // Handle base64 image upload if provided during update
-      if (data.imageUrl && typeof data.imageUrl === 'string' && data.imageUrl.startsWith('data:image')) {
-        try {
-          // Load current news to remove old image if exists
-          const current = await NewsService.getNewsById(id);
-          if (!current) {
-            return res.status(404).json({
-              success: false,
-              message: 'الخبر غير موجود',
-            });
-          }
-          if (current.imageUrl) {
-            await NewsController.deleteLocalNewsImageIfExists(current.imageUrl);
-          }
-          const savedPath = await NewsController.saveBase64Image(data.imageUrl);
-          data.imageUrl = savedPath;
-        } catch (e: any) {
-          return res.status(400).json({
-            success: false,
-            message: 'Invalid image data provided',
-            errors: [e.message]
-          });
-        }
-      }
-      const news = await NewsService.updateNews(id, data);
-
-      if (!news) {
-        return res.status(404).json({
-          success: false,
-          message: 'الخبر غير موجود',
-        });
-      }
-
-      return res.json({
-        success: true,
-        message: 'تم تحديث الخبر بنجاح',
-        data: news,
-      });
-    } catch (error: any) {
-      console.error('❌ Error updating news:', error);
-      return res.status(500).json({
-        success: false,
-        message: 'حدث خطأ أثناء تحديث الخبر',
-        errors: [error.message],
-      });
+  // DELETE /api/news/:id
+  static async delete(req: Request, res: Response): Promise<void> {
+    const id = req.params['id'] as string;
+    const deleted = await NewsService.deleteNews(id);
+    if (!deleted) {
+      throw new ApiError(404, 'الخبر غير موجود أو تم حذفه مسبقاً', ErrorCodes.NOT_FOUND);
     }
+    res.status(200).json(ok(null, 'تم حذف الخبر بنجاح'));
   }
 
-  /**
-   * حذف خبر (Soft Delete)
-   */
-  static async delete(req: Request, res: Response) {
-    try {
-      const { id } = req.params as { id?: string };
-      if (!id) {
-        return res.status(400).json({
-          success: false,
-          message: 'معرف الخبر مفقود',
-        });
-      }
-      const deleted = await NewsService.deleteNews(id);
-
-      if (!deleted) {
-        return res.status(404).json({
-          success: false,
-          message: 'الخبر غير موجود أو تم حذفه مسبقاً',
-        });
-      }
-
-      return res.json({
-        success: true,
-        message: 'تم حذف الخبر بنجاح',
-      });
-    } catch (error: any) {
-      console.error('❌ Error deleting news:', error);
-      return res.status(500).json({
-        success: false,
-        message: 'حدث خطأ أثناء حذف الخبر',
-        errors: [error.message],
-      });
+  // PATCH /api/news/:id/publish
+  static async publish(req: Request, res: Response): Promise<void> {
+    const id = req.params['id'] as string;
+    const news = await NewsService.publishNews(id);
+    if (!news) {
+      throw new ApiError(404, 'الخبر غير موجود', ErrorCodes.NOT_FOUND);
     }
-  }
-
-  /**
-   * نشر خبر
-   */
-  static async publish(req: Request, res: Response) {
-    try {
-      const { id } = req.params as { id?: string };
-      if (!id) {
-        return res.status(400).json({
-          success: false,
-          message: 'معرف الخبر مفقود',
-        });
-      }
-      const news = await NewsService.publishNews(id);
-
-      if (!news) {
-        return res.status(404).json({
-          success: false,
-          message: 'الخبر غير موجود',
-        });
-      }
-
-      return res.json({
-        success: true,
-        message: 'تم نشر الخبر بنجاح',
-        data: news,
-      });
-    } catch (error: any) {
-      console.error('❌ Error publishing news:', error);
-      return res.status(500).json({
-        success: false,
-        message: 'حدث خطأ أثناء نشر الخبر',
-        errors: [error.message],
-      });
-    }
+    res.status(200).json(ok(news, 'تم نشر الخبر بنجاح'));
   }
 }
-

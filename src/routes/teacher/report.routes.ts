@@ -1,9 +1,16 @@
 import { Router } from 'express';
+
 import { TeacherReportController } from '../../controllers/teacher/report.controller';
-import { authenticateToken, requireTeacher } from '../../middleware/auth.middleware';
+import { validate } from '../../middleware/validate.middleware';
+import { asyncHandler } from '../../utils/async-handler';
+import { financialReportQuerySchema } from '../../schemas/teacher.schemas';
 
 const router = Router();
 
-router.get('/financial', authenticateToken, requireTeacher, TeacherReportController.financial);
+router.get(
+  '/financial',
+  validate({ query: financialReportQuerySchema }),
+  asyncHandler(TeacherReportController.financial)
+);
 
 export default router;

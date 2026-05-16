@@ -1,1382 +1,283 @@
-import { Request, Response } from 'express';
-import { body, validationResult } from 'express-validator';
+// AuthController — thin HTTP layer for /api/auth/*.
+//
+// Phase 1 invariants this file enforces:
+//   - No express-validator. Validation lives on the route via `validate(schema)`.
+//   - No try/catch boilerplate. Each handler is `async`; the asyncHandler
+//     wrapper on the route forwards thrown errors to the global error middleware.
+//   - No bespoke `res.status(...).json(...)`. Success → `ok()` / `okEmpty()`.
+//     Failure → `throw new ApiError(...)`.
+//   - No `console.error`. Anything unusual is thrown; the logger picks it up.
+//
+// Phase 1.C completed the service-layer migration: AuthService and its
+// supporting services throw `ApiError` directly. The legacy
+// `unwrapServiceResult` bridge is gone.
+
+import type { Request, Response } from 'express';
+
 import { AppleAuthService } from '../services/apple-auth.service';
 import { AuthService } from '../services/auth.service';
 import { GoogleAuthService } from '../services/google-auth.service';
-import { AcademicYearService } from '../services/super_admin/academic-year.service';
+
+import { ApiError, ErrorCodes } from '../utils/api-error';
+import { ok, okEmpty } from '../utils/response.util';
+import {
+  completeProfileStudentSchema,
+  completeProfileTeacherSchema,
+  updateProfileStudentSchema,
+  updateProfileTeacherSchema,
+} from '../schemas/auth.schemas';
 
 export class AuthController {
-  // Register super admin
+  // -------------------------------------------------------------------------
+  // Registration
+  // -------------------------------------------------------------------------
+
   static async registerSuperAdmin(req: Request, res: Response): Promise<void> {
-    try {
-      // Validate request body
-      await Promise.all([
-        body('name').notEmpty().withMessage('الاسم مطلوب').run(req),
-        body('email').isEmail().withMessage('البريد الإلكتروني مطلوب').run(req),
-        body('password')
-          .isLength({ min: 6 })
-          .withMessage('كلمة المرور يجب أن تكون 6 أحرف على الأقل')
-          .run(req),
-      ]);
-
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        res.status(400).json({
-          success: false,
-          message: 'فشل في التحقق من البيانات',
-          errors: errors.array().map(err => err.msg),
-        });
-        return;
-      }
-
-      const { name, email, password } = req.body;
-      const result = await AuthService.registerSuperAdmin({
-        name,
-        email,
-        password,
-      });
-
-      if (result.success) {
-        res.status(201).json(result);
-      } else {
-        res.status(400).json(result);
-      }
-    } catch (error) {
-      console.error('Error in registerSuperAdmin controller:', error);
-      res.status(500).json({
-        success: false,
-        message: 'حدث خطأ في الخادم',
-        errors: ['حدث خطأ في الخادم'],
-      });
-    }
-  }
-  // Apple web redirect callback: /auth/apple/callback?code=...&state=...
-  static async appleCallback(req: Request, res: Response): Promise<void> {
-    try {
-      const code = req.query['code'] as string | undefined;
-      const state = req.query['state'] as string | undefined;
-      // Allow passing userType via state or query for web flows
-      const userTypeParam =
-        (req.query['userType'] as string | undefined) || state;
-
-      if (!code) {
-        res.status(400).json({
-          success: false,
-          message: 'رمز المصادقة من Apple غير موجود',
-          errors: ['Missing authorization code'],
-        });
-        return;
-      }
-
-      if (!userTypeParam || !['teacher', 'student'].includes(userTypeParam)) {
-        res.status(400).json({
-          success: false,
-          message: 'نوع المستخدم غير صحيح أو غير مزود',
-          errors: ['userType must be teacher or student'],
-        });
-        return;
-      }
-
-      // Apple requires redirect_uri to match Services ID configuration exactly
-      const redirectUri = 'https://api.mulhimiq.com/api/auth/apple-redirect';
-      const exchange = await AppleAuthService.exchangeAuthorizationCode(
-        code,
-        redirectUri
-      );
-      if (!exchange.success || !exchange.data) {
-        res.status(400).json({
-          success: false,
-          message: 'فشل تبادل كود Apple',
-          errors: [exchange.error || 'Apple code exchange failed'],
-        });
-        return;
-      }
-
-      const idToken = exchange.data.id_token as string | undefined;
-      if (!idToken) {
-        res.status(400).json({
-          success: false,
-          message: 'لم يتم إرجاع id_token من Apple',
-          errors: ['Missing id_token in Apple response'],
-        });
-        return;
-      }
-
-      const verification = await AppleAuthService.verifyIdentityToken(idToken);
-      if (!verification.success || !verification.payload) {
-        res.status(400).json({
-          success: false,
-          message: 'فشل في التحقق من رمز Apple',
-          errors: [verification.error || 'Invalid Apple token'],
-        });
-        return;
-      }
-
-      const payload: any = verification.payload;
-      const email = payload.email;
-      const name = payload.name || (email ? email.split('@')[0] : undefined);
-      const sub = payload.sub;
-
-      if (!sub) {
-        res.status(400).json({
-          success: false,
-          message: 'بيانات Apple ناقصة',
-          errors: ['Missing Apple subject (sub)'],
-        });
-        return;
-      }
-
-      if (!email) {
-        res.status(400).json({
-          success: false,
-          message:
-            'لم يتم توفير بريد إلكتروني من Apple. الرجاء استخدام طريقة أخرى',
-          errors: ['Apple did not provide email'],
-        });
-        return;
-      }
-
-      const appleData: any = {
-        sub,
-        email,
-        name: name || email.split('@')[0],
-      };
-
-      const result = await AuthService.appleAuth(
-        appleData,
-        userTypeParam as 'teacher' | 'student'
-      );
-      if (result.success) {
-        res.status(200).json(result);
-      } else {
-        res.status(400).json(result);
-      }
-    } catch (error) {
-      console.error('Error in appleCallback controller:', error);
-      res.status(500).json({
-        success: false,
-        message: 'حدث خطأ في الخادم',
-        errors: ['حدث خطأ في الخادم'],
-      });
-    }
+    const { name, email, password } = req.body;
+    const data = await AuthService.registerSuperAdmin({ name, email, password });
+    res.status(201).json(ok(data, 'تم تسجيل السوبر أدمن بنجاح'));
   }
 
-  // Apple Sign-in authentication
-  static async appleAuth(req: Request, res: Response): Promise<void> {
-    try {
-      await Promise.all([
-        body('identityToken')
-          .isString()
-          .withMessage('identityToken is required')
-          .run(req),
-        body('authorizationCode')
-          .optional()
-          .isString()
-          .withMessage('authorizationCode must be a string')
-          .run(req),
-        body('userType')
-          .isIn(['teacher', 'student'])
-          .withMessage('User type must be teacher or student')
-          .run(req),
-        body('firstName').optional().isString().run(req),
-        body('lastName').optional().isString().run(req),
-        body('oneSignalPlayerId').optional().isString().run(req),
-      ]);
-
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        res.status(400).json({
-          success: false,
-          message: 'فشل في التحقق من البيانات',
-          errors: errors.array().map(e => e.msg),
-        });
-        return;
-      }
-
-      const {
-        identityToken,
-        userType,
-        firstName,
-        lastName,
-        oneSignalPlayerId,
-      } = req.body;
-
-      const verification =
-        await AppleAuthService.verifyIdentityToken(identityToken);
-      if (!verification.success || !verification.payload) {
-        res.status(400).json({
-          success: false,
-          message: 'فشل في التحقق من بيانات Apple',
-          errors: [verification.error || 'Invalid Apple token'],
-        });
-        return;
-      }
-
-      const payload: any = verification.payload;
-      const email = payload.email;
-      const name =
-        payload.name || [firstName, lastName].filter(Boolean).join(' ').trim();
-      const sub = payload.sub;
-
-      if (!sub) {
-        res.status(400).json({
-          success: false,
-          message: 'بيانات Apple ناقصة',
-          errors: ['Missing Apple subject (sub)'],
-        });
-        return;
-      }
-
-      if (!email) {
-        res.status(400).json({
-          success: false,
-          message: 'البريد الإلكتروني من Apple غير متاح',
-          errors: ['Apple did not provide email'],
-        });
-        return;
-      }
-
-      const appleData: any = {
-        sub,
-        email,
-        name: name || email.split('@')[0],
-        oneSignalPlayerId,
-      };
-
-      const result = await AuthService.appleAuth(appleData, userType);
-
-      if (result.success) {
-        res.status(200).json(result);
-      } else {
-        res.status(400).json(result);
-      }
-    } catch (error) {
-      console.error('Error in appleAuth controller:', error);
-      res.status(500).json({
-        success: false,
-        message: 'حدث خطأ في الخادم',
-        errors: ['حدث خطأ في الخادم'],
-      });
-    }
-  }
-
-  // Register teacher
   static async registerTeacher(req: Request, res: Response): Promise<void> {
-    try {
-      // 1) Validation (كما هو عندك)
-      await Promise.all([
-        body('name').notEmpty().withMessage('الاسم مطلوب').run(req),
-        body('email').isEmail().withMessage('البريد الإلكتروني مطلوب').run(req),
-        body('password')
-          .isLength({ min: 6 })
-          .withMessage('كلمة المرور يجب أن تكون 6 أحرف على الأقل')
-          .run(req),
-        body('phone').notEmpty().withMessage('رقم الهاتف مطلوب').run(req),
-        body('address').notEmpty().withMessage('العنوان مطلوب').run(req),
-        body('bio').notEmpty().withMessage('النبذة الشخصية مطلوبة').run(req),
-        body('experienceYears')
-          .isInt({ min: 0 })
-          .withMessage('سنوات الخبرة مطلوبة')
-          .run(req),
-        body('gradeIds')
-          .isArray({ min: 1 })
-          .withMessage('معرف الصف مطلوب')
-          .run(req),
-        body('gradeIds.*').isUUID().withMessage('الصف غير موجود').run(req),
-        body('studyYear')
-          .notEmpty()
-          .withMessage('السنة الدراسية مطلوبة')
-          .matches(/^[0-9]{4}-[0-9]{4}$/)
-          .withMessage('تنسيق السنة الدراسية غير صحيح')
-          .run(req),
-        body('latitude')
-          .optional()
-          .isFloat({ min: -90, max: 90 })
-          .withMessage('خط العرض غير صحيح')
-          .run(req),
-        body('longitude')
-          .optional()
-          .isFloat({ min: -180, max: 180 })
-          .withMessage('خط الطول غير صحيح')
-          .run(req),
-        body('formattedAddress')
-          .optional()
-          .isLength({ max: 1000 })
-          .withMessage('العنوان طويل جداً')
-          .run(req),
-        body('country')
-          .optional()
-          .isLength({ max: 100 })
-          .withMessage('اسم البلد طويل جداً')
-          .run(req),
-        body('city')
-          .optional()
-          .isLength({ max: 100 })
-          .withMessage('اسم المدينة طويل جداً')
-          .run(req),
-        body('state')
-          .optional()
-          .isLength({ max: 100 })
-          .withMessage('اسم المحافظة طويل جداً')
-          .run(req),
-        body('zipcode')
-          .optional()
-          .isLength({ max: 20 })
-          .withMessage('الرمز البريدي طويل جداً')
-          .run(req),
-        body('streetName')
-          .optional()
-          .isLength({ max: 255 })
-          .withMessage('اسم الشارع طويل جداً')
-          .run(req),
-        body('suburb')
-          .optional()
-          .isLength({ max: 100 })
-          .withMessage('اسم الحي طويل جداً')
-          .run(req),
-        body('locationConfidence')
-          .optional()
-          .isFloat({ min: 0, max: 1 })
-          .withMessage('ثقة الموقع غير صحيحة')
-          .run(req),
-      ]);
-
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        res.status(400).json({
-          success: false,
-          message: 'فشل في التحقق من البيانات',
-          errors: errors.array().map(e => e.msg),
-        });
-        return;
-      }
-
-      // 2) Build teacher data
-      const {
-        name,
-        email,
-        password,
-        phone,
-        address,
-        bio,
-        experienceYears,
-        visitorId,
-        deviceInfo,
-        gradeIds,
-        studyYear,
-        latitude,
-        longitude,
-        formattedAddress,
-        country,
-        city,
-        state,
-        zipcode,
-        streetName,
-        suburb,
-        locationConfidence,
-      } = req.body;
-
-      const teacherData: any = {
-        name,
-        email,
-        password,
-        phone,
-        address,
-        bio,
-        experienceYears,
-        visitorId,
-        deviceInfo,
-        gradeIds,
-        studyYear,
-      };
-      if (latitude) teacherData.latitude = Number(latitude);
-      if (longitude) teacherData.longitude = Number(longitude);
-      if (formattedAddress) teacherData.formattedAddress = formattedAddress;
-      if (country) teacherData.country = country;
-      if (city) teacherData.city = city;
-      if (state) teacherData.state = state;
-      if (zipcode) teacherData.zipcode = zipcode;
-      if (streetName) teacherData.streetName = streetName;
-      if (suburb) teacherData.suburb = suburb;
-      if (locationConfidence !== undefined)
-        teacherData.locationConfidence = Number(locationConfidence);
-
-      // 3) Register teacher (Service)
-      const result = await AuthService.registerTeacher(teacherData);
-      if (!result.success) {
-        res.status(400).json(result);
-        return;
-      }
-      // الاعتماد على الخدمة لإرجاع النتيجة كاملة (بما في ذلك الاشتراك المجاني إن تم إنشاؤه)
-      res.status(201).json(result);
-    } catch (error) {
-      console.error('Error in registerTeacher controller:', error);
-      res.status(500).json({
-        success: false,
-        message: 'حدث خطأ في الخادم',
-        errors: ['حدث خطأ في الخادم'],
-      });
-    }
+    const data = await AuthService.registerTeacher(req.body);
+    res.status(201).json(ok(data, 'تم تسجيل المعلم بنجاح'));
   }
 
-  // Register student
   static async registerStudent(req: Request, res: Response): Promise<void> {
-    try {
-      // ✅ التحقق من الفاليديشن (بدون studyYear)
-      await Promise.all([
-        body('name').notEmpty().withMessage('الاسم مطلوب').run(req),
-        body('email')
-          .isEmail()
-          .withMessage('البريد الإلكتروني غير صحيح')
-          .run(req),
-        body('password')
-          .isLength({ min: 6 })
-          .withMessage('كلمة المرور يجب أن تكون 6 أحرف على الأقل')
-          .run(req),
-        body('studentPhone')
-          .optional()
-          .isLength({ min: 10, max: 15 })
-          .withMessage('رقم هاتف الطالب يجب أن يحتوي على 10 إلى 15 رقم')
-          .run(req),
-        body('parentPhone')
-          .optional()
-          .isLength({ min: 10, max: 15 })
-          .withMessage('رقم هاتف ولي الأمر يجب أن يحتوي على 10 إلى 15 رقم')
-          .run(req),
-        body('schoolName')
-          .optional()
-          .isLength({ max: 255 })
-          .withMessage('اسم المدرسة طويل جداً')
-          .run(req),
-        body('gender')
-          .optional()
-          .isIn(['male', 'female'])
-          .withMessage('الجنس غير صحيح')
-          .run(req),
-        body('birthDate')
-          .optional()
-          .isISO8601()
-          .withMessage('تنسيق تاريخ الميلاد غير صحيح')
-          .run(req),
-        body('gradeId')
-          .notEmpty()
-          .withMessage('معرف الصف مطلوب')
-          .isUUID()
-          .withMessage('الصف غير موجود')
-          .run(req),
-        body('latitude')
-          .optional()
-          .isFloat({ min: -90, max: 90 })
-          .withMessage('خط العرض غير صحيح')
-          .run(req),
-        body('longitude')
-          .optional()
-          .isFloat({ min: -180, max: 180 })
-          .withMessage('خط الطول غير صحيح')
-          .run(req),
-      ]);
-
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        console.error('❌ Validation errors:', errors.array()); // 👈 اطبع الأخطاء
-
-        res.status(400).json({
-          success: false,
-          message: 'فشل في التحقق من البيانات',
-          errors: errors.array().map(err => err.msg),
-        });
-        return;
-      }
-
-      const {
-        name,
-        email,
-        password,
-        studentPhone,
-        parentPhone,
-        schoolName,
-        gender,
-        birthDate,
-        gradeId,
-        latitude,
-        longitude,
-      } = req.body;
-
-      // ✅ جلب السنة الدراسية المفعلة
-      const activeYearResult = await AcademicYearService.getActive();
-      if (!activeYearResult.success || !activeYearResult.data) {
-        res.status(400).json({
-          success: false,
-          message: 'لا توجد سنة دراسية مفعّلة حالياً',
-        });
-        return;
-      }
-
-      // 👇 خذ السنة من داخل academicYear
-      const studyYear = activeYearResult.data.academicYear.year;
-
-      // ✅ بناء بيانات الطالب
-      const studentData: any = {
-        name,
-        email,
-        password,
-        studentPhone,
-        parentPhone,
-        schoolName,
-        gender,
-        birthDate,
-        gradeId,
-        studyYear,
-      };
-
-      if (latitude) studentData.latitude = Number(latitude);
-      if (longitude) studentData.longitude = Number(longitude);
-
-      // حفظ الطالب
-      const result = await AuthService.registerStudent(studentData);
-
-      if (result.success) {
-        res.status(201).json(result);
-      } else {
-        res.status(400).json(result);
-      }
-    } catch (error) {
-      console.error('Error in registerStudent controller:', error);
-      res.status(500).json({
-        success: false,
-        message: 'حدث خطأ في الخادم',
-        errors: ['حدث خطأ في الخادم'],
-      });
-    }
+    const data = await AuthService.registerStudent(req.body);
+    res.status(201).json(ok(data, 'تم تسجيل الطالب بنجاح'));
   }
 
-  // Login user
+  // -------------------------------------------------------------------------
+  // Session
+  // -------------------------------------------------------------------------
+
   static async login(req: Request, res: Response): Promise<void> {
-    try {
-      await Promise.all([
-        body('email').isEmail().withMessage('البريد الإلكتروني مطلوب').run(req),
-        body('password').notEmpty().withMessage('كلمة المرور مطلوبة').run(req),
-        body('oneSignalPlayerId')
-          .optional({ nullable: true })
-          .isString()
-          .withMessage('معرّف OneSignal يجب أن يكون نصاً')
-          .run(req),
-      ]);
-
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        res
-          .status(400)
-          .json({ success: false, errors: errors.array().map(e => e.msg) });
-        return;
-      }
-
-      const { email, password, oneSignalPlayerId } = req.body;
-      const result = await AuthService.login({
-        email,
-        password,
-        oneSignalPlayerId,
-      });
-
-      if (result.success) {
-        res.status(200).json(result);
-      } else {
-        res.status(401).json(result);
-      }
-    } catch (error) {
-      console.error('Error in login controller:', error);
-      res.status(500).json({ success: false, message: 'حدث خطأ في الخادم' });
-    }
+    const { email, password, oneSignalPlayerId } = req.body;
+    const data = await AuthService.login({ email, password, oneSignalPlayerId });
+    res.status(200).json(ok(data, 'تم تسجيل الدخول بنجاح'));
   }
 
-  // Logout user
   static async logout(req: Request, res: Response): Promise<void> {
-    try {
-      const authHeader = req.headers.authorization;
-      const token = authHeader && authHeader.split(' ')[1];
-
-      if (!token) {
-        res.status(400).json({
-          success: false,
-          message: 'رمز المصادقة مطلوب',
-          errors: ['لم يتم توفير رمز المصادقة'],
-        });
-        return;
-      }
-
-      const result = await AuthService.logout(token);
-
-      if (result.success) {
-        res.status(200).json(result);
-      } else {
-        res.status(400).json(result);
-      }
-    } catch (error) {
-      console.error('Error in logout controller:', error);
-      res.status(500).json({
-        success: false,
-        message: 'حدث خطأ في الخادم',
-        errors: ['حدث خطأ في الخادم'],
-      });
+    const authHeader = req.headers.authorization;
+    const token = authHeader?.split(' ')[1];
+    if (!token) {
+      throw new ApiError(400, 'رمز المصادقة مطلوب', ErrorCodes.UNAUTHORIZED);
     }
+    await AuthService.logout(token);
+    res.status(200).json(okEmpty('تم تسجيل الخروج بنجاح'));
   }
 
-  // Verify email
+  // -------------------------------------------------------------------------
+  // Email verification + password reset
+  // -------------------------------------------------------------------------
+
   static async verifyEmail(req: Request, res: Response): Promise<void> {
-    try {
-      // Validate request body
-      await Promise.all([
-        body('email').isEmail().withMessage('البريد الإلكتروني مطلوب').run(req),
-        body('code')
-          .optional()
-          .isLength({ min: 6, max: 6 })
-          .withMessage('رمز التحقق يجب أن يكون 6 أرقام')
-          .run(req),
-        body('verificationToken')
-          .optional()
-          .isLength({ min: 6, max: 6 })
-          .withMessage('رمز التحقق يجب أن يكون 6 أرقام')
-          .run(req),
-      ]);
-
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        res.status(400).json({
-          success: false,
-          message: 'فشل في التحقق من البيانات',
-          errors: errors.array().map(err => err.msg),
-        });
-        return;
-      }
-
-      const { email, code, verificationToken } = req.body;
-
-      // Use either 'code' or 'verificationToken', with 'code' taking precedence
-      const verificationCode = code || verificationToken;
-
-      if (!verificationCode) {
-        res.status(400).json({
-          success: false,
-          message: 'فشل في التحقق من البيانات',
-          errors: ['رمز التحقق مطلوب'],
-        });
-        return;
-      }
-
-      const result = await AuthService.verifyEmail(email, verificationCode);
-
-      if (result.success) {
-        res.status(200).json(result);
-      } else {
-        res.status(400).json(result);
-      }
-    } catch (error) {
-      console.error('Error in verifyEmail controller:', error);
-      res.status(500).json({
-        success: false,
-        message: 'حدث خطأ في الخادم',
-        errors: ['حدث خطأ في الخادم'],
-      });
-    }
+    const { email, code } = req.body;
+    await AuthService.verifyEmail(email, code);
+    res.status(200).json(okEmpty('تم التحقق من البريد الإلكتروني بنجاح'));
   }
 
-  // Resend verification code
-  static async resendVerificationCode(
-    req: Request,
-    res: Response
-  ): Promise<void> {
-    try {
-      // Validate request body
-      await body('email')
-        .isEmail()
-        .withMessage('البريد الإلكتروني مطلوب')
-        .run(req);
-
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        res.status(400).json({
-          success: false,
-          message: 'فشل في التحقق من البيانات',
-          errors: errors.array().map(err => err.msg),
-        });
-        return;
-      }
-
-      const { email } = req.body;
-      const result = await AuthService.resendVerificationCode(email);
-
-      if (result.success) {
-        res.status(200).json(result);
-      } else {
-        res.status(400).json(result);
-      }
-    } catch (error) {
-      console.error('Error in resendVerificationCode controller:', error);
-      res.status(500).json({
-        success: false,
-        message: 'حدث خطأ في الخادم',
-        errors: ['حدث خطأ في الخادم'],
-      });
-    }
+  static async resendVerificationCode(req: Request, res: Response): Promise<void> {
+    const { email } = req.body;
+    await AuthService.resendVerificationCode(email);
+    res.status(200).json(okEmpty('تم إرسال رمز التحقق بنجاح'));
   }
 
-  // Request password reset
-  static async requestPasswordReset(
-    req: Request,
-    res: Response
-  ): Promise<void> {
-    try {
-      // Validate request body
-      await body('email')
-        .isEmail()
-        .withMessage('البريد الإلكتروني مطلوب')
-        .run(req);
-
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        res.status(400).json({
-          success: false,
-          message: 'فشل في التحقق من البيانات',
-          errors: errors.array().map(err => err.msg),
-        });
-        return;
-      }
-
-      const { email } = req.body;
-      const result = await AuthService.requestPasswordReset(email);
-
-      if (result.success) {
-        res.status(200).json(result);
-      } else {
-        res.status(400).json(result);
-      }
-    } catch (error) {
-      console.error('Error in requestPasswordReset controller:', error);
-      res.status(500).json({
-        success: false,
-        message: 'حدث خطأ في الخادم',
-        errors: ['حدث خطأ في الخادم'],
-      });
-    }
+  static async requestPasswordReset(req: Request, res: Response): Promise<void> {
+    const { email } = req.body;
+    await AuthService.requestPasswordReset(email);
+    res.status(200).json(okEmpty('تم إرسال رمز إعادة تعيين كلمة المرور بنجاح'));
   }
 
-  // Reset password
   static async resetPassword(req: Request, res: Response): Promise<void> {
-    try {
-      // Validate request body
-      await Promise.all([
-        body('email').isEmail().withMessage('البريد الإلكتروني مطلوب').run(req),
-        body('code')
-          .optional()
-          .isLength({ min: 6, max: 6 })
-          .withMessage('رمز إعادة التعيين يجب أن يكون 6 أرقام')
-          .run(req),
-        body('resetToken')
-          .optional()
-          .isLength({ min: 6, max: 6 })
-          .withMessage('رمز إعادة التعيين يجب أن يكون 6 أرقام')
-          .run(req),
-        body('newPassword')
-          .isLength({ min: 8 })
-          .withMessage('كلمة المرور يجب أن تكون 8 أحرف على الأقل')
-          .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/)
-          .withMessage('كلمة المرور يجب أن تحتوي على حرف كبير وحرف صغير ورقم')
-          .run(req),
-      ]);
-
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        res.status(400).json({
-          success: false,
-          message: 'فشل في التحقق من البيانات',
-          errors: errors.array().map(err => err.msg),
-        });
-        return;
-      }
-
-      const { email, code, resetToken, newPassword } = req.body;
-
-      // Use either 'code' or 'resetToken', with 'code' taking precedence
-      const resetCode = code || resetToken;
-
-      if (!resetCode) {
-        res.status(400).json({
-          success: false,
-          message: 'فشل في التحقق من البيانات',
-          errors: ['رمز إعادة التعيين مطلوب'],
-        });
-        return;
-      }
-
-      const result = await AuthService.resetPassword(
-        email,
-        resetCode,
-        newPassword
-      );
-
-      if (result.success) {
-        res.status(200).json(result);
-      } else {
-        res.status(400).json(result);
-      }
-    } catch (error) {
-      console.error('Error in resetPassword controller:', error);
-      res.status(500).json({
-        success: false,
-        message: 'حدث خطأ في الخادم',
-        errors: ['حدث خطأ في الخادم'],
-      });
-    }
+    const { email, code, newPassword } = req.body;
+    await AuthService.resetPassword(email, code, newPassword);
+    res.status(200).json(okEmpty('تم إعادة تعيين كلمة المرور بنجاح'));
   }
 
-  // Google OAuth authentication
+  // -------------------------------------------------------------------------
+  // OAuth
+  // -------------------------------------------------------------------------
+
   static async googleAuth(req: Request, res: Response): Promise<void> {
-    try {
-      // Validate request body
-      await Promise.all([
-        body('googleToken')
-          .optional()
-          .isString()
-          .withMessage('Google token must be a string')
-          .run(req),
-        body('googleData')
-          .optional()
-          .isObject()
-          .withMessage('Google data is required')
-          .run(req),
-        body('userType')
-          .isIn(['teacher', 'student'])
-          .withMessage('User type must be teacher or student')
-          .run(req),
-        body('referralCode').optional().isString().run(req),
-      ]);
+    const { googleToken, googleData, userType, referralCode, oneSignalPlayerId } = req.body;
 
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        res.status(400).json({
-          success: false,
-          message: 'فشل في التحقق من البيانات',
-          errors: errors.array().map(err => err.msg),
-        });
-        return;
-      }
+    // Both verifyGoogleToken and verifyGoogleDataWithSecurity throw `ApiError`
+    // on any verification failure; the asyncHandler wrapper propagates them
+    // to the global error middleware.
+    const verifiedGoogleData: Record<string, unknown> = googleToken
+      ? (await GoogleAuthService.verifyGoogleToken(googleToken)) as any
+      : await GoogleAuthService.verifyGoogleDataWithSecurity(googleData);
 
-      const { googleToken, googleData, userType, referralCode } = req.body;
-
-      let verifiedGoogleData;
-
-      // Method 1: Verify Google JWT token (recommended)
-      if (googleToken) {
-        const verification =
-          await GoogleAuthService.verifyGoogleToken(googleToken);
-
-        if (!verification.success) {
-          res.status(400).json({
-            success: false,
-            message: 'فشل في التحقق من بيانات Google',
-            errors: [verification.error || 'Invalid Google token'],
-          });
-          return;
-        }
-
-        verifiedGoogleData = verification.data;
-      }
-      // Method 2: Validate provided Google data (fallback)
-      else if (googleData) {
-        const validation =
-          await GoogleAuthService.verifyGoogleDataWithSecurity(googleData);
-
-        if (!validation.success) {
-          res.status(400).json({
-            success: false,
-            message: 'بيانات Google غير صحيحة',
-            errors: validation.errors,
-          });
-          return;
-        }
-
-        verifiedGoogleData = validation.data;
-      } else {
-        res.status(400).json({
-          success: false,
-          message: 'مطلوب إما Google token أو Google data',
-          errors: ['Either googleToken or googleData is required'],
-        });
-        return;
-      }
-
-      // Validate required fields
-      if (
-        !verifiedGoogleData.email ||
-        !verifiedGoogleData.name ||
-        !verifiedGoogleData.sub
-      ) {
-        res.status(400).json({
-          success: false,
-          message: 'بيانات Google ناقصة',
-          errors: ['Missing required Google data fields'],
-        });
-        return;
-      }
-
-      // 👇 ضيف oneSignalPlayerId لو موجود بالـ request
-      const oneSignalPlayerId =
-        googleData?.oneSignalPlayerId || req.body.oneSignalPlayerId;
-      if (oneSignalPlayerId) {
-        verifiedGoogleData.oneSignalPlayerId = oneSignalPlayerId;
-      }
-
-      // تمرير referralCode (إن وجد) إلى الخدمة عبر verifiedGoogleData بشكل آمن
-      if (referralCode && typeof referralCode === 'string') {
-        (verifiedGoogleData as any).referralCode = referralCode;
-      }
-
-      const result = await AuthService.googleAuth(verifiedGoogleData, userType);
-
-      if (result.success) {
-        res.status(200).json(result);
-      } else {
-        res.status(400).json(result);
-      }
-    } catch (error) {
-      console.error('Error in googleAuth controller:', error);
-      res.status(500).json({
-        success: false,
-        message: 'حدث خطأ في الخادم',
-        errors: ['حدث خطأ في الخادم'],
-      });
+    if (!verifiedGoogleData?.['email'] || !verifiedGoogleData?.['name'] || !verifiedGoogleData?.['sub']) {
+      throw new ApiError(400, 'بيانات Google ناقصة', ErrorCodes.INVALID_REQUEST);
     }
+
+    if (oneSignalPlayerId) {
+      verifiedGoogleData['oneSignalPlayerId'] = oneSignalPlayerId;
+    } else {
+      const fromGoogleData = (googleData as Record<string, unknown> | undefined)?.['oneSignalPlayerId'];
+      if (fromGoogleData) verifiedGoogleData['oneSignalPlayerId'] = fromGoogleData;
+    }
+    if (referralCode) {
+      verifiedGoogleData['referralCode'] = referralCode;
+    }
+
+    const data = await AuthService.googleAuth(verifiedGoogleData as any, userType);
+    const message = data.isNewUser
+      ? 'تم إنشاء الحساب وتسجيل الدخول بنجاح'
+      : 'تم تسجيل الدخول بنجاح';
+    res.status(200).json(ok(data, message));
   }
 
-  // Complete profile for Google OAuth users
-  static async completeProfile(req: Request, res: Response): Promise<void> {
-    try {
-      const userId = req.user?.id;
-      if (!userId) {
-        res.status(401).json({ error: 'Unauthorized' });
-        return;
-      }
+  static async appleAuth(req: Request, res: Response): Promise<void> {
+    const { identityToken, userType, firstName, lastName, oneSignalPlayerId } = req.body;
 
-      const userType = req.user?.userType;
-      if (!userType) {
-        res.status(401).json({ error: 'User type not found' });
-        return;
-      }
+    // Throws ApiError on any Apple-side failure.
+    const payload = (await AppleAuthService.verifyIdentityToken(identityToken)) as Record<
+      string,
+      unknown
+    >;
+    const email = payload['email'] as string | undefined;
+    const sub = payload['sub'] as string | undefined;
+    const name =
+      (payload['name'] as string | undefined) ||
+      [firstName, lastName].filter(Boolean).join(' ').trim();
 
-      // Validate based on user type
-      if (userType === 'teacher') {
-        await Promise.all([
-          body('name').notEmpty().withMessage('الاسم مطلوب').run(req),
-          body('phone').notEmpty().withMessage('رقم الهاتف مطلوب').run(req),
-          body('bio').notEmpty().withMessage('النبذة الشخصية مطلوبة').run(req),
-          body('experienceYears')
-            .isInt({ min: 0 })
-            .withMessage('سنوات الخبرة مطلوبة')
-            .run(req),
-          body('gradeIds')
-            .isArray({ min: 1 })
-            .withMessage('معرف الصف مطلوب')
-            .run(req),
-          body('gradeIds.*').isUUID().withMessage('الصف غير موجود').run(req),
-          body('studyYear')
-            .notEmpty()
-            .withMessage('السنة الدراسية مطلوبة')
-            .matches(/^[0-9]{4}-[0-9]{4}$/)
-            .withMessage('تنسيق السنة الدراسية غير صحيح')
-            .run(req),
-          body('latitude')
-            .isFloat({ min: -90, max: 90 })
-            .withMessage('خط العرض غير صحيح')
-            .run(req),
-          body('longitude')
-            .isFloat({ min: -180, max: 180 })
-            .withMessage('خط الطول غير صحيح')
-            .run(req),
-          body('address')
-            .optional()
-            .isLength({ max: 1000 })
-            .withMessage('العنوان طويل جداً')
-            .run(req),
-          body('formattedAddress')
-            .optional()
-            .isLength({ max: 1000 })
-            .withMessage('العنوان المنسق طويل جداً')
-            .run(req),
-          body('country')
-            .optional()
-            .isLength({ max: 100 })
-            .withMessage('اسم البلد طويل جداً')
-            .run(req),
-          body('city')
-            .optional()
-            .isLength({ max: 100 })
-            .withMessage('اسم المدينة طويل جداً')
-            .run(req),
-          body('state')
-            .optional()
-            .isLength({ max: 100 })
-            .withMessage('اسم المحافظة طويل جداً')
-            .run(req),
-          body('zipcode')
-            .optional()
-            .isLength({ max: 20 })
-            .withMessage('الرمز البريدي طويل جداً')
-            .run(req),
-          body('streetName')
-            .optional()
-            .isLength({ max: 255 })
-            .withMessage('اسم الشارع طويل جداً')
-            .run(req),
-          body('suburb')
-            .optional()
-            .isLength({ max: 100 })
-            .withMessage('اسم الحي طويل جداً')
-            .run(req),
-          body('locationConfidence')
-            .optional()
-            .isFloat({ min: 0, max: 1 })
-            .withMessage('ثقة الموقع غير صحيحة')
-            .run(req),
-          body('gender')
-            .optional()
-            .isIn(['male', 'female'])
-            .withMessage('الجنس غير صحيح')
-            .run(req),
-          body('birthDate')
-            .optional()
-            .custom((value, { req }) => {
-              if (!value) return true;
-
-              // 1) تحويل الأرقام العربية إلى إنكليزية
-              const normalizeArabicNumbers = (str: string) =>
-                str.replace(/[٠١٢٣٤٥٦٧٨٩]/g, d =>
-                  '٠١٢٣٤٥٦٧٨٩'.indexOf(d).toString()
-                );
-
-              let normalized = normalizeArabicNumbers(value);
-
-              // 2) تحويل صيغة dd/mm/yyyy → yyyy-mm-dd إن وجدت
-              if (normalized.includes('/')) {
-                const [day, month, year] = normalized.split('/');
-                if (day && month && year) {
-                  // مثال: 12 / 03 / 2005
-                  normalized = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
-                }
-              }
-
-              // 3) تحقق هل التاريخ صالح باستخدام Date
-              const date = new Date(normalized);
-              if (isNaN(date.getTime())) {
-                throw new Error('تنسيق تاريخ الميلاد غير صحيح');
-              }
-
-              // 4) خزنه بصيغة ISO
-              req.body.birthDate = date.toISOString();
-
-              return true;
-            })
-            .withMessage('تنسيق تاريخ الميلاد غير صحيح')
-            .run(req),
-        ]);
-      } else if (userType === 'student') {
-        await Promise.all([
-          body('gradeId')
-            .notEmpty()
-            .withMessage('معرف الصف مطلوب')
-            .isUUID()
-            .withMessage('الصف غير موجود')
-            .run(req),
-          body('studyYear')
-            .notEmpty()
-            .withMessage('السنة الدراسية مطلوبة')
-            .matches(/^[0-9]{4}-[0-9]{4}$/)
-            .withMessage('تنسيق السنة الدراسية غير صحيح')
-            .run(req),
-          body('latitude')
-            .isFloat({ min: -90, max: 90 })
-            .withMessage('خط العرض غير صحيح')
-            .run(req),
-          body('longitude')
-            .isFloat({ min: -180, max: 180 })
-            .withMessage('خط الطول غير صحيح')
-            .run(req),
-          body('studentPhone')
-            .notEmpty()
-            .withMessage('رقم الهاتف مطلوب')
-            .run(req),
-          body('parentPhone')
-            .notEmpty()
-            .withMessage('رقم الهاتف مطلوب')
-            .run(req),
-          body('schoolName')
-            .optional()
-            .isLength({ max: 255 })
-            .withMessage('اسم المدرسة طويل جداً')
-            .run(req),
-          body('gender')
-            .optional()
-            .isIn(['male', 'female'])
-            .withMessage('الجنس غير صحيح')
-            .run(req),
-          body('birthDate')
-            .optional()
-            .custom((value, { req }) => {
-              if (!value) return true;
-
-              // 1) تحويل الأرقام العربية إلى إنكليزية
-              const normalizeArabicNumbers = (str: string) =>
-                str.replace(/[٠١٢٣٤٥٦٧٨٩]/g, d =>
-                  '٠١٢٣٤٥٦٧٨٩'.indexOf(d).toString()
-                );
-
-              let normalized = normalizeArabicNumbers(value);
-
-              // 2) تحويل صيغة dd/mm/yyyy → yyyy-mm-dd إن وجدت
-              if (normalized.includes('/')) {
-                const [day, month, year] = normalized.split('/');
-                if (day && month && year) {
-                  // مثال: 12 / 03 / 2005
-                  normalized = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
-                }
-              }
-
-              // 3) تحقق هل التاريخ صالح باستخدام Date
-              const date = new Date(normalized);
-              if (isNaN(date.getTime())) {
-                throw new Error('تنسيق تاريخ الميلاد غير صحيح');
-              }
-
-              // 4) خزنه بصيغة ISO
-              req.body.birthDate = date.toISOString();
-
-              return true;
-            })
-            .withMessage('تنسيق تاريخ الميلاد غير صحيح')
-            .run(req),
-
-          body('address')
-            .optional()
-            .isLength({ max: 1000 })
-            .withMessage('العنوان طويل جداً')
-            .run(req),
-          body('formattedAddress')
-            .optional()
-            .isLength({ max: 1000 })
-            .withMessage('العنوان المنسق طويل جداً')
-            .run(req),
-          body('country')
-            .optional()
-            .isLength({ max: 100 })
-            .withMessage('اسم البلد طويل جداً')
-            .run(req),
-          body('city')
-            .optional()
-            .isLength({ max: 100 })
-            .withMessage('اسم المدينة طويل جداً')
-            .run(req),
-          body('state')
-            .optional()
-            .isLength({ max: 100 })
-            .withMessage('اسم المحافظة طويل جداً')
-            .run(req),
-          body('zipcode')
-            .optional()
-            .isLength({ max: 20 })
-            .withMessage('الرمز البريدي طويل جداً')
-            .run(req),
-          body('streetName')
-            .optional()
-            .isLength({ max: 255 })
-            .withMessage('اسم الشارع طويل جداً')
-            .run(req),
-          body('suburb')
-            .optional()
-            .isLength({ max: 100 })
-            .withMessage('اسم الحي طويل جداً')
-            .run(req),
-          body('locationConfidence')
-            .optional()
-            .isFloat({ min: 0, max: 1 })
-            .withMessage('ثقة الموقع غير صحيحة')
-            .run(req),
-        ]);
-      }
-
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        res.status(400).json({
-          success: false,
-          message: 'فشل في التحقق من البيانات',
-          errors: errors.array().map(err => err.msg),
-        });
-        return;
-      }
-
-      const result = await AuthService.completeProfile(
-        userId,
-        userType,
-        req.body
-      );
-
-      if (result.success) {
-        res.status(200).json(result);
-      } else {
-        res.status(400).json(result);
-      }
-    } catch (error) {
-      console.error('Error in completeProfile controller:', error);
-      res.status(500).json({
-        success: false,
-        message: 'حدث خطأ في الخادم',
-        errors: ['حدث خطأ في الخادم'],
-      });
+    if (!sub) {
+      throw new ApiError(400, 'بيانات Apple ناقصة', ErrorCodes.INVALID_REQUEST);
     }
+    if (!email) {
+      throw new ApiError(400, 'البريد الإلكتروني من Apple غير متاح', ErrorCodes.INVALID_REQUEST);
+    }
+
+    const appleData = {
+      sub,
+      email,
+      name: name || email.split('@')[0],
+      oneSignalPlayerId,
+    };
+
+    const data = await AuthService.appleAuth(appleData as any, userType);
+    const message = data.isNewUser
+      ? 'تم إنشاء الحساب وتسجيل الدخول بنجاح'
+      : 'تم تسجيل الدخول بنجاح';
+    res.status(200).json(ok(data, message));
+  }
+
+  /**
+   * Web redirect callback: /api/auth/apple-redirect?code=...&state=teacher|student
+   *
+   * Not validated by Zod because Apple sends form-encoded query/body params
+   * that don't fit the body-schema model. Inline guards instead.
+   */
+  static async appleCallback(req: Request, res: Response): Promise<void> {
+    const code = req.query['code'] as string | undefined;
+    const state = req.query['state'] as string | undefined;
+    const userTypeParam = (req.query['userType'] as string | undefined) || state;
+
+    if (!code) {
+      throw new ApiError(400, 'رمز المصادقة من Apple غير موجود', ErrorCodes.INVALID_REQUEST);
+    }
+    if (!userTypeParam || !['teacher', 'student'].includes(userTypeParam)) {
+      throw new ApiError(400, 'نوع المستخدم غير صحيح أو غير مزود', ErrorCodes.USER_TYPE_MISMATCH);
+    }
+
+    const redirectUri = 'https://api.mulhimiq.com/api/auth/apple-redirect';
+    // Throws ApiError on Apple failure.
+    const exchange = await AppleAuthService.exchangeAuthorizationCode(code, redirectUri);
+
+    const idToken = exchange?.id_token as string | undefined;
+    if (!idToken) {
+      throw new ApiError(400, 'لم يتم إرجاع id_token من Apple', ErrorCodes.UNAUTHORIZED);
+    }
+
+    const payload = (await AppleAuthService.verifyIdentityToken(idToken)) as Record<
+      string,
+      unknown
+    >;
+    const email = payload['email'] as string | undefined;
+    const sub = payload['sub'] as string | undefined;
+    const name = (payload['name'] as string | undefined) || (email ? email.split('@')[0] : undefined);
+
+    if (!sub) throw new ApiError(400, 'بيانات Apple ناقصة', ErrorCodes.INVALID_REQUEST);
+    if (!email) throw new ApiError(400, 'لم يتم توفير بريد إلكتروني من Apple', ErrorCodes.INVALID_REQUEST);
+
+    const appleData = { sub, email, name: name || email.split('@')[0] };
+    const data = await AuthService.appleAuth(appleData as any, userTypeParam as 'teacher' | 'student');
+    const message = data.isNewUser
+      ? 'تم إنشاء الحساب وتسجيل الدخول بنجاح'
+      : 'تم تسجيل الدخول بنجاح';
+    res.status(200).json(ok(data, message));
+  }
+
+  // -------------------------------------------------------------------------
+  // Profile (authenticated)
+  // -------------------------------------------------------------------------
+
+  static async completeProfile(req: Request, res: Response): Promise<void> {
+    const user = req.user;
+    if (!user?.id || !user?.userType) {
+      throw new ApiError(401, 'المصادقة مطلوبة', ErrorCodes.UNAUTHORIZED);
+    }
+
+    // Pick the right schema based on role; can't do this on the route because
+    // we need req.user (which comes from authenticateToken), which runs after
+    // the validate middleware would.
+    const schema =
+      user.userType === 'teacher'
+        ? completeProfileTeacherSchema
+        : user.userType === 'student'
+        ? completeProfileStudentSchema
+        : null;
+
+    if (!schema) {
+      throw new ApiError(403, 'الوصول مرفوض', ErrorCodes.ROLE_REQUIRED);
+    }
+
+    const parsed = schema.safeParse(req.body);
+    if (!parsed.success) {
+      const fields = parsed.error.issues.map((i) => ({
+        field: `body.${i.path.join('.') || '(root)'}`,
+        message: i.message,
+        code: i.code,
+      }));
+      throw new ApiError(400, 'فشل في التحقق من البيانات', ErrorCodes.VALIDATION_ERROR, { fields });
+    }
+
+    const data = await AuthService.completeProfile(user.id, user.userType, parsed.data);
+    res.status(200).json(ok(data, 'تم تحديث الملف الشخصي بنجاح'));
   }
 
   static async updateProfile(req: Request, res: Response): Promise<void> {
-    try {
-      const userId = req.user?.id;
-      if (!userId) {
-        res.status(401).json({ error: 'Unauthorized' });
-        return;
-      }
-
-      const userType = req.user?.userType;
-      if (!userType) {
-        res.status(401).json({ error: 'User type not found' });
-        return;
-      }
-
-      // ✅ Validation حسب نوع المستخدم
-      if (userType === 'teacher') {
-        await Promise.all([
-          body('name').notEmpty().withMessage('الاسم مطلوب').run(req),
-          body('phone').notEmpty().withMessage('رقم الهاتف مطلوب').run(req),
-          body('bio').notEmpty().withMessage('النبذة الشخصية مطلوبة').run(req),
-          body('experienceYears')
-            .isInt({ min: 0 })
-            .withMessage('سنوات الخبرة مطلوبة')
-            .run(req),
-          body('gradeIds')
-            .isArray({ min: 1 })
-            .withMessage('معرف الصف مطلوب')
-            .run(req),
-          body('gradeIds.*').isUUID().withMessage('الصف غير موجود').run(req),
-          body('studyYear')
-            .notEmpty()
-            .matches(/^[0-9]{4}-[0-9]{4}$/)
-            .withMessage('تنسيق السنة الدراسية غير صحيح')
-            .run(req),
-          // الموقع (اختياري)
-          body('latitude')
-            .optional()
-            .isFloat({ min: -90, max: 90 })
-            .withMessage('خط العرض غير صحيح')
-            .run(req),
-          body('longitude')
-            .optional()
-            .isFloat({ min: -180, max: 180 })
-            .withMessage('خط الطول غير صحيح')
-            .run(req),
-        ]);
-      } else if (userType === 'student') {
-        await Promise.all([
-          body('name').notEmpty().withMessage('الاسم مطلوب').run(req),
-          body('studentPhone')
-            .notEmpty()
-            .withMessage('رقم الطالب مطلوب')
-            .run(req),
-          body('parentPhone')
-            .notEmpty()
-            .withMessage('رقم ولي الأمر مطلوب')
-            .run(req),
-          body('schoolName')
-            .notEmpty()
-            .withMessage('اسم المدرسة مطلوب')
-            .run(req),
-          body('gender')
-            .isIn(['male', 'female'])
-            .withMessage('الجنس غير صحيح')
-            .run(req),
-          body('birthDate')
-            .optional()
-            .custom((value, { req }) => {
-              if (!value) return true;
-
-              // 1) تحويل الأرقام العربية إلى إنكليزية
-              const normalizeArabicNumbers = (str: string) =>
-                str.replace(/[٠١٢٣٤٥٦٧٨٩]/g, d =>
-                  '٠١٢٣٤٥٦٧٨٩'.indexOf(d).toString()
-                );
-
-              let normalized = normalizeArabicNumbers(value);
-
-              // 2) تحويل صيغة dd/mm/yyyy → yyyy-mm-dd إن وجدت
-              if (normalized.includes('/')) {
-                const [day, month, year] = normalized.split('/');
-                if (day && month && year) {
-                  // مثال: 12 / 03 / 2005
-                  normalized = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
-                }
-              }
-
-              // 3) تحقق هل التاريخ صالح باستخدام Date
-              const date = new Date(normalized);
-              if (isNaN(date.getTime())) {
-                throw new Error('تنسيق تاريخ الميلاد غير صحيح');
-              }
-
-              // 4) خزنه بصيغة ISO
-              req.body.birthDate = date.toISOString();
-
-              return true;
-            })
-            .withMessage('تنسيق تاريخ الميلاد غير صحيح')
-            .run(req),
-
-          // الموقع (اختياري)
-          body('latitude')
-            .optional()
-            .isFloat({ min: -90, max: 90 })
-            .withMessage('خط العرض غير صحيح')
-            .run(req),
-          body('longitude')
-            .optional()
-            .isFloat({ min: -180, max: 180 })
-            .withMessage('خط الطول غير صحيح')
-            .run(req),
-        ]);
-      }
-
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        res.status(400).json({
-          success: false,
-          message: 'فشل في التحقق من البيانات',
-          errors: errors.array().map(err => err.msg),
-        });
-        return;
-      }
-
-      // ✅ استدعاء الخدمة
-      const result = await AuthService.updateProfile(
-        userId,
-        userType,
-        req.body
-      );
-
-      if (result.success) {
-        res.status(200).json(result);
-      } else {
-        res.status(400).json(result);
-      }
-    } catch (error) {
-      console.error('Error in updateProfile controller:', error);
-      res.status(500).json({
-        success: false,
-        message: 'حدث خطأ في الخادم',
-        errors: ['حدث خطأ في الخادم'],
-      });
+    const user = req.user;
+    if (!user?.id || !user?.userType) {
+      throw new ApiError(401, 'المصادقة مطلوبة', ErrorCodes.UNAUTHORIZED);
     }
+
+    const schema =
+      user.userType === 'teacher'
+        ? updateProfileTeacherSchema
+        : user.userType === 'student'
+        ? updateProfileStudentSchema
+        : null;
+
+    if (!schema) {
+      throw new ApiError(403, 'الوصول مرفوض', ErrorCodes.ROLE_REQUIRED);
+    }
+
+    const parsed = schema.safeParse(req.body);
+    if (!parsed.success) {
+      const fields = parsed.error.issues.map((i) => ({
+        field: `body.${i.path.join('.') || '(root)'}`,
+        message: i.message,
+        code: i.code,
+      }));
+      throw new ApiError(400, 'فشل في التحقق من البيانات', ErrorCodes.VALIDATION_ERROR, { fields });
+    }
+
+    const data = await AuthService.updateProfile(user.id, user.userType, parsed.data);
+    res.status(200).json(ok(data, 'تم تحديث البيانات بنجاح'));
   }
 }

@@ -1,11 +1,17 @@
-import { NextFunction, Request, Response } from 'express';
+import type { NextFunction, Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
+
 import { TokenModel } from '../models/token.model';
 import { UserModel } from '../models/user.model';
 import { UserType } from '../types';
+import { asyncHandler } from '../utils/async-handler';
+import { ApiError, ErrorCodes } from '../utils/api-error';
 
-// Extend Request interface to include user
+// Extend Request interface to include user. Kept loose (`any`) for now to
+// minimise blast radius during Phase 1 — a tighter `User` type can replace it
+// once the controllers stop touching role-shaped properties via index access.
 declare global {
+  // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace Express {
     interface Request {
       user?: any;
@@ -13,133 +19,77 @@ declare global {
   }
 }
 
-// JWT Authentication middleware
-export const authenticateToken = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-  try {
+const BEARER_PREFIX = /^Bearer\s+(.+)$/i;
+
+// JWT Authentication middleware. Throws ApiError on any failure; the global
+// error handler turns those into the canonical fail() response.
+export const authenticateToken = asyncHandler(
+  async (req: Request, _res: Response, next: NextFunction): Promise<void> => {
     const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
+    const match = typeof authHeader === 'string' ? BEARER_PREFIX.exec(authHeader) : null;
+    const token = match?.[1];
 
     if (!token) {
-      res.status(401).json({
-        success: false,
-        message: 'رمز المصادقة مطلوب',
-        errors: ['لم يتم توفير رمز المصادقة']
-      });
-      return;
+      throw new ApiError(401, 'رمز المصادقة مطلوب', ErrorCodes.UNAUTHORIZED);
     }
 
-    // Check if token exists in database
     const dbToken = await TokenModel.findByToken(token);
     if (!dbToken) {
-      res.status(401).json({
-        success: false,
-        message: 'رمز المصادقة غير صحيح',
-        errors: ['رمز المصادقة غير موجود']
-      });
-      return;
+      throw new ApiError(401, 'رمز المصادقة غير صحيح', ErrorCodes.TOKEN_INVALID);
     }
 
-    // Verify JWT token
     const secret = process.env['JWT_SECRET'];
     if (!secret) {
-      res.status(500).json({
-        success: false,
-        message: 'خطأ داخلي في الخادم',
-        errors: ['مفتاح JWT غير مُعد']
-      });
-      return;
+      throw new ApiError(500, 'خطأ داخلي في الخادم', ErrorCodes.INTERNAL_ERROR);
     }
 
-    const decoded = jwt.verify(token, secret) as any;
+    // jwt.verify throws TokenExpiredError / JsonWebTokenError — the global
+    // error handler maps both to the right ApiError code.
+    const decoded = jwt.verify(token, secret) as { userId?: string };
+    if (!decoded.userId) {
+      throw new ApiError(401, 'رمز المصادقة غير صحيح', ErrorCodes.TOKEN_INVALID);
+    }
 
-    // Get user from database
     const user = await UserModel.findById(decoded.userId);
     if (!user) {
-      res.status(401).json({
-        success: false,
-        message: 'المستخدم غير موجود',
-        errors: ['المستخدم غير موجود']
-      });
-      return;
+      throw new ApiError(401, 'المستخدم غير موجود', ErrorCodes.UNAUTHORIZED);
     }
 
-    // Check if user is active
     if (user.status !== 'active') {
-      res.status(401).json({
-        success: false,
-        message: 'الحساب غير مفعل',
-        errors: ['حساب المستخدم غير مفعل']
-      });
-      return;
+      throw new ApiError(401, 'الحساب غير مفعل', ErrorCodes.ACCOUNT_INACTIVE);
     }
 
     req.user = user;
     next();
-  } catch (error) {
-    if (error instanceof jwt.JsonWebTokenError) {
-      res.status(401).json({
-        success: false,
-        message: 'رمز المصادقة غير صحيح',
-        errors: ['فشل في التحقق من رمز المصادقة']
-      });
-      return;
+  }
+);
+
+// Role-based authorization. `requireRole(...types)` is the canonical form;
+// the named exports below are kept as thin wrappers for the existing routes
+// until each route file is migrated in Phase 1.
+export const requireRole =
+  (...allowed: UserType[]) =>
+  (req: Request, _res: Response, next: NextFunction): void => {
+    if (!req.user) {
+      return next(new ApiError(401, 'المصادقة مطلوبة', ErrorCodes.UNAUTHORIZED));
     }
+    if (!allowed.includes(req.user.userType)) {
+      return next(
+        new ApiError(403, 'الوصول مرفوض', ErrorCodes.ROLE_REQUIRED, {
+          required: allowed,
+        })
+      );
+    }
+    next();
+  };
 
-    console.error('Authentication error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'فشل في المصادقة',
-      errors: ['خطأ داخلي في الخادم']
-    });
-  }
-};
+export const requireSuperAdmin = requireRole(UserType.SUPER_ADMIN);
+export const requireTeacher = requireRole(UserType.TEACHER);
+export const requireStudent = requireRole(UserType.STUDENT);
 
-// Role-based authorization middleware
-export const requireSuperAdmin = (req: Request, res: Response, next: NextFunction): void => {
-  if (!req.user || req.user.userType !== UserType.SUPER_ADMIN) {
-    res.status(403).json({
-      success: false,
-      message: 'الوصول مرفوض',
-      errors: ['مطلوب صلاحيات السوبر أدمن']
-    });
-    return;
-  }
-  next();
-};
-
-export const requireTeacher = (req: Request, res: Response, next: NextFunction): void => {
-  if (!req.user || req.user.userType !== UserType.TEACHER) {
-    res.status(403).json({
-      success: false,
-      message: 'الوصول مرفوض',
-      errors: ['مطلوب صلاحيات المعلم']
-    });
-    return;
-  }
-  next();
-};
-
-export const requireStudent = (req: Request, res: Response, next: NextFunction): void => {
-  if (!req.user || req.user.userType !== UserType.STUDENT) {
-    res.status(403).json({
-      success: false,
-      message: 'الوصول مرفوض',
-      errors: ['مطلوب صلاحيات الطالب']
-    });
-    return;
-  }
-  next();
-};
-
-// General authentication middleware (any authenticated user)
-export const requireAuth = (req: Request, res: Response, next: NextFunction): void => {
+export const requireAuth = (req: Request, _res: Response, next: NextFunction): void => {
   if (!req.user) {
-    res.status(401).json({
-      success: false,
-      message: 'المصادقة مطلوبة',
-      errors: ['المستخدم غير مصادق عليه']
-    });
-    return;
+    return next(new ApiError(401, 'المصادقة مطلوبة', ErrorCodes.UNAUTHORIZED));
   }
   next();
 };

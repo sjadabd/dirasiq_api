@@ -1,44 +1,84 @@
 import { Router } from 'express';
+
 import { TeacherInvoiceController } from '../../controllers/teacher/invoice.controller';
-import { authenticateToken } from '../../middleware/auth.middleware';
+import { validate } from '../../middleware/validate.middleware';
+import { asyncHandler } from '../../utils/async-handler';
+import { invoiceIdParamSchema } from '../../schemas/common.schemas';
+import {
+  invoiceCreateSchema,
+  invoiceDiscountBodySchema,
+  invoiceListQuerySchema,
+  invoicePaymentBodySchema,
+  invoiceSummaryQuerySchema,
+  invoiceUpdateSchema,
+} from '../../schemas/teacher.schemas';
 
 const router = Router();
-router.use(authenticateToken);
 
-// Create invoice (cash or installments)
-router.post('/', TeacherInvoiceController.createInvoice);
-
-// Add payment to invoice (optionally tied to an installment)
-router.post('/:invoiceId/payments', TeacherInvoiceController.addPayment);
-
-// Add discount to invoice
-router.post('/:invoiceId/discounts', TeacherInvoiceController.addDiscount);
-
-// Update invoice (metadata and totals with safe validations)
-router.patch('/:invoiceId', TeacherInvoiceController.updateInvoice);
-
-// List invoices for current teacher
-router.get('/', TeacherInvoiceController.listInvoices);
-
-// Overall summary (totals only) for current teacher
-router.get('/summary', TeacherInvoiceController.invoicesSummary);
-
-// Get installments for a specific invoice
-router.get('/:invoiceId/installments', TeacherInvoiceController.listInstallments);
-
-// Get full invoice with summary, installments list, and totals
-router.get('/:invoiceId/full', TeacherInvoiceController.getInvoiceFull);
-
-// Get aggregated report for a specific invoice
-router.get(
-  '/:invoiceId/entries/report',
-  TeacherInvoiceController.entriesReport
+router.post(
+  '/',
+  validate({ body: invoiceCreateSchema }),
+  asyncHandler(TeacherInvoiceController.createInvoice)
 );
 
-// Soft delete an invoice
-router.delete('/:invoiceId', TeacherInvoiceController.softDeleteInvoice);
+router.post(
+  '/:invoiceId/payments',
+  validate({ params: invoiceIdParamSchema, body: invoicePaymentBodySchema }),
+  asyncHandler(TeacherInvoiceController.addPayment)
+);
 
-// Restore a soft-deleted invoice
-router.patch('/:invoiceId/restore', TeacherInvoiceController.restoreInvoice);
+router.post(
+  '/:invoiceId/discounts',
+  validate({ params: invoiceIdParamSchema, body: invoiceDiscountBodySchema }),
+  asyncHandler(TeacherInvoiceController.addDiscount)
+);
+
+router.patch(
+  '/:invoiceId',
+  validate({ params: invoiceIdParamSchema, body: invoiceUpdateSchema }),
+  asyncHandler(TeacherInvoiceController.updateInvoice)
+);
+
+router.get(
+  '/',
+  validate({ query: invoiceListQuerySchema }),
+  asyncHandler(TeacherInvoiceController.listInvoices)
+);
+
+router.get(
+  '/summary',
+  validate({ query: invoiceSummaryQuerySchema }),
+  asyncHandler(TeacherInvoiceController.invoicesSummary)
+);
+
+router.get(
+  '/:invoiceId/installments',
+  validate({ params: invoiceIdParamSchema }),
+  asyncHandler(TeacherInvoiceController.listInstallments)
+);
+
+router.get(
+  '/:invoiceId/full',
+  validate({ params: invoiceIdParamSchema }),
+  asyncHandler(TeacherInvoiceController.getInvoiceFull)
+);
+
+router.get(
+  '/:invoiceId/entries/report',
+  validate({ params: invoiceIdParamSchema }),
+  asyncHandler(TeacherInvoiceController.entriesReport)
+);
+
+router.delete(
+  '/:invoiceId',
+  validate({ params: invoiceIdParamSchema }),
+  asyncHandler(TeacherInvoiceController.softDeleteInvoice)
+);
+
+router.patch(
+  '/:invoiceId/restore',
+  validate({ params: invoiceIdParamSchema }),
+  asyncHandler(TeacherInvoiceController.restoreInvoice)
+);
 
 export default router;

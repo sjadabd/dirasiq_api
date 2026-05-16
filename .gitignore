@@ -33,6 +33,13 @@ pids/
 *.pid.lock
 
 # -------------------------
+# Runtime upload artifacts (QR codes, avatars, course images, intro videos)
+# These are written to local disk by the API and should NOT be in git;
+# in production they live behind a volume / object store.
+# -------------------------
+public/uploads/
+
+# -------------------------
 # Coverage tools
 # -------------------------
 coverage/

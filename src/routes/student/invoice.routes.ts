@@ -1,17 +1,32 @@
 import { Router } from 'express';
+
 import { StudentInvoiceController } from '../../controllers/student/invoice.controller';
-import { authenticateToken } from '../../middleware/auth.middleware';
+import { validate } from '../../middleware/validate.middleware';
+import { asyncHandler } from '../../utils/async-handler';
+import { invoiceIdParamSchema } from '../../schemas/common.schemas';
+import {
+  installmentIdParamSchema,
+  studentInvoiceListQuerySchema,
+} from '../../schemas/student.schemas';
 
 const router = Router();
-router.use(authenticateToken);
 
-// List student invoices (filter by studyYear/course/status)
-router.get('/', StudentInvoiceController.listInvoices);
+router.get(
+  '/',
+  validate({ query: studentInvoiceListQuerySchema }),
+  asyncHandler(StudentInvoiceController.listInvoices)
+);
 
-// Consolidated full invoice details + entries (payments/discounts with installment info)
-router.get('/:invoiceId/full', StudentInvoiceController.getInvoiceFull);
+router.get(
+  '/:invoiceId/full',
+  validate({ params: invoiceIdParamSchema }),
+  asyncHandler(StudentInvoiceController.getInvoiceFull)
+);
 
-// Full details for a single installment (partials and totals)
-router.get('/:invoiceId/installments/:installmentId/full', StudentInvoiceController.getInstallmentFull);
+router.get(
+  '/:invoiceId/installments/:installmentId/full',
+  validate({ params: installmentIdParamSchema }),
+  asyncHandler(StudentInvoiceController.getInstallmentFull)
+);
 
 export default router;

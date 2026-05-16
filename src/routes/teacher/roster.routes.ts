@@ -1,32 +1,46 @@
 import { Router } from 'express';
+
 import { TeacherRosterController } from '../../controllers/teacher/roster.controller';
+import { validate } from '../../middleware/validate.middleware';
+import { asyncHandler } from '../../utils/async-handler';
+import { courseIdParamSchema, sessionIdParamSchema } from '../../schemas/common.schemas';
 import {
-  authenticateToken,
-  requireTeacher,
-} from '../../middleware/auth.middleware';
+  rosterListQuerySchema,
+  rosterSessionNamesQuerySchema,
+} from '../../schemas/teacher.schemas';
 
 const router = Router();
-router.use(authenticateToken, requireTeacher);
 
-// Students
-router.get('/', TeacherRosterController.listAllStudents); // /api/teacher/students
+router.get(
+  '/',
+  validate({ query: rosterListQuerySchema }),
+  asyncHandler(TeacherRosterController.listAllStudents)
+);
+
 router.get(
   '/by-course/:courseId',
-  TeacherRosterController.listStudentsByCourse
+  validate({ params: courseIdParamSchema }),
+  asyncHandler(TeacherRosterController.listStudentsByCourse)
 );
+
 router.get(
   '/by-course/:courseId/paginated',
-  TeacherRosterController.listStudentsByCoursePaginated
+  validate({ params: courseIdParamSchema, query: rosterListQuerySchema }),
+  asyncHandler(TeacherRosterController.listStudentsByCoursePaginated)
 );
+
 router.get(
   '/by-session/:sessionId',
-  TeacherRosterController.listStudentsBySession
+  validate({ params: sessionIdParamSchema }),
+  asyncHandler(TeacherRosterController.listStudentsBySession)
 );
 
-// Sessions (names/time/day)
-router.get('/sessions/names', TeacherRosterController.listSessionNames); // also mounted under /roster
+router.get(
+  '/sessions/names',
+  validate({ query: rosterSessionNamesQuerySchema }),
+  asyncHandler(TeacherRosterController.listSessionNames)
+);
 
-// Courses (id + name)
-router.get('/courses/names', TeacherRosterController.listCourseNames); // also mounted under /roster
+router.get('/courses/names', asyncHandler(TeacherRosterController.listCourseNames));
 
 export default router;

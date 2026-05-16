@@ -1,12 +1,39 @@
 import { Router } from 'express';
+
 import { StudentExamController } from '../../controllers/student/exam.controller';
-import { authenticateToken, requireStudent } from '../../middleware/auth.middleware';
+import { validate } from '../../middleware/validate.middleware';
+import { asyncHandler } from '../../utils/async-handler';
+import { idParamSchema } from '../../schemas/common.schemas';
+import {
+  studentExamListQuerySchema,
+  studentExamReportQuerySchema,
+} from '../../schemas/student.schemas';
 
 const router = Router();
 
-router.get('/', authenticateToken, requireStudent, StudentExamController.list);
-router.get('/:id', authenticateToken, requireStudent, StudentExamController.getById);
-router.get('/:id/my-grade', authenticateToken, requireStudent, StudentExamController.myGrade);
-router.get('/report/by-type', authenticateToken, requireStudent, StudentExamController.report);
+// Static path first to avoid being shadowed by `:id`.
+router.get(
+  '/report/by-type',
+  validate({ query: studentExamReportQuerySchema }),
+  asyncHandler(StudentExamController.report)
+);
+
+router.get(
+  '/',
+  validate({ query: studentExamListQuerySchema }),
+  asyncHandler(StudentExamController.list)
+);
+
+router.get(
+  '/:id',
+  validate({ params: idParamSchema }),
+  asyncHandler(StudentExamController.getById)
+);
+
+router.get(
+  '/:id/my-grade',
+  validate({ params: idParamSchema }),
+  asyncHandler(StudentExamController.myGrade)
+);
 
 export default router;

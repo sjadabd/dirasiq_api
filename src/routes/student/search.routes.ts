@@ -1,12 +1,16 @@
 import { Router } from 'express';
+
 import { StudentSearchController } from '../../controllers/student/search.controller';
-import { authenticateToken, requireStudent } from '../../middleware/auth.middleware';
+import { validate } from '../../middleware/validate.middleware';
+import { asyncHandler } from '../../utils/async-handler';
+import { studentUnifiedSearchQuerySchema } from '../../schemas/student.schemas';
 
 const router = Router();
 
-router.use(authenticateToken, requireStudent);
-
-// Unified search across teachers, courses, subjects
-router.get('/unified', StudentSearchController.unified);
+router.get(
+  '/unified',
+  validate({ query: studentUnifiedSearchQuerySchema }),
+  asyncHandler(StudentSearchController.unified)
+);
 
 export default router;

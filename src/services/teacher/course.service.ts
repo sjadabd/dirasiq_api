@@ -8,760 +8,445 @@ import {
 import { SubjectModel } from '../../models/subject.model';
 import { UserModel } from '../../models/user.model';
 import { NotificationService } from '../../services/notification.service';
-import {
-  ApiResponse,
-  CreateCourseRequest,
-  UpdateCourseRequest,
-} from '../../types';
+import type { Course, CreateCourseRequest, UpdateCourseRequest } from '../../types';
+import { ApiError, ErrorCodes } from '../../utils/api-error';
 import { ImageService } from '../../utils/image.service';
+import { logger } from '../../utils/logger';
 import { AcademicYearService } from '../super_admin/academic-year.service';
 
+const YEAR_PATTERN = /^\d{4}-\d{4}$/;
+
+const requireTeacher = async (teacherId: string) => {
+  const teacher = await UserModel.findById(teacherId);
+  if (!teacher || teacher.userType !== 'teacher') {
+    throw new ApiError(404, 'المعلم غير موجود', ErrorCodes.NOT_FOUND);
+  }
+  return teacher;
+};
+
+const notificationService = new NotificationService({
+  appId: process.env['ONESIGNAL_APP_ID'] || '',
+  restApiKey: process.env['ONESIGNAL_REST_API_KEY'] || '',
+});
+
 export class CourseService {
-  // Create new course
   static async create(
     teacherId: string,
     data: CreateCourseRequest
-  ): Promise<ApiResponse> {
-    try {
-      // ✅ تحقق من المعلم
-      const teacher = await UserModel.findById(teacherId);
-      if (!teacher || teacher.userType !== 'teacher') {
-        return {
-          success: false,
-          message: 'المعلم غير موجود',
-          errors: ['المعلم غير موجود'],
-        };
-      }
+  ): Promise<{ course: Course }> {
+    const teacher = await requireTeacher(teacherId);
 
-      // ✅ تحقق من صيغة السنة الدراسية
-      const yearPattern = /^\d{4}-\d{4}$/;
-      if (!yearPattern.test(data.study_year)) {
-        return {
-          success: false,
-          message: 'السنة الدراسية غير صحيحة',
-          errors: ['السنة الدراسية غير صحيحة'],
-        };
-      }
+    if (!YEAR_PATTERN.test(data.study_year)) {
+      throw new ApiError(400, 'السنة الدراسية غير صحيحة', ErrorCodes.VALIDATION_ERROR);
+    }
 
-      // ✅ تحقق من الصف
-      const grade = await GradeModel.findById(data.grade_id);
-      if (!grade) {
-        return {
-          success: false,
-          message: 'الصف غير موجود',
-          errors: ['الصف غير موجود'],
-        };
-      }
+    const grade = await GradeModel.findById(data.grade_id);
+    if (!grade) {
+      throw new ApiError(404, 'الصف غير موجود', ErrorCodes.NOT_FOUND);
+    }
 
-      // ✅ تحقق من المادة
-      const subject = await SubjectModel.findByIdAndTeacher(
-        data.subject_id,
-        teacherId
+    const subject = await SubjectModel.findByIdAndTeacher(data.subject_id, teacherId);
+    if (!subject) {
+      throw new ApiError(404, 'المادة لا تنتمي للمعلم', ErrorCodes.NOT_FOUND);
+    }
+
+    const startDate = new Date(data.start_date);
+    const endDate = new Date(data.end_date);
+    const currentDate = new Date();
+    if (endDate <= startDate) {
+      throw new ApiError(
+        400,
+        'تاريخ الانتهاء يجب أن يكون بعد تاريخ البداية',
+        ErrorCodes.VALIDATION_ERROR
       );
-      if (!subject) {
-        return {
-          success: false,
-          message: 'المادة غير موجودة',
-          errors: ['المادة لا تنتمي للمعلم'],
-        };
+    }
+    if (endDate <= currentDate) {
+      throw new ApiError(
+        400,
+        'تاريخ الانتهاء يجب أن يكون في المستقبل',
+        ErrorCodes.VALIDATION_ERROR
+      );
+    }
+
+    if (data.price < 0) {
+      throw new ApiError(400, 'السعر غير صحيح', ErrorCodes.VALIDATION_ERROR);
+    }
+
+    const hasReservation = data.has_reservation === true;
+    const reservationAmount = data.reservation_amount ?? null;
+    if (hasReservation) {
+      if (reservationAmount === null || reservationAmount === undefined) {
+        throw new ApiError(
+          400,
+          'يجب تحديد مبلغ العربون عند تفعيل خاصية الحجز',
+          ErrorCodes.VALIDATION_ERROR
+        );
       }
-
-      // ✅ تحقق من التواريخ
-      const startDate = new Date(data.start_date);
-      const endDate = new Date(data.end_date);
-      const currentDate = new Date();
-
-      if (endDate <= startDate) {
-        return {
-          success: false,
-          message: 'تاريخ الانتهاء يجب أن يكون بعد تاريخ البداية',
-          errors: ['تاريخ الانتهاء يجب أن يكون بعد تاريخ البداية'],
-        };
+      if (reservationAmount <= 0) {
+        throw new ApiError(
+          400,
+          'مبلغ العربون يجب أن يكون أكبر من صفر',
+          ErrorCodes.VALIDATION_ERROR
+        );
       }
-
-      if (endDate <= currentDate) {
-        return {
-          success: false,
-          message: 'تاريخ الانتهاء يجب أن يكون في المستقبل',
-          errors: ['تاريخ الانتهاء يجب أن يكون في المستقبل'],
-        };
+      if (reservationAmount > data.price) {
+        throw new ApiError(
+          400,
+          'مبلغ العربون لا يمكن أن يتجاوز سعر الكورس',
+          ErrorCodes.VALIDATION_ERROR
+        );
       }
+    }
 
-      // ✅ تحقق من السعر
-      if (data.price < 0) {
-        return {
-          success: false,
-          message: 'السعر غير صحيح',
-          errors: ['السعر غير صحيح'],
-        };
-      }
+    if (data.seats_count <= 0) {
+      throw new ApiError(400, 'عدد المقاعد غير صحيح', ErrorCodes.VALIDATION_ERROR);
+    }
 
-      // ✅ تحقق من بيانات الحجز (العربون)
-      const hasReservation = data.has_reservation === true;
-      const reservationAmount = data.reservation_amount ?? null;
-      if (hasReservation) {
-        if (reservationAmount === null || reservationAmount === undefined) {
-          return {
-            success: false,
-            message: 'يجب تحديد مبلغ العربون عند تفعيل خاصية الحجز',
-            errors: ['مطلوب مبلغ العربون'],
-          };
-        }
-        if (reservationAmount <= 0) {
-          return {
-            success: false,
-            message: 'مبلغ العربون يجب أن يكون أكبر من صفر',
-            errors: ['مبلغ العربون غير صحيح'],
-          };
-        }
-        if (reservationAmount > data.price) {
-          return {
-            success: false,
-            message: 'مبلغ العربون لا يمكن أن يتجاوز سعر الكورس',
-            errors: ['مبلغ العربون أكبر من السعر'],
-          };
-        }
-      }
-
-      // ✅ تحقق من المقاعد
-      if (data.seats_count <= 0) {
-        return {
-          success: false,
-          message: 'عدد المقاعد غير صحيح',
-          errors: ['عدد المقاعد غير صحيح'],
-        };
-      }
-
-      // ✅ تحقق من وجود دورة مشابهة (غير محذوفة)
-      const existingCourse = await CourseModel.courseExistsForTeacher(
+    if (
+      await CourseModel.courseExistsForTeacher(
         teacherId,
         data.study_year,
         data.course_name,
         data.grade_id,
         data.subject_id
-      );
-      if (existingCourse) {
-        return {
-          success: false,
-          message: 'الدورة موجودة بالفعل',
-          errors: ['الدورة موجودة بالفعل'],
-        };
-      }
+      )
+    ) {
+      throw new ApiError(409, 'الدورة موجودة بالفعل', ErrorCodes.ALREADY_EXISTS);
+    }
 
-      // ✅ معالجة الصور
-      let processedImages: string[] = [];
-      if (data.course_images && data.course_images.length > 0) {
-        try {
-          processedImages = await ImageService.processCourseImages(
-            data.course_images
-          );
-        } catch (error) {
-          return {
-            success: false,
-            message: 'خطأ في معالجة الصورة',
-            errors: ['خطأ في معالجة الصورة'],
-          };
-        }
+    let processedImages: string[] = [];
+    if (data.course_images && data.course_images.length > 0) {
+      try {
+        processedImages = await ImageService.processCourseImages(data.course_images);
+      } catch {
+        throw new ApiError(
+          400,
+          'خطأ في معالجة الصورة',
+          ErrorCodes.VALIDATION_ERROR
+        );
       }
+    }
 
-      // ✅ إنشاء الكورس
-      const courseData = {
+    let course: Course;
+    try {
+      course = await CourseModel.create(teacherId, {
         ...data,
         course_images: processedImages,
         has_reservation: hasReservation,
         reservation_amount: hasReservation ? reservationAmount : null,
-      };
-      const course = await CourseModel.create(teacherId, courseData);
-
-      // ⬇️ إرسال إشعار للطلاب بنفس الصف والسنة مع كل تفاصيل الدورة
-      try {
-        const notificationService = new NotificationService({
-          appId: process.env['ONESIGNAL_APP_ID'] || '',
-          restApiKey: process.env['ONESIGNAL_REST_API_KEY'] || '',
-        });
-
-        await notificationService.createAndSendNotification({
-          title: '📢 دورة جديدة متاحة',
-          message: `تمت إضافة دورة جديدة: ${course.course_name}`,
-          type: NotificationType.NEW_COURSE_AVAILABLE,
-          priority: NotificationPriority.HIGH,
-          recipientType: RecipientType.STUDENTS,
-          data: {
-            // مفاتيح الفلترة
-            courseId: course.id,
-            gradeId: course.grade_id,
-            studyYear: course.study_year,
-            // بيانات موقع المعلم (تُستخدم في الفرونت فقط إن احتجت لاحقًا)
-            teacherLocation: {
-              state: teacher.state,
-              city: teacher.city,
-              suburb: teacher.suburb,
-            },
-            // كل بيانات الدورة لإظهار تفاصيل مباشرة في التطبيق
-            course: {
-              id: course.id,
-              study_year: course.study_year,
-              grade_id: course.grade_id,
-              grade_name: grade.name,
-              subject_id: course.subject_id,
-              subject_name: subject.name,
-              course_name: course.course_name,
-              course_images: course.course_images,
-              description: course.description,
-              start_date: course.start_date,
-              end_date: course.end_date,
-              price: course.price,
-              seats_count: course.seats_count,
-              has_reservation: course.has_reservation,
-              reservation_amount: course.reservation_amount,
-              teacher: {
-                id: teacherId,
-                name: teacher.name,
-              },
-            },
-          },
-          createdBy: teacherId,
-        });
-      } catch (notifyErr) {
-        // فشل إرسال الإشعار لا يجب أن يُفشل إنشاء الدورة نفسها
-        console.error('فشل إرسال الإشعار:', notifyErr);
-      }
-
-      return {
-        success: true,
-        message: 'تم إنشاء الدورة',
-        data: { course },
-      };
+      });
     } catch (error) {
-      console.error('Error creating course:', error);
-      const pgError = error as any;
+      const pgError = error as { code?: string; constraint?: string };
       if (
         pgError?.code === '23505' &&
         pgError?.constraint === 'unique_course_per_teacher_year_grade_subject'
       ) {
-        return {
-          success: false,
-          message:
-            'لا يمكن إنشاء الدورة لأن دورة بنفس الاسم والصف والمادة والسنة موجودة بالفعل لهذا المعلم',
-          errors: [
-            'الدورة موجودة بالفعل لهذا المعلم في نفس السنة الدراسية ونفس الصف والمادة',
-          ],
-        };
+        throw new ApiError(
+          409,
+          'لا يمكن إنشاء الدورة لأن دورة بنفس الاسم والصف والمادة والسنة موجودة بالفعل لهذا المعلم',
+          ErrorCodes.ALREADY_EXISTS
+        );
       }
-      return {
-        success: false,
-        message: 'فشلت العملية',
-        errors: ['خطأ داخلي في الخادم'],
-      };
+      throw error;
     }
-  }
-  static async listNamesForActiveYear(teacherId: string): Promise<ApiResponse> {
+
+    // Best-effort notification to students of the same grade + study year.
     try {
-      const teacher = await UserModel.findById(teacherId);
-      if (!teacher || teacher.userType !== 'teacher') {
-        return {
-          success: false,
-          message: 'المعلم غير موجود',
-          errors: ['المعلم غير موجود'],
-        };
-      }
-
-      const active = await AcademicYearService.getActive();
-      const studyYear = active.success
-        ? active.data?.academicYear?.year
-        : undefined;
-      if (!studyYear) {
-        return {
-          success: false,
-          message: 'لا توجد سنة دراسية مفعلة',
-          errors: ['لا توجد سنة دراسية مفعلة'],
-        };
-      }
-
-      const rows = await CourseModel.findNamesByTeacherAndYear(
-        teacherId,
-        studyYear
-      );
-      return {
-        success: true,
-        message: 'تم جلب أسماء الدورات بنجاح',
-        data: rows.map(r => ({ id: r.id, name: r.course_name })),
-      };
-    } catch (error) {
-      console.error('Error listing course names:', error);
-      return {
-        success: false,
-        message: 'فشلت العملية',
-        errors: ['خطأ داخلي في الخادم'],
-      };
+      await notificationService.createAndSendNotification({
+        title: '📢 دورة جديدة متاحة',
+        message: `تمت إضافة دورة جديدة: ${course.course_name}`,
+        type: NotificationType.NEW_COURSE_AVAILABLE,
+        priority: NotificationPriority.HIGH,
+        recipientType: RecipientType.STUDENTS,
+        data: {
+          courseId: course.id,
+          gradeId: course.grade_id,
+          studyYear: course.study_year,
+          teacherLocation: {
+            state: (teacher as any).state,
+            city: (teacher as any).city,
+            suburb: (teacher as any).suburb,
+          },
+          course: {
+            id: course.id,
+            study_year: course.study_year,
+            grade_id: course.grade_id,
+            grade_name: grade.name,
+            subject_id: course.subject_id,
+            subject_name: subject.name,
+            course_name: course.course_name,
+            course_images: course.course_images,
+            description: course.description,
+            start_date: course.start_date,
+            end_date: course.end_date,
+            price: course.price,
+            seats_count: course.seats_count,
+            has_reservation: course.has_reservation,
+            reservation_amount: course.reservation_amount,
+            teacher: { id: teacherId, name: teacher.name },
+          },
+        },
+        createdBy: teacherId,
+      });
+    } catch (notifyErr) {
+      logger.warn({ err: notifyErr }, 'course creation notification failed');
     }
+
+    return { course };
   }
-  // Get all courses for a teacher with pagination and filters
+
+  static async listNamesForActiveYear(
+    teacherId: string
+  ): Promise<Array<{ id: string; name: string }>> {
+    await requireTeacher(teacherId);
+    const studyYear = (await AcademicYearService.getActive())?.academicYear?.year;
+    if (!studyYear) {
+      throw new ApiError(404, 'لا توجد سنة دراسية مفعلة', ErrorCodes.NOT_FOUND);
+    }
+    const rows = await CourseModel.findNamesByTeacherAndYear(teacherId, studyYear);
+    return rows.map((r) => ({ id: r.id, name: r.course_name }));
+  }
+
   static async getAllByTeacher(
     teacherId: string,
-    page: number = 1,
-    limit: number = 10,
+    page = 1,
+    limit = 10,
     search?: string,
     studyYear?: string,
     gradeId?: string,
     subjectId?: string,
     deleted?: boolean
-  ): Promise<ApiResponse> {
-    try {
-      // Validate teacher exists and is a teacher
-      const teacher = await UserModel.findById(teacherId);
-      if (!teacher || teacher.userType !== 'teacher') {
-        return {
-          success: false,
-          message: 'المعلم غير موجود',
-          errors: ['المعلم غير موجود'],
-        };
-      }
-
-      const result = await CourseModel.findAllByTeacher(
-        teacherId,
-        page,
-        limit,
-        search,
-        studyYear,
-        gradeId,
-        subjectId,
-        deleted
-      );
-
-      return {
-        success: true,
-        message: 'تمت العملية بنجاح',
-        data: result.courses,
-        count: result.total,
-      };
-    } catch (error) {
-      console.error('Error getting courses:', error);
-      return {
-        success: false,
-        message: 'فشلت العملية',
-        errors: ['خطأ داخلي في الخادم'],
-      };
-    }
+  ): Promise<{ items: Course[]; total: number }> {
+    await requireTeacher(teacherId);
+    const result = await CourseModel.findAllByTeacher(
+      teacherId,
+      page,
+      limit,
+      search,
+      studyYear,
+      gradeId,
+      subjectId,
+      deleted
+    );
+    return { items: result.courses, total: result.total };
   }
 
-  // Get course by ID
-  static async getById(id: string, teacherId: string): Promise<ApiResponse> {
-    try {
-      const course = await CourseModel.findByIdWithRelations(id, teacherId);
-
-      if (!course) {
-        return {
-          success: false,
-          message: 'الدورة غير موجودة',
-          errors: ['الدورة غير موجودة'],
-        };
-      }
-
-      return {
-        success: true,
-        message: 'تمت العملية بنجاح',
-        data: {
-          course: {
-            ...course,
-            grade: {
-              id: course.grade_id,
-              name: (course as any).grade_name,
-            },
-            subject: {
-              id: course.subject_id,
-              name: (course as any).subject_name,
-            },
-          },
-        },
-      };
-    } catch (error) {
-      console.error('Error getting course:', error);
-      return {
-        success: false,
-        message: 'فشلت العملية',
-        errors: ['خطأ داخلي في الخادم'],
-      };
+  static async getById(id: string, teacherId: string): Promise<{ course: any }> {
+    const course = await CourseModel.findByIdWithRelations(id, teacherId);
+    if (!course) {
+      throw new ApiError(404, 'الدورة غير موجودة', ErrorCodes.NOT_FOUND);
     }
+    return {
+      course: {
+        ...course,
+        grade: { id: course.grade_id, name: (course as any).grade_name },
+        subject: { id: course.subject_id, name: (course as any).subject_name },
+      },
+    };
   }
 
-  // Update course
   static async update(
     id: string,
     teacherId: string,
     data: UpdateCourseRequest
-  ): Promise<ApiResponse> {
-    try {
-      // Check if course exists and belongs to teacher
-      const existingCourse = await CourseModel.findByIdAndTeacher(
-        id,
-        teacherId
-      );
-      if (!existingCourse) {
-        return {
-          success: false,
-          message: 'الدورة غير موجودة',
-          errors: ['الدورة غير موجودة'],
-        };
-      }
+  ): Promise<{ course: Course }> {
+    const existingCourse = await CourseModel.findByIdAndTeacher(id, teacherId);
+    if (!existingCourse) {
+      throw new ApiError(404, 'الدورة غير موجودة', ErrorCodes.NOT_FOUND);
+    }
 
-      // Validate study year format if provided
-      if (data.study_year) {
-        const yearPattern = /^\d{4}-\d{4}$/;
-        if (!yearPattern.test(data.study_year)) {
-          return {
-            success: false,
-            message: 'السنة الدراسية غير صحيحة',
-            errors: ['السنة الدراسية غير صحيحة'],
-          };
-        }
+    if (data.study_year !== undefined && !YEAR_PATTERN.test(data.study_year)) {
+      throw new ApiError(400, 'السنة الدراسية غير صحيحة', ErrorCodes.VALIDATION_ERROR);
+    }
+    if (data.grade_id) {
+      if (!(await GradeModel.findById(data.grade_id))) {
+        throw new ApiError(404, 'الصف غير موجود', ErrorCodes.NOT_FOUND);
       }
-
-      // Validate grade exists if provided
-      if (data.grade_id) {
-        const grade = await GradeModel.findById(data.grade_id);
-        if (!grade) {
-          return {
-            success: false,
-            message: 'الصف غير موجود',
-            errors: ['الصف غير موجود'],
-          };
-        }
+    }
+    if (data.subject_id) {
+      const subject = await SubjectModel.findByIdAndTeacher(data.subject_id, teacherId);
+      if (!subject) {
+        throw new ApiError(404, 'المادة لا تنتمي للمعلم', ErrorCodes.NOT_FOUND);
       }
+    }
 
-      // Validate subject exists and belongs to teacher if provided
-      if (data.subject_id) {
-        const subject = await SubjectModel.findByIdAndTeacher(
-          data.subject_id,
-          teacherId
+    const currentDate = new Date();
+    if (data.start_date && data.end_date) {
+      const startDate = new Date(data.start_date);
+      const endDate = new Date(data.end_date);
+      if (endDate <= startDate) {
+        throw new ApiError(
+          400,
+          'تاريخ الانتهاء يجب أن يكون بعد تاريخ البداية',
+          ErrorCodes.VALIDATION_ERROR
         );
-        if (!subject) {
-          return {
-            success: false,
-            message: 'المادة غير موجودة',
-            errors: ['المادة لا تنتمي للمعلم'],
-          };
-        }
       }
-
-      // Validate dates if provided
-      if (data.start_date && data.end_date) {
-        const startDate = new Date(data.start_date);
-        const endDate = new Date(data.end_date);
-        const currentDate = new Date();
-
-        if (endDate <= startDate) {
-          return {
-            success: false,
-            message: 'تاريخ الانتهاء يجب أن يكون بعد تاريخ البداية',
-            errors: ['تاريخ الانتهاء يجب أن يكون بعد تاريخ البداية'],
-          };
-        }
-
-        if (endDate <= currentDate) {
-          return {
-            success: false,
-            message: 'تاريخ الانتهاء يجب أن يكون في المستقبل',
-            errors: ['تاريخ الانتهاء يجب أن يكون في المستقبل'],
-          };
-        }
-      } else if (data.end_date) {
-        // If only end_date is provided, validate it against existing start_date
-        const endDate = new Date(data.end_date);
-        const currentDate = new Date();
-        const existingStartDate = new Date(existingCourse.start_date);
-
-        if (endDate <= existingStartDate) {
-          return {
-            success: false,
-            message: 'تاريخ الانتهاء يجب أن يكون بعد تاريخ البداية',
-            errors: ['تاريخ الانتهاء يجب أن يكون بعد تاريخ البداية'],
-          };
-        }
-
-        if (endDate <= currentDate) {
-          return {
-            success: false,
-            message: 'تاريخ الانتهاء يجب أن يكون في المستقبل',
-            errors: ['تاريخ الانتهاء يجب أن يكون في المستقبل'],
-          };
-        }
-      } else if (data.start_date) {
-        // If only start_date is provided, validate it against existing end_date
-        const startDate = new Date(data.start_date);
-        const existingEndDate = new Date(existingCourse.end_date);
-
-        if (existingEndDate <= startDate) {
-          return {
-            success: false,
-            message: 'تاريخ الانتهاء يجب أن يكون بعد تاريخ البداية',
-            errors: ['تاريخ الانتهاء يجب أن يكون بعد تاريخ البداية'],
-          };
-        }
+      if (endDate <= currentDate) {
+        throw new ApiError(
+          400,
+          'تاريخ الانتهاء يجب أن يكون في المستقبل',
+          ErrorCodes.VALIDATION_ERROR
+        );
       }
-
-      // Validate price if provided
-      if (data.price !== undefined && data.price < 0) {
-        return {
-          success: false,
-          message: 'السعر غير صحيح',
-          errors: ['السعر غير صحيح'],
-        };
+    } else if (data.end_date) {
+      const endDate = new Date(data.end_date);
+      const existingStartDate = new Date(existingCourse.start_date);
+      if (endDate <= existingStartDate) {
+        throw new ApiError(
+          400,
+          'تاريخ الانتهاء يجب أن يكون بعد تاريخ البداية',
+          ErrorCodes.VALIDATION_ERROR
+        );
       }
-
-      // Validate reservation fields on update
-      // Determine effective price to validate against
-      const effectivePrice =
-        data.price !== undefined ? data.price : existingCourse.price;
-      if (data.has_reservation !== undefined) {
-        if (data.has_reservation === true) {
-          const resAmount =
-            data.reservation_amount !== undefined
-              ? data.reservation_amount
-              : existingCourse.reservation_amount;
-          if (resAmount === null || resAmount === undefined) {
-            return {
-              success: false,
-              message: 'يجب تحديد مبلغ العربون عند تفعيل خاصية الحجز',
-              errors: ['مطلوب مبلغ العربون'],
-            };
-          }
-          if (resAmount <= 0) {
-            return {
-              success: false,
-              message: 'مبلغ العربون يجب أن يكون أكبر من صفر',
-              errors: ['مبلغ العربون غير صحيح'],
-            };
-          }
-          if (resAmount > effectivePrice) {
-            return {
-              success: false,
-              message: 'مبلغ العربون لا يمكن أن يتجاوز سعر الكورس',
-              errors: ['مبلغ العربون أكبر من السعر'],
-            };
-          }
-        }
+      if (endDate <= currentDate) {
+        throw new ApiError(
+          400,
+          'تاريخ الانتهاء يجب أن يكون في المستقبل',
+          ErrorCodes.VALIDATION_ERROR
+        );
       }
-
-      if (data.reservation_amount !== undefined) {
-        if (data.reservation_amount !== null) {
-          if (data.reservation_amount <= 0) {
-            return {
-              success: false,
-              message: 'مبلغ العربون يجب أن يكون أكبر من صفر',
-              errors: ['مبلغ العربون غير صحيح'],
-            };
-          }
-          if (data.reservation_amount > effectivePrice) {
-            return {
-              success: false,
-              message: 'مبلغ العربون لا يمكن أن يتجاوز سعر الكورس',
-              errors: ['مبلغ العربون أكبر من السعر'],
-            };
-          }
-        }
+    } else if (data.start_date) {
+      const startDate = new Date(data.start_date);
+      const existingEndDate = new Date(existingCourse.end_date);
+      if (existingEndDate <= startDate) {
+        throw new ApiError(
+          400,
+          'تاريخ الانتهاء يجب أن يكون بعد تاريخ البداية',
+          ErrorCodes.VALIDATION_ERROR
+        );
       }
+    }
 
-      // Validate seats count if provided
-      if (data.seats_count !== undefined && data.seats_count <= 0) {
-        return {
-          success: false,
-          message: 'عدد المقاعد غير صحيح',
-          errors: ['عدد المقاعد غير صحيح'],
-        };
+    if (data.price !== undefined && data.price < 0) {
+      throw new ApiError(400, 'السعر غير صحيح', ErrorCodes.VALIDATION_ERROR);
+    }
+
+    const effectivePrice = data.price !== undefined ? data.price : existingCourse.price;
+    if (data.has_reservation === true) {
+      const resAmount =
+        data.reservation_amount !== undefined
+          ? data.reservation_amount
+          : existingCourse.reservation_amount;
+      if (resAmount === null || resAmount === undefined) {
+        throw new ApiError(
+          400,
+          'يجب تحديد مبلغ العربون عند تفعيل خاصية الحجز',
+          ErrorCodes.VALIDATION_ERROR
+        );
       }
+      if (resAmount <= 0) {
+        throw new ApiError(
+          400,
+          'مبلغ العربون يجب أن يكون أكبر من صفر',
+          ErrorCodes.VALIDATION_ERROR
+        );
+      }
+      if (resAmount > effectivePrice) {
+        throw new ApiError(
+          400,
+          'مبلغ العربون لا يمكن أن يتجاوز سعر الكورس',
+          ErrorCodes.VALIDATION_ERROR
+        );
+      }
+    }
+    if (data.reservation_amount !== undefined && data.reservation_amount !== null) {
+      if (data.reservation_amount <= 0) {
+        throw new ApiError(
+          400,
+          'مبلغ العربون يجب أن يكون أكبر من صفر',
+          ErrorCodes.VALIDATION_ERROR
+        );
+      }
+      if (data.reservation_amount > effectivePrice) {
+        throw new ApiError(
+          400,
+          'مبلغ العربون لا يمكن أن يتجاوز سعر الكورس',
+          ErrorCodes.VALIDATION_ERROR
+        );
+      }
+    }
 
-      // Check if new course already exists for this teacher with same name, year, grade, and subject
-      if (data.course_name && data.course_name !== existingCourse.course_name) {
-        const studyYear = data.study_year || existingCourse.study_year;
-        const gradeId = data.grade_id || existingCourse.grade_id;
-        const subjectId = data.subject_id || existingCourse.subject_id;
+    if (data.seats_count !== undefined && data.seats_count <= 0) {
+      throw new ApiError(400, 'عدد المقاعد غير صحيح', ErrorCodes.VALIDATION_ERROR);
+    }
 
-        const nameExists = await CourseModel.courseExistsForTeacher(
+    if (data.course_name && data.course_name !== existingCourse.course_name) {
+      const studyYear = data.study_year || existingCourse.study_year;
+      const gradeId = data.grade_id || existingCourse.grade_id;
+      const subjectId = data.subject_id || existingCourse.subject_id;
+      if (
+        await CourseModel.courseExistsForTeacher(
           teacherId,
           studyYear,
           data.course_name,
           gradeId,
           subjectId,
           id
+        )
+      ) {
+        throw new ApiError(409, 'الدورة موجودة بالفعل', ErrorCodes.ALREADY_EXISTS);
+      }
+    }
+
+    let processedImages: string[] = existingCourse.course_images;
+    if (data.course_images) {
+      try {
+        processedImages = await ImageService.updateCourseImages(
+          data.course_images,
+          existingCourse.course_images
         );
-        if (nameExists) {
-          return {
-            success: false,
-            message: 'الدورة موجودة بالفعل',
-            errors: ['الدورة موجودة بالفعل'],
-          };
-        }
+      } catch {
+        throw new ApiError(
+          400,
+          'خطأ في معالجة الصورة',
+          ErrorCodes.VALIDATION_ERROR
+        );
       }
+    }
 
-      // Process images if provided
-      let processedImages: string[] = existingCourse.course_images;
-      if (data.course_images) {
-        try {
-          processedImages = await ImageService.updateCourseImages(
-            data.course_images,
-            existingCourse.course_images
-          );
-        } catch (error) {
-          return {
-            success: false,
-            message: 'خطأ في معالجة الصورة',
-            errors: ['خطأ في معالجة الصورة'],
-          };
-        }
-      }
+    const updateData = {
+      ...data,
+      course_images: processedImages,
+      ...(data.has_reservation === false ? { reservation_amount: null } : {}),
+    } as UpdateCourseRequest;
+    const course = await CourseModel.update(id, teacherId, updateData);
+    if (!course) {
+      throw new ApiError(404, 'الدورة غير موجودة', ErrorCodes.NOT_FOUND);
+    }
+    return { course };
+  }
 
-      // Update course with processed images
-      const updateData = {
-        ...data,
-        course_images: processedImages,
-        // If has_reservation explicitly set to false, ensure reservation_amount becomes null
-        ...(data.has_reservation === false ? { reservation_amount: null } : {}),
-      } as UpdateCourseRequest;
-      const course = await CourseModel.update(id, teacherId, updateData);
-
-      if (!course) {
-        return {
-          success: false,
-          message: 'الدورة غير موجودة',
-          errors: ['الدورة غير موجودة'],
-        };
-      }
-
-      return {
-        success: true,
-        message: 'تم تحديث الدورة',
-        data: { course },
-      };
-    } catch (error) {
-      console.error('Error updating course:', error);
-      return {
-        success: false,
-        message: 'فشلت العملية',
-        errors: ['خطأ داخلي في الخادم'],
-      };
+  static async delete(id: string, teacherId: string): Promise<void> {
+    const existingCourse = await CourseModel.findByIdAndTeacher(id, teacherId);
+    if (!existingCourse) {
+      throw new ApiError(404, 'الدورة غير موجودة', ErrorCodes.NOT_FOUND);
+    }
+    const deleted = await CourseModel.softDelete(id, teacherId);
+    if (!deleted) {
+      throw new ApiError(404, 'الدورة غير موجودة', ErrorCodes.NOT_FOUND);
     }
   }
 
-  // Soft delete course
-  static async delete(id: string, teacherId: string): Promise<ApiResponse> {
-    try {
-      // Check if course exists and belongs to teacher
-      const existingCourse = await CourseModel.findByIdAndTeacher(
-        id,
-        teacherId
-      );
-      if (!existingCourse) {
-        return {
-          success: false,
-          message: 'الدورة غير موجودة',
-          errors: ['الدورة غير موجودة'],
-        };
-      }
-
-      // Soft delete course
-      const deleted = await CourseModel.softDelete(id, teacherId);
-
-      if (!deleted) {
-        return {
-          success: false,
-          message: 'الدورة غير موجودة',
-          errors: ['الدورة غير موجودة'],
-        };
-      }
-
-      return {
-        success: true,
-        message: 'تم حذف الدورة',
-      };
-    } catch (error) {
-      console.error('Error deleting course:', error);
-      return {
-        success: false,
-        message: 'فشلت العملية',
-        errors: ['خطأ داخلي في الخادم'],
-      };
-    }
-  }
-
-  // Get deleted courses that are not expired
   static async getDeletedNotExpired(
     teacherId: string,
-    page: number = 1,
-    limit: number = 10
-  ): Promise<ApiResponse> {
-    try {
-      // Validate teacher exists and is a teacher
-      const teacher = await UserModel.findById(teacherId);
-      if (!teacher || teacher.userType !== 'teacher') {
-        return {
-          success: false,
-          message: 'المعلم غير موجود',
-          errors: ['المعلم غير موجود'],
-        };
-      }
-
-      const result = await CourseModel.findDeletedNotExpiredByTeacher(
-        teacherId,
-        page,
-        limit
-      );
-
-      return {
-        success: true,
-        message: 'تم جلب الدورات المحذوفة غير المنتهية الصلاحية',
-        data: result.courses,
-        count: result.total,
-      };
-    } catch (error) {
-      console.error('Error getting deleted not expired courses:', error);
-      return {
-        success: false,
-        message: 'فشلت العملية',
-        errors: ['خطأ داخلي في الخادم'],
-      };
-    }
+    page = 1,
+    limit = 10
+  ): Promise<{ items: Course[]; total: number }> {
+    await requireTeacher(teacherId);
+    const result = await CourseModel.findDeletedNotExpiredByTeacher(teacherId, page, limit);
+    return { items: result.courses, total: result.total };
   }
 
-  // Restore deleted course
-  static async restore(id: string, teacherId: string): Promise<ApiResponse> {
-    try {
-      // Validate teacher exists and is a teacher
-      const teacher = await UserModel.findById(teacherId);
-      if (!teacher || teacher.userType !== 'teacher') {
-        return {
-          success: false,
-          message: 'المعلم غير موجود',
-          errors: ['المعلم غير موجود'],
-        };
-      }
-
-      // Restore course
-      const restoredCourse = await CourseModel.restore(id, teacherId);
-
-      if (!restoredCourse) {
-        return {
-          success: false,
-          message:
-            'لا يمكن استرجاع الدورة - إما أنها غير موجودة أو منتهية الصلاحية',
-          errors: [
-            'لا يمكن استرجاع الدورة - إما أنها غير موجودة أو منتهية الصلاحية',
-          ],
-        };
-      }
-
-      return {
-        success: true,
-        message: 'تم استرجاع الدورة بنجاح',
-        data: { course: restoredCourse },
-      };
-    } catch (error) {
-      console.error('Error restoring course:', error);
-      return {
-        success: false,
-        message: 'فشلت العملية',
-        errors: ['خطأ داخلي في الخادم'],
-      };
+  static async restore(id: string, teacherId: string): Promise<{ course: Course }> {
+    await requireTeacher(teacherId);
+    const restoredCourse = await CourseModel.restore(id, teacherId);
+    if (!restoredCourse) {
+      throw new ApiError(
+        404,
+        'لا يمكن استرجاع الدورة - إما أنها غير موجودة أو منتهية الصلاحية',
+        ErrorCodes.NOT_FOUND
+      );
     }
+    return { course: restoredCourse };
   }
 }

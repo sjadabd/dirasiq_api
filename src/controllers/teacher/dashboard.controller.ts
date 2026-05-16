@@ -1,103 +1,89 @@
-import { Request, Response } from 'express';
+import type { Request, Response } from 'express';
+
 import pool from '../../config/database';
 import { BookingStatus } from '../../types';
+import { ok } from '../../utils/response.util';
 
 export class TeacherDashboardController {
+  // GET /api/teacher/dashboard
   static async getDashboard(req: Request, res: Response): Promise<void> {
-    try {
-      const teacherId: string | undefined = req.user?.id;
-      if (!teacherId) {
-        res.status(401).json({
-          success: false,
-          message: 'المصادقة مطلوبة',
-          errors: ['المستخدم غير مصادق عليه'],
-        });
-        return;
-      }
+    const teacherId = req.user.id as string;
 
-      // Today weekday (0 = Sunday .. 6 = Saturday) to match sessions.weekday
-      // Use database to avoid timezone drift between app and DB
-      const queries = {
-        totalCourses: `
-          SELECT COUNT(*)::int AS count
+    const queries = {
+      totalCourses: `
+        SELECT COUNT(*)::int AS count
           FROM courses
-          WHERE teacher_id = $1 AND is_deleted = false
-        `,
-        activeCourses: `
-          SELECT COUNT(*)::int AS count
+         WHERE teacher_id = $1 AND is_deleted = false
+      `,
+      activeCourses: `
+        SELECT COUNT(*)::int AS count
           FROM courses
-          WHERE teacher_id = $1
-            AND is_deleted = false
-            AND end_date >= CURRENT_DATE
-        `,
-        totalStudents: `
-          SELECT COUNT(DISTINCT student_id)::int AS count
+         WHERE teacher_id = $1
+           AND is_deleted = false
+           AND end_date >= CURRENT_DATE
+      `,
+      totalStudents: `
+        SELECT COUNT(DISTINCT student_id)::int AS count
           FROM course_bookings
-          WHERE teacher_id = $1
-            AND is_deleted = false
-        `,
-        activeStudents: `
-          SELECT COUNT(DISTINCT student_id)::int AS count
+         WHERE teacher_id = $1
+           AND is_deleted = false
+      `,
+      activeStudents: `
+        SELECT COUNT(DISTINCT student_id)::int AS count
           FROM course_bookings
-          WHERE teacher_id = $1
-            AND is_deleted = false
-            AND status = $2
-        `,
-        sessionsToday: `
-          SELECT COUNT(*)::int AS count
+         WHERE teacher_id = $1
+           AND is_deleted = false
+           AND status = $2
+      `,
+      sessionsToday: `
+        SELECT COUNT(*)::int AS count
           FROM sessions
-          WHERE teacher_id = $1
-            AND is_deleted = false
-            AND weekday = EXTRACT(DOW FROM CURRENT_DATE)::int
-        `,
-        depositsTotals: `
-          SELECT
-            COALESCE(SUM(amount), 0)::float AS total_deposit,
-            COALESCE(SUM(CASE WHEN status = 'paid' THEN amount ELSE 0 END), 0)::float AS received_deposit
-          FROM reservation_payments
-          WHERE teacher_id = $1
-       `,
-        studentInvoicesTotals: `
-         SELECT
-           COALESCE(SUM(amount_due), 0)::float AS total_due,
-           COALESCE(SUM(amount_paid), 0)::float AS amount_paid,
-           COALESCE(SUM(remaining_amount), 0)::float AS amount_remaining
-         FROM course_invoices
-         WHERE teacher_id = $1 AND deleted_at IS NULL
-       `,
-      } as const;
+         WHERE teacher_id = $1
+           AND is_deleted = false
+           AND weekday = EXTRACT(DOW FROM CURRENT_DATE)::int
+      `,
+      depositsTotals: `
+        SELECT
+          COALESCE(SUM(amount), 0)::float AS total_deposit,
+          COALESCE(SUM(CASE WHEN status = 'paid' THEN amount ELSE 0 END), 0)::float AS received_deposit
+        FROM reservation_payments
+        WHERE teacher_id = $1
+      `,
+      studentInvoicesTotals: `
+        SELECT
+          COALESCE(SUM(amount_due), 0)::float AS total_due,
+          COALESCE(SUM(amount_paid), 0)::float AS amount_paid,
+          COALESCE(SUM(remaining_amount), 0)::float AS amount_remaining
+        FROM course_invoices
+        WHERE teacher_id = $1 AND deleted_at IS NULL
+      `,
+    } as const;
 
-      const [
-        totalCoursesR,
-        activeCoursesR,
-        totalStudentsR,
-        activeStudentsR,
-        sessionsTodayR,
-        depositsTotalsR,
-        studentInvoicesTotalsR,
-      ] = await Promise.all([
-        pool.query(queries.totalCourses, [teacherId]),
-        pool.query(queries.activeCourses, [teacherId]),
-        pool.query(queries.totalStudents, [teacherId]),
-        pool.query(queries.activeStudents, [
-          teacherId,
-          BookingStatus.CONFIRMED,
-        ]),
-        pool.query(queries.sessionsToday, [teacherId]),
-        pool.query(queries.depositsTotals, [teacherId]),
-        pool.query(queries.studentInvoicesTotals, [teacherId]),
-      ]);
+    const [
+      totalCoursesR,
+      activeCoursesR,
+      totalStudentsR,
+      activeStudentsR,
+      sessionsTodayR,
+      depositsTotalsR,
+      studentInvoicesTotalsR,
+    ] = await Promise.all([
+      pool.query(queries.totalCourses, [teacherId]),
+      pool.query(queries.activeCourses, [teacherId]),
+      pool.query(queries.totalStudents, [teacherId]),
+      pool.query(queries.activeStudents, [teacherId, BookingStatus.CONFIRMED]),
+      pool.query(queries.sessionsToday, [teacherId]),
+      pool.query(queries.depositsTotals, [teacherId]),
+      pool.query(queries.studentInvoicesTotals, [teacherId]),
+    ]);
 
-      const totalDeposit = Number(depositsTotalsR.rows[0]?.total_deposit ?? 0);
-      const receivedDeposit = Number(
-        depositsTotalsR.rows[0]?.received_deposit ?? 0
-      );
-      const remainingDeposit = Math.max(0, totalDeposit - receivedDeposit);
+    const totalDeposit = Number(depositsTotalsR.rows[0]?.total_deposit ?? 0);
+    const receivedDeposit = Number(depositsTotalsR.rows[0]?.received_deposit ?? 0);
+    const remainingDeposit = Math.max(0, totalDeposit - receivedDeposit);
 
-      res.status(200).json({
-        success: true,
-        message: 'بيانات لوحة التحكم للمعلم',
-        data: {
+    res.status(200).json(
+      ok(
+        {
           totalStudents: totalStudentsR.rows[0]?.count ?? 0,
           totalCourses: totalCoursesR.rows[0]?.count ?? 0,
           activeStudents: activeStudentsR.rows[0]?.count ?? 0,
@@ -113,226 +99,133 @@ export class TeacherDashboardController {
           },
           studentInvoices: {
             totalDue: Number(studentInvoicesTotalsR.rows[0]?.total_due ?? 0),
-            amountPaid: Number(
-              studentInvoicesTotalsR.rows[0]?.amount_paid ?? 0
-            ),
-            amountRemaining: Number(
-              studentInvoicesTotalsR.rows[0]?.amount_remaining ?? 0
-            ),
+            amountPaid: Number(studentInvoicesTotalsR.rows[0]?.amount_paid ?? 0),
+            amountRemaining: Number(studentInvoicesTotalsR.rows[0]?.amount_remaining ?? 0),
           },
         },
-      });
-    } catch (error) {
-      console.error('Error in TeacherDashboardController.getDashboard:', error);
-      res.status(500).json({
-        success: false,
-        message: 'حدث خطأ في الخادم',
-        errors: ['حدث خطأ في الخادم'],
-      });
-    }
+        'بيانات لوحة التحكم للمعلم'
+      )
+    );
   }
 
-  // Get today's upcoming lessons (sessions) for the teacher
-  static async getTodayUpcomingSessions(
-    req: Request,
-    res: Response
-  ): Promise<void> {
-    try {
-      const teacherId: string | undefined = req.user?.id;
-      if (!teacherId) {
-        res.status(401).json({
-          success: false,
-          message: 'المصادقة مطلوبة',
-          errors: ['المستخدم غير مصادق عليه'],
-        });
-        return;
-      }
+  // GET /api/teacher/dashboard/upcoming-today
+  static async getTodayUpcomingSessions(req: Request, res: Response): Promise<void> {
+    const teacherId = req.user.id as string;
+    const r = await pool.query(
+      `SELECT
+         s.id,
+         s.course_id,
+         s.teacher_id,
+         s.title,
+         s.weekday,
+         s.start_time,
+         s.end_time,
+         s.state,
+         c.course_name
+       FROM sessions s
+       JOIN courses c ON c.id = s.course_id
+       WHERE s.teacher_id = $1
+         AND s.is_deleted = false
+         AND s.weekday = EXTRACT(DOW FROM CURRENT_DATE)::int
+         AND s.state IN ('draft','proposed','conflict','confirmed','negotiating')
+         AND s.start_time >= CURRENT_TIME
+       ORDER BY s.start_time ASC`,
+      [teacherId]
+    );
 
-      const q = `
-        SELECT
-          s.id,
-          s.course_id,
-          s.teacher_id,
-          s.title,
-          s.weekday,
-          s.start_time,
-          s.end_time,
-          s.state,
-          c.course_name
-        FROM sessions s
-        JOIN courses c ON c.id = s.course_id
-        WHERE s.teacher_id = $1
-          AND s.is_deleted = false
-          AND s.weekday = EXTRACT(DOW FROM CURRENT_DATE)::int
-          AND s.state IN ('draft','proposed','conflict','confirmed','negotiating')
-          AND s.start_time >= CURRENT_TIME
-        ORDER BY s.start_time ASC
-      `;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
 
-      const r = await pool.query(q, [teacherId]);
+    const items = r.rows.map((row: any) => {
+      const [sh, sm, ss] = String(row.start_time).split(':').map((x: string) => parseInt(x, 10));
+      const [eh, em, es] = String(row.end_time).split(':').map((x: string) => parseInt(x, 10));
+      const startAt = new Date(today);
+      startAt.setHours(sh || 0, sm || 0, ss || 0, 0);
+      const endAt = new Date(today);
+      endAt.setHours(eh || 0, em || 0, es || 0, 0);
+      return {
+        sessionId: String(row.id),
+        courseId: String(row.course_id),
+        courseName: String(row.course_name),
+        title: row.title || null,
+        startTime: row.start_time,
+        endTime: row.end_time,
+        startAt: startAt.toISOString(),
+        endAt: endAt.toISOString(),
+        state: row.state,
+      };
+    });
 
-      // Build ISO datetime for today using server timezone assumption
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-
-      const items = r.rows.map((row: any) => {
-        const [sh, sm, ss] = String(row.start_time)
-          .split(':')
-          .map((x: string) => parseInt(x, 10));
-        const [eh, em, es] = String(row.end_time)
-          .split(':')
-          .map((x: string) => parseInt(x, 10));
-
-        const startAt = new Date(today);
-        startAt.setHours(sh || 0, sm || 0, ss || 0, 0);
-        const endAt = new Date(today);
-        endAt.setHours(eh || 0, em || 0, es || 0, 0);
-
-        return {
-          sessionId: String(row.id),
-          courseId: String(row.course_id),
-          courseName: String(row.course_name),
-          title: row.title || null,
-          startTime: row.start_time,
-          endTime: row.end_time,
-          startAt: startAt.toISOString(),
-          endAt: endAt.toISOString(),
-          state: row.state,
-        };
-      });
-
-      res.status(200).json({
-        success: true,
-        message: 'الدروس القادمة لليوم',
-        data: items,
-        count: items.length,
-      });
-    } catch (error) {
-      console.error(
-        'Error in TeacherDashboardController.getTodayUpcomingSessions:',
-        error
-      );
-      res.status(500).json({
-        success: false,
-        message: 'حدث خطأ في الخادم',
-        errors: ['حدث خطأ في الخادم'],
-      });
-    }
+    res.status(200).json(ok(items, 'الدروس القادمة لليوم', { count: items.length }));
   }
 
-  // Referral dashboard for teacher: invitations and bonus seats
+  // GET /api/teacher/dashboard/referrals
   static async getReferralStats(req: Request, res: Response): Promise<void> {
-    try {
-      const teacherId: string | undefined = req.user?.id;
-      if (!teacherId) {
-        res.status(401).json({
-          success: false,
-          message: 'المصادقة مطلوبة',
-          errors: ['المستخدم غير مصادق عليه'],
-        });
-        return;
-      }
+    const teacherId = req.user.id as string;
+    const [referralsByStatusR, referralBonusesR, activeBonusesR] = await Promise.all([
+      pool.query(
+        `SELECT status, COUNT(*)::int AS count
+           FROM teacher_referrals
+          WHERE referrer_teacher_id = $1
+          GROUP BY status`,
+        [teacherId]
+      ),
+      pool.query(
+        `SELECT COALESCE(SUM(b.bonus_value), 0)::int AS total_bonus
+           FROM teacher_subscription_bonuses b
+           JOIN teacher_subscriptions ts ON ts.id = b.teacher_subscription_id
+          WHERE ts.teacher_id = $1
+            AND b.bonus_type = 'referral_referrer'`,
+        [teacherId]
+      ),
+      pool.query(
+        `SELECT b.id, b.bonus_type, b.bonus_value, b.expires_at,
+                ts.id AS subscription_id, ts.end_date
+           FROM teacher_subscription_bonuses b
+           JOIN teacher_subscriptions ts ON ts.id = b.teacher_subscription_id
+          WHERE ts.teacher_id = $1
+            AND (b.expires_at IS NULL OR b.expires_at > NOW())
+          ORDER BY b.created_at DESC`,
+        [teacherId]
+      ),
+    ]);
 
-      // 1) Counts by status from teacher_referrals
-      const referralsByStatusQ = `
-        SELECT status, COUNT(*)::int AS count
-        FROM teacher_referrals
-        WHERE referrer_teacher_id = $1
-        GROUP BY status
-      `;
+    let pending = 0;
+    let completed = 0;
+    let rejected = 0;
+    for (const row of referralsByStatusR.rows) {
+      if (row.status === 'pending') pending = row.count;
+      else if (row.status === 'completed') completed = row.count;
+      else if (row.status === 'rejected') rejected = row.count;
+    }
+    const total = pending + completed + rejected;
+    const totalBonusSeats = referralBonusesR.rows[0]?.total_bonus ?? 0;
 
-      // 2) Total bonus seats from referrals for this teacher (as referrer)
-      const referralBonusesQ = `
-        SELECT COALESCE(SUM(b.bonus_value), 0)::int AS total_bonus
-        FROM teacher_subscription_bonuses b
-        JOIN teacher_subscriptions ts ON ts.id = b.teacher_subscription_id
-        WHERE ts.teacher_id = $1
-          AND b.bonus_type = 'referral_referrer'
-      `;
+    const activeBonuses = activeBonusesR.rows.map((row: any) => ({
+      id: row.id,
+      bonusType: row.bonus_type,
+      bonusValue: row.bonus_value,
+      expiresAt: row.expires_at,
+      subscriptionId: row.subscription_id,
+      subscriptionEndDate: row.end_date,
+    }));
 
-      // 3) Active bonuses with expiry details
-      const activeBonusesQ = `
-        SELECT
-          b.id,
-          b.bonus_type,
-          b.bonus_value,
-          b.expires_at,
-          ts.id AS subscription_id,
-          ts.end_date
-        FROM teacher_subscription_bonuses b
-        JOIN teacher_subscriptions ts ON ts.id = b.teacher_subscription_id
-        WHERE ts.teacher_id = $1
-          AND (b.expires_at IS NULL OR b.expires_at > NOW())
-        ORDER BY b.created_at DESC
-      `;
+    const referralCode = teacherId;
+    const frontendBase = process.env['FRONTEND_BASE_URL'] || '';
+    const referralLink = frontendBase
+      ? `${frontendBase.replace(/\/$/, '')}/register/teacher?ref=${encodeURIComponent(referralCode)}`
+      : `/register/teacher?ref=${encodeURIComponent(referralCode)}`;
 
-      const [referralsByStatusR, referralBonusesR, activeBonusesR] =
-        await Promise.all([
-          pool.query(referralsByStatusQ, [teacherId]),
-          pool.query(referralBonusesQ, [teacherId]),
-          pool.query(activeBonusesQ, [teacherId]),
-        ]);
-
-      // Build counts object
-      let pending = 0;
-      let completed = 0;
-      let rejected = 0;
-
-      for (const row of referralsByStatusR.rows) {
-        if (row.status === 'pending') pending = row.count;
-        else if (row.status === 'completed') completed = row.count;
-        else if (row.status === 'rejected') rejected = row.count;
-      }
-
-      const total = pending + completed + rejected;
-      const totalBonusSeats = referralBonusesR.rows[0]?.total_bonus ?? 0;
-
-      const activeBonuses = activeBonusesR.rows.map((row: any) => ({
-        id: row.id,
-        bonusType: row.bonus_type,
-        bonusValue: row.bonus_value,
-        expiresAt: row.expires_at,
-        subscriptionId: row.subscription_id,
-        subscriptionEndDate: row.end_date,
-      }));
-
-      // Referral code and link (مبدئيًا نستخدم teacherId ككود الدعوة)
-      const referralCode = teacherId;
-      const frontendBase = process.env['FRONTEND_BASE_URL'] || '';
-      const referralLink = frontendBase
-        ? `${frontendBase.replace(/\/$/, '')}/register/teacher?ref=${encodeURIComponent(
-            referralCode
-          )}`
-        : `/register/teacher?ref=${encodeURIComponent(referralCode)}`;
-
-      res.status(200).json({
-        success: true,
-        message: 'إحصائيات نظام الإحالات للمعلم',
-        data: {
+    res.status(200).json(
+      ok(
+        {
           referralCode,
           referralLink,
-          referrals: {
-            pending,
-            completed,
-            rejected,
-            total,
-          },
-          bonuses: {
-            totalBonusSeats,
-            activeBonuses,
-          },
+          referrals: { pending, completed, rejected, total },
+          bonuses: { totalBonusSeats, activeBonuses },
         },
-      });
-    } catch (error) {
-      console.error(
-        'Error in TeacherDashboardController.getReferralStats:',
-        error
-      );
-      res.status(500).json({
-        success: false,
-        message: 'حدث خطأ في الخادم',
-        errors: ['حدث خطأ في الخادم'],
-      });
-    }
+        'إحصائيات نظام الإحالات للمعلم'
+      )
+    );
   }
 }

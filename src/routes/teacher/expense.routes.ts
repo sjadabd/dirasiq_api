@@ -1,12 +1,39 @@
 import { Router } from 'express';
+
 import { TeacherExpenseController } from '../../controllers/teacher/expense.controller';
-import { authenticateToken, requireTeacher } from '../../middleware/auth.middleware';
+import { validate } from '../../middleware/validate.middleware';
+import { asyncHandler } from '../../utils/async-handler';
+import { idParamSchema } from '../../schemas/common.schemas';
+import {
+  expenseCreateSchema,
+  expenseListQuerySchema,
+  expenseUpdateSchema,
+} from '../../schemas/teacher.schemas';
 
 const router = Router();
 
-router.post('/', authenticateToken, requireTeacher, TeacherExpenseController.create);
-router.get('/', authenticateToken, requireTeacher, TeacherExpenseController.list);
-router.patch('/:id', authenticateToken, requireTeacher, TeacherExpenseController.update);
-router.delete('/:id', authenticateToken, requireTeacher, TeacherExpenseController.remove);
+router.post(
+  '/',
+  validate({ body: expenseCreateSchema }),
+  asyncHandler(TeacherExpenseController.create)
+);
+
+router.get(
+  '/',
+  validate({ query: expenseListQuerySchema }),
+  asyncHandler(TeacherExpenseController.list)
+);
+
+router.patch(
+  '/:id',
+  validate({ params: idParamSchema, body: expenseUpdateSchema }),
+  asyncHandler(TeacherExpenseController.update)
+);
+
+router.delete(
+  '/:id',
+  validate({ params: idParamSchema }),
+  asyncHandler(TeacherExpenseController.remove)
+);
 
 export default router;

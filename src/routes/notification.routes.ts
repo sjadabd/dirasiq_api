@@ -1,257 +1,120 @@
-import { NextFunction, Request, Response, Router } from 'express';
-import { NotificationController, notificationValidation } from '../controllers/notification.controller';
+// /api/notifications — the centralised hub for the dashboard notification
+// dispatcher and inbox.
+//
+// Role matrix:
+//   - POST /send-to-{all,teachers,students,specific} → super-admin OR teacher
+//   - POST /send-template                            → super-admin OR teacher
+//   - GET  /                                          → super-admin
+//   - GET  /statistics                                → super-admin
+//   - POST /process-pending                           → super-admin
+//   - DELETE /:id                                     → super-admin
+//   - GET  /:id                                       → any authenticated user
+//     (controller-side ownership is owed in Phase 1.C; for now any authed
+//      user can fetch any notification by id, matching legacy behaviour)
+//   - GET  /user/my-notifications                     → any authenticated user
+//   - PUT  /:id/read                                  → any authenticated user
+
+import { Router } from 'express';
+
+import {
+  NotificationController,
+  allowAdminOnly,
+  allowAdminOrTeacher,
+} from '../controllers/notification.controller';
 import { authenticateToken } from '../middleware/auth.middleware';
-import { UserType } from '../types';
+import { validate } from '../middleware/validate.middleware';
+import { asyncHandler } from '../utils/async-handler';
+import { idParamSchema } from '../schemas/common.schemas';
+import {
+  myNotificationsQuerySchema,
+  notificationsListQuerySchema,
+  sendBroadcastNotificationSchema,
+  sendSpecificNotificationSchema,
+  sendTemplateNotificationSchema,
+} from '../schemas/notification.schemas';
 
 const router = Router();
 const notificationController = new NotificationController();
 
-// Apply authentication middleware to all routes
 router.use(authenticateToken);
 
-/**
- * @route POST /api/notifications/send-to-all
- * @desc Send notification to all users
- * @access Super Admin, Teacher (for course-related notifications)
- */
+// --- Broadcasts (admin or teacher) ---
 router.post(
   '/send-to-all',
-  notificationValidation.sendNotification,
-  (req: Request, res: Response, next: NextFunction) => {
-    const userType = (req as any).user?.userType;
-    if (userType === UserType.SUPER_ADMIN || userType === UserType.TEACHER) {
-      next();
-    } else {
-      res.status(403).json({
-        success: false,
-        message: 'Access denied. Only super admins and teachers can send notifications to all users.'
-      });
-    }
-  },
-  notificationController.sendToAll
+  allowAdminOrTeacher,
+  validate({ body: sendBroadcastNotificationSchema }),
+  asyncHandler(notificationController.sendToAll)
 );
 
-/**
- * @route POST /api/notifications/send-to-teachers
- * @desc Send notification to all teachers
- * @access Super Admin, Teacher
- */
 router.post(
   '/send-to-teachers',
-  notificationValidation.sendNotification,
-  (req: Request, res: Response, next: NextFunction) => {
-    const userType = (req as any).user?.userType;
-    if (userType === UserType.SUPER_ADMIN || userType === UserType.TEACHER) {
-      next();
-    } else {
-      res.status(403).json({
-        success: false,
-        message: 'Access denied. Only super admins and teachers can send notifications to teachers.'
-      });
-    }
-  },
-  notificationController.sendToTeachers
+  allowAdminOrTeacher,
+  validate({ body: sendBroadcastNotificationSchema }),
+  asyncHandler(notificationController.sendToTeachers)
 );
 
-/**
- * @route POST /api/notifications/send-to-students
- * @desc Send notification to all students
- * @access Super Admin, Teacher
- */
 router.post(
   '/send-to-students',
-  notificationValidation.sendNotification,
-  (req: Request, res: Response, next: NextFunction) => {
-    const userType = (req as any).user?.userType;
-    if (userType === UserType.SUPER_ADMIN || userType === UserType.TEACHER) {
-      next();
-    } else {
-      res.status(403).json({
-        success: false,
-        message: 'Access denied. Only super admins and teachers can send notifications to students.'
-      });
-    }
-  },
-  notificationController.sendToStudents
+  allowAdminOrTeacher,
+  validate({ body: sendBroadcastNotificationSchema }),
+  asyncHandler(notificationController.sendToStudents)
 );
 
-/**
- * @route POST /api/notifications/send-to-specific
- * @desc Send notification to specific users
- * @access Super Admin, Teacher
- */
 router.post(
   '/send-to-specific',
-  notificationValidation.sendToSpecificUsers,
-  (req: Request, res: Response, next: NextFunction) => {
-    const userType = (req as any).user?.userType;
-    if (userType === UserType.SUPER_ADMIN || userType === UserType.TEACHER) {
-      next();
-    } else {
-      res.status(403).json({
-        success: false,
-        message: 'Access denied. Only super admins and teachers can send notifications to specific users.'
-      });
-    }
-  },
-  notificationController.sendToSpecificUsers
+  allowAdminOrTeacher,
+  validate({ body: sendSpecificNotificationSchema }),
+  asyncHandler(notificationController.sendToSpecificUsers)
 );
 
-/**
- * @route POST /api/notifications/send-template
- * @desc Send notification using template
- * @access Super Admin, Teacher
- */
 router.post(
   '/send-template',
-  notificationValidation.sendTemplateNotification,
-  (req: Request, res: Response, next: NextFunction) => {
-    const userType = (req as any).user?.userType;
-    if (userType === UserType.SUPER_ADMIN || userType === UserType.TEACHER) {
-      next();
-    } else {
-      res.status(403).json({
-        success: false,
-        message: 'Access denied. Only super admins and teachers can send template notifications.'
-      });
-    }
-  },
-  notificationController.sendTemplateNotification
+  allowAdminOrTeacher,
+  validate({ body: sendTemplateNotificationSchema }),
+  asyncHandler(notificationController.sendTemplateNotification)
 );
 
-/**
- * @route GET /api/notifications
- * @desc Get all notifications with filters (admin only)
- * @access Super Admin
- */
+// --- Admin-only listings + maintenance ---
 router.get(
   '/',
-  notificationValidation.getNotifications,
-  (req: Request, res: Response, next: NextFunction) => {
-    const userType = (req as any).user?.userType;
-    if (userType === UserType.SUPER_ADMIN) {
-      next();
-    } else {
-      res.status(403).json({
-        success: false,
-        message: 'Access denied. Only super admins can view all notifications.'
-      });
-    }
-  },
-  notificationController.getNotifications
+  allowAdminOnly,
+  validate({ query: notificationsListQuerySchema }),
+  asyncHandler(notificationController.getNotifications)
 );
 
-/**
- * @route GET /api/notifications/statistics
- * @desc Get notification statistics (admin only)
- * @access Super Admin
- */
-router.get(
-  '/statistics',
-  (req: Request, res: Response, next: NextFunction) => {
-    const userType = (req as any).user?.userType;
-    if (userType === UserType.SUPER_ADMIN) {
-      next();
-    } else {
-      res.status(403).json({
-        success: false,
-        message: 'Access denied. Only super admins can view notification statistics.'
-      });
-    }
-  },
-  notificationController.getStatistics
-);
+router.get('/statistics', allowAdminOnly, asyncHandler(notificationController.getStatistics));
 
-/**
- * @route GET /api/notifications/process-pending
- * @desc Process pending notifications (admin only)
- * @access Super Admin
- */
 router.post(
   '/process-pending',
-  (req: Request, res: Response, next: NextFunction) => {
-    const userType = (req as any).user?.userType;
-    if (userType === UserType.SUPER_ADMIN) {
-      next();
-    } else {
-      res.status(403).json({
-        success: false,
-        message: 'Access denied. Only super admins can process pending notifications.'
-      });
-    }
-  },
-  notificationController.processPendingNotifications
+  allowAdminOnly,
+  asyncHandler(notificationController.processPendingNotifications)
 );
 
-/**
- * @route GET /api/notifications/:id
- * @desc Get notification by ID
- * @access Super Admin, Teacher (for their own notifications)
- */
-router.get(
-  '/:id',
-  notificationValidation.getNotificationById,
-  (req: Request, _res: Response, next: NextFunction) => {
-    const userType = (req as any).user?.userType;
-    if (userType === UserType.SUPER_ADMIN) {
-      next();
-    } else {
-      // For teachers, they can only view notifications they created
-      // This will be handled in the controller
-      next();
-    }
-  },
-  notificationController.getNotificationById
-);
-
-/**
- * @route DELETE /api/notifications/:id
- * @desc Delete notification (admin only)
- * @access Super Admin
- */
 router.delete(
   '/:id',
-  notificationValidation.deleteNotification,
-  (req: Request, res: Response, next: NextFunction) => {
-    const userType = (req as any).user?.userType;
-    if (userType === UserType.SUPER_ADMIN) {
-      next();
-    } else {
-      res.status(403).json({
-        success: false,
-        message: 'Access denied. Only super admins can delete notifications.'
-      });
-    }
-  },
-  notificationController.deleteNotification
+  allowAdminOnly,
+  validate({ params: idParamSchema }),
+  asyncHandler(notificationController.deleteNotification)
 );
 
-/**
- * @route GET /api/notifications/user/my-notifications
- * @desc Get current user's notifications
- * @access All authenticated users
- */
+// --- Self-service (any authenticated user) ---
 router.get(
   '/user/my-notifications',
-  (req: Request, _res: Response, next: NextFunction) => {
-    const { page = 1, limit = 10 } = req.query;
-    (req as any).query = { ...req.query, page, limit };
-    next();
-  },
-  notificationController.getUserNotifications
+  validate({ query: myNotificationsQuerySchema }),
+  asyncHandler(notificationController.getUserNotifications)
 );
 
-/**
- * @route PUT /api/notifications/:id/read
- * @desc Mark notification as read
- * @access All authenticated users
- */
 router.put(
   '/:id/read',
-  notificationValidation.markAsRead,
-  notificationController.markAsRead
+  validate({ params: idParamSchema }),
+  asyncHandler(notificationController.markAsRead)
 );
 
-// Note: Specialized routes can be added later if needed
+// Generic lookup (any authenticated user). Defined last so static paths win.
+router.get(
+  '/:id',
+  validate({ params: idParamSchema }),
+  asyncHandler(notificationController.getNotificationById)
+);
 
 export default router;

@@ -1,588 +1,313 @@
-import { Request, Response } from 'express';
-import { body, param, query, validationResult } from 'express-validator';
+import type { NextFunction, Request, Response } from 'express';
 import path from 'path';
+
 import { AssignmentModel } from '../models/assignment.model';
-import { NotificationModel, NotificationPriority, NotificationType, RecipientType } from '../models/notification.model';
+import {
+  NotificationModel,
+  NotificationPriority,
+  NotificationType,
+  RecipientType,
+} from '../models/notification.model';
 import { NotificationService } from '../services/notification.service';
 import { saveBase64File, saveMultipleBase64Images } from '../utils/file.util';
+import { ApiError, ErrorCodes } from '../utils/api-error';
+import { ok } from '../utils/response.util';
+import { parsePagination } from '../utils/pagination';
+import { UserType } from '../types';
+
+// One canonical upload directory for all notification attachments. The legacy
+// controller had two paths (`/uploads/notification` and `/uploads/notifications`)
+// for different handlers; we collapse to the one the teacher-side controller
+// already uses in Phase 1.B-1.
+const UPLOAD_DIR = path.resolve(__dirname, '..', '..', 'public', 'uploads', 'notification');
+
+const toRelativeUploadPath = (p: string): string => {
+  const u = p.replace(/\\/g, '/');
+  const i = u.lastIndexOf('/public/');
+  if (i !== -1) return u.substring(i + '/public/'.length);
+  const j = u.indexOf('uploads/');
+  return j !== -1 ? u.substring(j) : u;
+};
+
+interface AttachmentsInput {
+  pdfBase64?: string;
+  imagesBase64?: string[];
+}
+
+const persistAttachments = async (
+  attachments: AttachmentsInput | undefined,
+  existing: Record<string, unknown>
+): Promise<Record<string, unknown>> => {
+  if (!attachments) return existing;
+  let merged: Record<string, unknown> = { ...existing };
+  if (attachments.pdfBase64) {
+    const pdfPath = await saveBase64File(attachments.pdfBase64, UPLOAD_DIR, 'attachment.pdf');
+    merged = {
+      ...merged,
+      attachments: {
+        ...((merged['attachments'] as Record<string, unknown>) || {}),
+        pdfUrl: toRelativeUploadPath(pdfPath),
+      },
+    };
+  }
+  if (Array.isArray(attachments.imagesBase64) && attachments.imagesBase64.length > 0) {
+    const imagePaths = await saveMultipleBase64Images(attachments.imagesBase64, UPLOAD_DIR);
+    merged = {
+      ...merged,
+      attachments: {
+        ...((merged['attachments'] as Record<string, unknown>) || {}),
+        imageUrls: imagePaths.map(toRelativeUploadPath),
+      },
+    };
+  }
+  return merged;
+};
 
 export class NotificationController {
   private notificationService: NotificationService;
 
   constructor() {
-    // Initialize OneSignal configuration from environment variables
-    const oneSignalConfig = {
+    this.notificationService = new NotificationService({
       appId: process.env['ONESIGNAL_APP_ID'] || '',
-      restApiKey: process.env['ONESIGNAL_REST_API_KEY'] || ''
-    };
-
-    this.notificationService = new NotificationService(oneSignalConfig);
+      restApiKey: process.env['ONESIGNAL_REST_API_KEY'] || '',
+    });
   }
 
-  /**
-   * Send notification to all users
-   */
+  // ---------------------------------------------------------------------------
+  // Broadcasts to a recipient class (all / teachers / students).
+  // ---------------------------------------------------------------------------
+
+  private sendToRecipientType = async (
+    req: Request,
+    res: Response,
+    recipientType: RecipientType,
+    successMessage: string
+  ): Promise<void> => {
+    const { title, message, type, priority, data, url, imageUrl, attachments } = req.body as {
+      title: string;
+      message: string;
+      type?: NotificationType;
+      priority?: 'low' | 'medium' | 'high' | 'urgent';
+      data?: Record<string, unknown>;
+      url?: string;
+      imageUrl?: string;
+      attachments?: AttachmentsInput;
+    };
+    const createdBy = req.user.id as string;
+
+    const enrichedData = await persistAttachments(attachments, { ...(data ?? {}) });
+
+    const notification = await this.notificationService.createAndSendNotification({
+      title,
+      message,
+      type: type || NotificationType.SYSTEM_ANNOUNCEMENT,
+      priority: priority || NotificationPriority.MEDIUM,
+      recipientType,
+      data: { ...enrichedData, url, imageUrl },
+      createdBy,
+    });
+
+    if (!notification) {
+      throw new ApiError(500, 'فشل في إرسال الإشعار', ErrorCodes.INTERNAL_ERROR);
+    }
+
+    res.status(201).json(ok(notification, successMessage));
+  };
+
   sendToAll = async (req: Request, res: Response): Promise<void> => {
-    try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        res.status(400).json({
-          success: false,
-          message: 'Validation errors',
-          errors: errors.array()
-        });
-        return;
-      }
-
-      const { title, message, type, priority, data, url, imageUrl, attachments } = req.body;
-      const createdBy = (req as any).user?.id;
-
-      if (!createdBy) {
-        res.status(401).json({
-          success: false,
-          message: 'User not authenticated'
-        });
-        return;
-      }
-
-      // Save attachments if provided
-      let enrichedData: Record<string, any> = { ...(data || {}) };
-      if (attachments?.pdfBase64 || (Array.isArray(attachments?.imagesBase64) && attachments.imagesBase64.length)) {
-        const baseDir = path.resolve(__dirname, '..', '..', 'public', 'uploads', 'notification');
-        const toRelative = (p: string) => {
-          const u = p.replace(/\\/g, '/');
-          const i = u.lastIndexOf('/public/');
-          if (i !== -1) return u.substring(i + '/public/'.length);
-          const j = u.indexOf('uploads/');
-          return j !== -1 ? u.substring(j) : u;
-        };
-        if (attachments?.pdfBase64) {
-          const pdfPath = await saveBase64File(attachments.pdfBase64, baseDir, 'attachment.pdf');
-          enrichedData['attachments'] = { ...((enrichedData as any)['attachments'] || {}), pdfUrl: toRelative(pdfPath) };
-        }
-        if (Array.isArray(attachments?.imagesBase64) && attachments.imagesBase64.length > 0) {
-          const imagePaths = await saveMultipleBase64Images(attachments.imagesBase64, baseDir);
-          enrichedData['attachments'] = {
-            ...((enrichedData as any)['attachments'] || {}),
-            imageUrls: imagePaths.map(toRelative),
-          };
-        }
-      }
-
-      const notification = await this.notificationService.createAndSendNotification({
-        title,
-        message,
-        type: type || NotificationType.SYSTEM_ANNOUNCEMENT,
-        priority: priority || NotificationPriority.MEDIUM,
-        recipientType: RecipientType.ALL,
-        data: {
-          ...enrichedData,
-          url,
-          imageUrl
-        },
-        createdBy
-      });
-
-      if (notification) {
-        res.status(201).json({
-          success: true,
-          message: 'Notification sent successfully',
-          data: notification
-        });
-      } else {
-        res.status(500).json({
-          success: false,
-          message: 'Failed to send notification'
-        });
-      }
-    } catch (error) {
-      console.error('Error in sendToAll:', error);
-      res.status(500).json({
-        success: false,
-        message: 'Internal server error'
-      });
-    }
+    await this.sendToRecipientType(req, res, RecipientType.ALL, 'تم إرسال الإشعار للجميع');
   };
 
-  /**
-   * Send notification to teachers
-   */
   sendToTeachers = async (req: Request, res: Response): Promise<void> => {
-    try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        res.status(400).json({
-          success: false,
-          message: 'Validation errors',
-          errors: errors.array()
-        });
-        return;
-      }
-
-      const { title, message, type, priority, data, url, imageUrl, attachments } = req.body;
-      const createdBy = (req as any).user?.id;
-
-      if (!createdBy) {
-        res.status(401).json({
-          success: false,
-          message: 'User not authenticated'
-        });
-        return;
-      }
-
-      // Save attachments if provided
-      let enrichedData: Record<string, any> = { ...(data || {}) };
-      if (attachments?.pdfBase64 || (Array.isArray(attachments?.imagesBase64) && attachments.imagesBase64.length)) {
-        const baseDir = path.join(__dirname, '../../public/uploads/notifications');
-        const toRelative = (p: string) => {
-          const u = p.replace(/\\/g, '/');
-          const i = u.lastIndexOf('/public/');
-          if (i !== -1) return u.substring(i + '/public/'.length);
-          const j = u.indexOf('uploads/');
-          return j !== -1 ? u.substring(j) : u;
-        };
-        if (attachments?.pdfBase64) {
-          const pdfPath = await saveBase64File(attachments.pdfBase64, baseDir, 'attachment.pdf');
-          enrichedData['attachments'] = { ...((enrichedData as any)['attachments'] || {}), pdfUrl: toRelative(pdfPath) };
-        }
-        if (Array.isArray(attachments?.imagesBase64) && attachments.imagesBase64.length > 0) {
-          const imagePaths = await saveMultipleBase64Images(attachments.imagesBase64, baseDir);
-          enrichedData['attachments'] = {
-            ...((enrichedData as any)['attachments'] || {}),
-            imageUrls: imagePaths.map(toRelative),
-          };
-        }
-      }
-
-      const notification = await this.notificationService.createAndSendNotification({
-        title,
-        message,
-        type: type || NotificationType.SYSTEM_ANNOUNCEMENT,
-        priority: priority || NotificationPriority.MEDIUM,
-        recipientType: RecipientType.TEACHERS,
-        data: {
-          ...enrichedData,
-          url,
-          imageUrl
-        },
-        createdBy
-      });
-
-      if (notification) {
-        res.status(201).json({
-          success: true,
-          message: 'Notification sent to teachers successfully',
-          data: notification
-        });
-      } else {
-        res.status(500).json({
-          success: false,
-          message: 'Failed to send notification to teachers'
-        });
-      }
-    } catch (error) {
-      console.error('Error in sendToTeachers:', error);
-      res.status(500).json({
-        success: false,
-        message: 'Internal server error'
-      });
-    }
+    await this.sendToRecipientType(req, res, RecipientType.TEACHERS, 'تم إرسال الإشعار للمعلمين');
   };
 
-  /**
-   * Send notification to students
-   */
   sendToStudents = async (req: Request, res: Response): Promise<void> => {
-    try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        res.status(400).json({
-          success: false,
-          message: 'Validation errors',
-          errors: errors.array()
-        });
-        return;
-      }
-
-      const { title, message, type, priority, data, url, imageUrl, attachments } = req.body;
-      const createdBy = (req as any).user?.id;
-
-      if (!createdBy) {
-        res.status(401).json({
-          success: false,
-          message: 'User not authenticated'
-        });
-        return;
-      }
-
-      // Save attachments if provided
-      let enrichedData: Record<string, any> = { ...(data || {}) };
-      if (attachments?.pdfBase64 || (Array.isArray(attachments?.imagesBase64) && attachments.imagesBase64.length)) {
-        const baseDir = path.join(__dirname, '../../public/uploads/notifications');
-        const toRelative = (p: string) => {
-          const u = p.replace(/\\/g, '/');
-          const i = u.lastIndexOf('/public/');
-          if (i !== -1) return u.substring(i + '/public/'.length);
-          const j = u.indexOf('uploads/');
-          return j !== -1 ? u.substring(j) : u;
-        };
-        if (attachments?.pdfBase64) {
-          const pdfPath = await saveBase64File(attachments.pdfBase64, baseDir, 'attachment.pdf');
-          enrichedData['attachments'] = { ...((enrichedData as any)['attachments'] || {}), pdfUrl: toRelative(pdfPath) };
-        }
-        if (Array.isArray(attachments?.imagesBase64) && attachments.imagesBase64.length > 0) {
-          const imagePaths = await saveMultipleBase64Images(attachments.imagesBase64, baseDir);
-          enrichedData['attachments'] = {
-            ...((enrichedData as any)['attachments'] || {}),
-            imageUrls: imagePaths.map(toRelative),
-          };
-        }
-      }
-
-      const notification = await this.notificationService.createAndSendNotification({
-        title,
-        message,
-        type: type || NotificationType.SYSTEM_ANNOUNCEMENT,
-        priority: priority || NotificationPriority.MEDIUM,
-        recipientType: RecipientType.STUDENTS,
-        data: {
-          ...enrichedData,
-          url,
-          imageUrl
-        },
-        createdBy
-      });
-
-      if (notification) {
-        res.status(201).json({
-          success: true,
-          message: 'Notification sent to students successfully',
-          data: notification
-        });
-      } else {
-        res.status(500).json({
-          success: false,
-          message: 'Failed to send notification to students'
-        });
-      }
-    } catch (error) {
-      console.error('Error in sendToStudents:', error);
-      res.status(500).json({
-        success: false,
-        message: 'Internal server error'
-      });
-    }
+    await this.sendToRecipientType(req, res, RecipientType.STUDENTS, 'تم إرسال الإشعار للطلاب');
   };
 
-  /**
-   * Send notification to specific users
-   */
+  // ---------------------------------------------------------------------------
+  // POST /api/notifications/send-to-specific
+  // ---------------------------------------------------------------------------
   sendToSpecificUsers = async (req: Request, res: Response): Promise<void> => {
-    try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        res.status(400).json({
-          success: false,
-          message: 'Validation errors',
-          errors: errors.array()
-        });
-        return;
-      }
+    const {
+      title,
+      message,
+      type,
+      priority,
+      recipientIds,
+      recipientType,
+      data,
+      url,
+      imageUrl,
+      attachments,
+    } = req.body as {
+      title: string;
+      message: string;
+      type?: NotificationType;
+      priority?: 'low' | 'medium' | 'high' | 'urgent';
+      recipientIds: string[];
+      recipientType?: RecipientType;
+      data?: Record<string, unknown>;
+      url?: string;
+      imageUrl?: string;
+      attachments?: AttachmentsInput;
+    };
+    const createdBy = req.user.id as string;
 
-      const { title, message, type, priority, recipientIds, recipientType, data, url, imageUrl, attachments } = req.body;
-      const createdBy = (req as any).user?.id;
+    const enrichedData = await persistAttachments(attachments, { ...(data ?? {}) });
 
-      if (!createdBy) {
-        res.status(401).json({
-          success: false,
-          message: 'User not authenticated'
-        });
-        return;
-      }
+    const notification = await this.notificationService.createAndSendNotification({
+      title,
+      message,
+      type: type || NotificationType.SYSTEM_ANNOUNCEMENT,
+      priority: priority || NotificationPriority.MEDIUM,
+      recipientType: recipientType || RecipientType.SPECIFIC_TEACHERS,
+      recipientIds,
+      data: { ...enrichedData, url, imageUrl },
+      createdBy,
+    });
 
-      if (!recipientIds || recipientIds.length === 0) {
-        res.status(400).json({
-          success: false,
-          message: 'Recipient IDs are required'
-        });
-        return;
-      }
-
-      // Save attachments if provided
-      let enrichedData: Record<string, any> = { ...(data || {}) };
-      if (attachments?.pdfBase64 || (Array.isArray(attachments?.imagesBase64) && attachments.imagesBase64.length)) {
-        const baseDir = path.join(__dirname, '../../public/uploads/notifications');
-        const toRelative = (p: string) => {
-          const u = p.replace(/\\/g, '/');
-          const i = u.lastIndexOf('/public/');
-          if (i !== -1) return u.substring(i + '/public/'.length);
-          const j = u.indexOf('uploads/');
-          return j !== -1 ? u.substring(j) : u;
-        };
-        if (attachments?.pdfBase64) {
-          const pdfPath = await saveBase64File(attachments.pdfBase64, baseDir, 'attachment.pdf');
-          enrichedData['attachments'] = { ...((enrichedData as any)['attachments'] || {}), pdfUrl: toRelative(pdfPath) };
-        }
-        if (Array.isArray(attachments?.imagesBase64) && attachments.imagesBase64.length > 0) {
-          const imagePaths = await saveMultipleBase64Images(attachments.imagesBase64, baseDir);
-          enrichedData['attachments'] = {
-            ...((enrichedData as any)['attachments'] || {}),
-            imageUrls: imagePaths.map(toRelative),
-          };
-        }
-      }
-
-      const notification = await this.notificationService.createAndSendNotification({
-        title,
-        message,
-        type: type || NotificationType.SYSTEM_ANNOUNCEMENT,
-        priority: priority || NotificationPriority.MEDIUM,
-        recipientType: recipientType || RecipientType.SPECIFIC_TEACHERS,
-        recipientIds,
-        data: {
-          ...enrichedData,
-          url,
-          imageUrl
-        },
-        createdBy
-      });
-
-      if (notification) {
-        res.status(201).json({
-          success: true,
-          message: 'Notification sent to specific users successfully',
-          data: notification
-        });
-      } else {
-        res.status(500).json({
-          success: false,
-          message: 'Failed to send notification to specific users'
-        });
-      }
-    } catch (error) {
-      console.error('Error in sendToSpecificUsers:', error);
-      res.status(500).json({
-        success: false,
-        message: 'Internal server error'
-      });
+    if (!notification) {
+      throw new ApiError(500, 'فشل في إرسال الإشعار', ErrorCodes.INTERNAL_ERROR);
     }
+    res.status(201).json(ok(notification, 'تم إرسال الإشعار للمستلمين المحددين'));
   };
 
-  /**
-   * Send notification using template
-   */
+  // ---------------------------------------------------------------------------
+  // POST /api/notifications/send-template
+  // ---------------------------------------------------------------------------
   sendTemplateNotification = async (req: Request, res: Response): Promise<void> => {
-    try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        res.status(400).json({
-          success: false,
-          message: 'Validation errors',
-          errors: errors.array()
-        });
-        return;
-      }
+    const { templateName, variables, recipients } = req.body as {
+      templateName: string;
+      variables: Record<string, unknown>;
+      recipients: Record<string, unknown>;
+    };
+    const createdBy = req.user.id as string;
 
-      const { templateName, variables, recipients } = req.body;
-      const createdBy = (req as any).user?.id;
-
-      if (!createdBy) {
-        res.status(401).json({
-          success: false,
-          message: 'User not authenticated'
-        });
-        return;
-      }
-
-      const notification = await this.notificationService.sendTemplateNotification(
-        templateName,
-        variables,
-        recipients,
-        createdBy
-      );
-
-      if (notification) {
-        res.status(201).json({
-          success: true,
-          message: 'Template notification sent successfully',
-          data: notification
-        });
-      } else {
-        res.status(500).json({
-          success: false,
-          message: 'Failed to send template notification'
-        });
-      }
-    } catch (error) {
-      console.error('Error in sendTemplateNotification:', error);
-      res.status(500).json({
-        success: false,
-        message: 'Internal server error'
-      });
+    const notification = await this.notificationService.sendTemplateNotification(
+      templateName,
+      variables,
+      recipients,
+      createdBy
+    );
+    if (!notification) {
+      throw new ApiError(500, 'فشل في إرسال إشعار القالب', ErrorCodes.INTERNAL_ERROR);
     }
+    res.status(201).json(ok(notification, 'تم إرسال إشعار القالب'));
   };
 
-  /**
-   * Get all notifications with filters
-   */
+  // ---------------------------------------------------------------------------
+  // GET /api/notifications  (super-admin)
+  // ---------------------------------------------------------------------------
   getNotifications = async (req: Request, res: Response): Promise<void> => {
-    try {
-      const {
-        type,
-        status,
-        priority,
-        recipientType,
-        createdBy,
-        dateFrom,
-        dateTo,
-        page = 1,
-        limit = 10
-      } = req.query;
+    const query = req.query as unknown as {
+      page?: number;
+      limit?: number;
+      type?: NotificationType;
+      status?: 'pending' | 'sent' | 'delivered' | 'read' | 'failed';
+      priority?: NotificationPriority;
+      recipientType?: RecipientType;
+      createdBy?: string;
+      dateFrom?: string;
+      dateTo?: string;
+    };
+    const { page, limit } = parsePagination(query);
 
-      const filters: any = {
-        type: type as NotificationType,
-        status: status as any,
-        priority: priority as NotificationPriority,
-        recipientType: recipientType as RecipientType,
-        createdBy: createdBy as string,
-        page: parseInt(page as string),
-        limit: parseInt(limit as string)
-      };
+    const filters: Record<string, unknown> = { page, limit };
+    if (query.type) filters['type'] = query.type;
+    if (query.status) filters['status'] = query.status;
+    if (query.priority) filters['priority'] = query.priority;
+    if (query.recipientType) filters['recipientType'] = query.recipientType;
+    if (query.createdBy) filters['createdBy'] = query.createdBy;
+    if (query.dateFrom) filters['dateFrom'] = new Date(query.dateFrom);
+    if (query.dateTo) filters['dateTo'] = new Date(query.dateTo);
 
-      if (dateFrom) {
-        filters.dateFrom = new Date(dateFrom as string);
-      }
-
-      if (dateTo) {
-        filters.dateTo = new Date(dateTo as string);
-      }
-
-      const result = await NotificationModel.findMany(filters);
-
-      res.status(200).json({
-        success: true,
-        data: result
-      });
-    } catch (error) {
-      console.error('Error in getNotifications:', error);
-      res.status(500).json({
-        success: false,
-        message: 'Internal server error'
-      });
-    }
+    const result = await NotificationModel.findMany(filters);
+    res.status(200).json(ok(result, 'قائمة الإشعارات'));
   };
 
-  /**
-   * Get notification by ID
-   */
+  // ---------------------------------------------------------------------------
+  // GET /api/notifications/:id
+  // ---------------------------------------------------------------------------
   getNotificationById = async (req: Request, res: Response): Promise<void> => {
-    try {
-      const { id } = req.params;
-
-      if (!id) {
-        res.status(400).json({
-          success: false,
-          message: 'Notification ID is required'
-        });
-        return;
-      }
-
-      const notification = await NotificationModel.findById(id);
-
-      if (!notification) {
-        res.status(404).json({
-          success: false,
-          message: 'Notification not found'
-        });
-        return;
-      }
-
-      res.status(200).json({
-        success: true,
-        data: notification
-      });
-    } catch (error) {
-      console.error('Error in getNotificationById:', error);
-      res.status(500).json({
-        success: false,
-        message: 'Internal server error'
-      });
+    const id = req.params['id'] as string;
+    const notification = await NotificationModel.findById(id);
+    if (!notification) {
+      throw new ApiError(404, 'الإشعار غير موجود', ErrorCodes.NOT_FOUND);
     }
+    res.status(200).json(ok(notification, 'تفاصيل الإشعار'));
   };
 
-  /**
-   * Get user's notifications
-   */
+  // ---------------------------------------------------------------------------
+  // GET /api/notifications/user/my-notifications
+  // ---------------------------------------------------------------------------
   getUserNotifications = async (req: Request, res: Response): Promise<void> => {
-    try {
-      const userId = (req as any).user?.id;
-      const { page = 1, limit = 10, q, type, courseId, subType } = req.query as any;
+    const userId = req.user.id as string;
+    const query = req.query as unknown as {
+      page?: number;
+      limit?: number;
+      q?: string;
+      type?: NotificationType;
+      courseId?: string;
+      subType?: string;
+    };
+    const { page, limit } = parsePagination(query);
 
-      if (!userId) {
-        res.status(401).json({
-          success: false,
-          message: 'User not authenticated'
-        });
-        return;
-      }
+    const parsedType =
+      query.type && Object.values(NotificationType).includes(query.type) ? query.type : null;
 
-      const parsedType = type && Object.values(NotificationType).includes(type as NotificationType)
-        ? (type as NotificationType)
-        : null;
+    const result = await this.notificationService.getUserNotifications(userId, page, limit, {
+      q: query.q ?? null,
+      type: parsedType,
+      courseId: query.courseId ?? null,
+      subType: query.subType ?? null,
+    });
 
-      const result = await this.notificationService.getUserNotifications(userId, parseInt(page as string), parseInt(limit as string), {
-        q: q ? String(q) : null,
-        type: parsedType,
-        courseId: courseId ? String(courseId) : null,
-        subType: subType ? String(subType) : null,
-      });
+    // Normalize attachments and links to absolute URLs for client display.
+    const toAbsolute = (p?: string | null): string | null => {
+      if (!p) return p ?? null;
+      const prefixed = p.startsWith('/') ? p : `/${p}`;
+      return `${req.protocol}://${req.get('host')}${prefixed}`;
+    };
+    const isAbsoluteUrl = (u?: string): boolean => !!u && /^(https?:)?\/\//i.test(u);
 
-      // Normalize attachments and links to absolute URLs for client display
-      const toAbsolute = (p?: string | null) => {
-        if (!p) return p;
-        const path = p.startsWith('/') ? p : `/${p}`;
-        return `${req.protocol}://${req.get('host')}${path}`;
-      };
-      const isAbsoluteUrl = (u?: string) => !!u && /^(https?:)?\/\//i.test(u);
-
-      const rawList = (result.notifications || result.data || []);
-      const notifications = await Promise.all(rawList.map(async (n: any) => {
+    const rawList: any[] = (result.notifications || result.data || []) as any[];
+    const notifications = await Promise.all(
+      rawList.map(async (n) => {
         const data = n.data || {};
         let attachments = data.attachments || {};
 
-        // Enrich with assignment attachments if missing
-        if (
-          n.type === NotificationType.ASSIGNMENT_DUE || n.type === 'assignment_due'
-        ) {
+        if (n.type === NotificationType.ASSIGNMENT_DUE || n.type === 'assignment_due') {
           const assignmentId = data.assignmentId || data.assignment_id;
-          const hasFiles = attachments && (Array.isArray(attachments.files) ? attachments.files.length > 0 : false);
+          const hasFiles =
+            attachments && Array.isArray(attachments.files) && attachments.files.length > 0;
           if (assignmentId && !hasFiles) {
             try {
               const assignment = await AssignmentModel.getById(String(assignmentId));
-              if (assignment && assignment.attachments) {
+              if (assignment?.attachments) {
                 attachments = { ...(attachments || {}), ...assignment.attachments };
               }
-            } catch (e) {
-              // ignore enrichment errors, continue
+            } catch {
+              /* enrichment is best-effort */
             }
           }
         }
 
-        // Links in data
         const link = data.link && !isAbsoluteUrl(data.link) ? toAbsolute(String(data.link)) : data.link;
         const url = data.url && !isAbsoluteUrl(data.url) ? toAbsolute(String(data.url)) : data.url;
-        const imageUrl = data.imageUrl && !isAbsoluteUrl(data.imageUrl) ? toAbsolute(String(data.imageUrl)) : data.imageUrl;
+        const imageUrl =
+          data.imageUrl && !isAbsoluteUrl(data.imageUrl) ? toAbsolute(String(data.imageUrl)) : data.imageUrl;
 
-        // Attachments normalization
         const pdfUrl = attachments?.pdfUrl ? toAbsolute(attachments.pdfUrl) : undefined;
         const imageUrls = Array.isArray(attachments?.imageUrls)
           ? attachments.imageUrls.map((u: string) => toAbsolute(u))
           : undefined;
         const files = Array.isArray(attachments?.files)
           ? attachments.files.map((f: any) => ({
-            ...f,
-            url: typeof f?.url === 'string' && !isAbsoluteUrl(f.url) ? toAbsolute(f.url) : f?.url,
-          }))
+              ...f,
+              url: typeof f?.url === 'string' && !isAbsoluteUrl(f.url) ? toAbsolute(f.url) : f?.url,
+            }))
           : undefined;
 
         return {
@@ -600,29 +325,61 @@ export class NotificationController {
             },
           },
         };
-      }));
+      })
+    );
 
-      const modified = {
-        ...result,
-        notifications,
-      };
-
-      res.status(200).json({
-        success: true,
-        data: modified
-      });
-    } catch (error) {
-      console.error('Error in getUserNotifications:', error);
-      res.status(500).json({
-        success: false,
-        message: 'Internal server error'
-      });
-    }
+    res.status(200).json(ok({ ...result, notifications }, 'إشعاراتي'));
   };
 
-  /**
-   * Create and send notification (internal method)
-   */
+  // ---------------------------------------------------------------------------
+  // PUT /api/notifications/:id/read
+  // ---------------------------------------------------------------------------
+  markAsRead = async (req: Request, res: Response): Promise<void> => {
+    const id = req.params['id'] as string;
+    const userId = req.user.id as string;
+    const success = await this.notificationService.markNotificationAsRead(id, userId);
+    if (!success) {
+      throw new ApiError(
+        404,
+        'الإشعار غير موجود أو تم تعليمه كمقروء مسبقاً',
+        ErrorCodes.NOT_FOUND
+      );
+    }
+    res.status(200).json(ok(null, 'تم تعليم الإشعار كمقروء'));
+  };
+
+  // ---------------------------------------------------------------------------
+  // GET /api/notifications/statistics  (super-admin)
+  // ---------------------------------------------------------------------------
+  getStatistics = async (_req: Request, res: Response): Promise<void> => {
+    const stats = await this.notificationService.getNotificationStats();
+    res.status(200).json(ok(stats, 'إحصائيات الإشعارات'));
+  };
+
+  // ---------------------------------------------------------------------------
+  // POST /api/notifications/process-pending  (super-admin)
+  // ---------------------------------------------------------------------------
+  processPendingNotifications = async (_req: Request, res: Response): Promise<void> => {
+    await this.notificationService.processPendingNotifications();
+    res.status(200).json(ok(null, 'تم تشغيل معالجة الإشعارات المعلقة'));
+  };
+
+  // ---------------------------------------------------------------------------
+  // DELETE /api/notifications/:id  (super-admin)
+  // ---------------------------------------------------------------------------
+  deleteNotification = async (req: Request, res: Response): Promise<void> => {
+    const id = req.params['id'] as string;
+    const success = await NotificationModel.delete(id);
+    if (!success) {
+      throw new ApiError(404, 'الإشعار غير موجود', ErrorCodes.NOT_FOUND);
+    }
+    res.status(200).json(ok(null, 'تم حذف الإشعار'));
+  };
+
+  // ---------------------------------------------------------------------------
+  // Reused by other controllers (news, course, etc.) — keeps the legacy
+  // internal API. Returns the underlying notification or null.
+  // ---------------------------------------------------------------------------
   createAndSendNotification = async (notificationData: {
     title: string;
     message: string;
@@ -630,191 +387,38 @@ export class NotificationController {
     priority?: 'low' | 'medium' | 'high' | 'urgent';
     recipientType: RecipientType;
     recipientIds?: string[];
-    data?: Record<string, any>;
+    data?: Record<string, unknown>;
     scheduledAt?: Date;
     createdBy: string;
-  }): Promise<any> => {
-    return await this.notificationService.createAndSendNotification(notificationData);
-  };
-
-  /**
-   * Mark notification as read
-   */
-  markAsRead = async (req: Request, res: Response): Promise<void> => {
-    try {
-      const { id } = req.params;
-      const userId = (req as any).user?.id;
-
-      if (!id) {
-        res.status(400).json({
-          success: false,
-          message: 'Notification ID is required'
-        });
-        return;
-      }
-
-      if (!userId) {
-        res.status(401).json({
-          success: false,
-          message: 'User not authenticated'
-        });
-        return;
-      }
-
-      const success = await this.notificationService.markNotificationAsRead(id, userId);
-
-      if (success) {
-        res.status(200).json({
-          success: true,
-          message: 'Notification marked as read'
-        });
-      } else {
-        res.status(404).json({
-          success: false,
-          message: 'Notification not found or already marked as read'
-        });
-      }
-    } catch (error) {
-      console.error('Error in markAsRead:', error);
-      res.status(500).json({
-        success: false,
-        message: 'Internal server error'
-      });
-    }
-  };
-
-  /**
-   * Get notification statistics
-   */
-  getStatistics = async (_req: Request, res: Response): Promise<void> => {
-    try {
-      const stats = await this.notificationService.getNotificationStats();
-
-      res.status(200).json({
-        success: true,
-        data: stats
-      });
-    } catch (error) {
-      console.error('Error in getStatistics:', error);
-      res.status(500).json({
-        success: false,
-        message: 'Internal server error'
-      });
-    }
-  };
-
-  /**
-   * Process pending notifications (admin only)
-   */
-  processPendingNotifications = async (_req: Request, res: Response): Promise<void> => {
-    try {
-      await this.notificationService.processPendingNotifications();
-
-      res.status(200).json({
-        success: true,
-        message: 'Pending notifications processed successfully'
-      });
-    } catch (error) {
-      console.error('Error in processPendingNotifications:', error);
-      res.status(500).json({
-        success: false,
-        message: 'Internal server error'
-      });
-    }
-  };
-
-  /**
-   * Delete notification
-   */
-  deleteNotification = async (req: Request, res: Response): Promise<void> => {
-    try {
-      const { id } = req.params;
-
-      if (!id) {
-        res.status(400).json({
-          success: false,
-          message: 'Notification ID is required'
-        });
-        return;
-      }
-
-      const success = await NotificationModel.delete(id);
-
-      if (success) {
-        res.status(200).json({
-          success: true,
-          message: 'Notification deleted successfully'
-        });
-      } else {
-        res.status(404).json({
-          success: false,
-          message: 'Notification not found'
-        });
-      }
-    } catch (error) {
-      console.error('Error in deleteNotification:', error);
-      res.status(500).json({
-        success: false,
-        message: 'Internal server error'
-      });
-    }
-  };
+  }): Promise<unknown> => this.notificationService.createAndSendNotification(notificationData);
 }
 
-// Validation rules
-export const notificationValidation = {
-  sendNotification: [
-    body('title').notEmpty().withMessage('Title is required').isLength({ max: 255 }).withMessage('Title too long'),
-    body('message').notEmpty().withMessage('Message is required'),
-    body('type').optional().isIn(Object.values(NotificationType)).withMessage('Invalid notification type'),
-    body('priority').optional().isIn(Object.values(NotificationPriority)).withMessage('Invalid priority'),
-    body('data').optional().isObject().withMessage('Data must be an object'),
-    body('url').optional().isURL().withMessage('Invalid URL'),
-    body('imageUrl').optional().isURL().withMessage('Invalid image URL')
-  ],
-
-  sendToSpecificUsers: [
-    body('title').notEmpty().withMessage('Title is required').isLength({ max: 255 }).withMessage('Title too long'),
-    body('message').notEmpty().withMessage('Message is required'),
-    body('recipientIds').isArray({ min: 1 }).withMessage('At least one recipient ID is required'),
-    body('recipientIds.*').isUUID().withMessage('Invalid recipient ID format'),
-    body('type').optional().isIn(Object.values(NotificationType)).withMessage('Invalid notification type'),
-    body('priority').optional().isIn(Object.values(NotificationPriority)).withMessage('Invalid priority'),
-    body('recipientType').optional().isIn([RecipientType.SPECIFIC_TEACHERS, RecipientType.SPECIFIC_STUDENTS]).withMessage('Invalid recipient type'),
-    body('data').optional().isObject().withMessage('Data must be an object'),
-    body('url').optional().isURL().withMessage('Invalid URL'),
-    body('imageUrl').optional().isURL().withMessage('Invalid image URL')
-  ],
-
-  sendTemplateNotification: [
-    body('templateName').notEmpty().withMessage('Template name is required'),
-    body('variables').isObject().withMessage('Variables must be an object'),
-    body('recipients').isObject().withMessage('Recipients must be an object'),
-    body('recipients.userIds').optional().isArray().withMessage('User IDs must be an array'),
-    body('recipients.userTypes').optional().isArray().withMessage('User types must be an array'),
-    body('recipients.allUsers').optional().isBoolean().withMessage('All users must be a boolean')
-  ],
-
-  getNotifications: [
-    query('type').optional().isIn(Object.values(NotificationType)).withMessage('Invalid notification type'),
-    query('status').optional().isIn(['pending', 'sent', 'delivered', 'read', 'failed']).withMessage('Invalid status'),
-    query('priority').optional().isIn(Object.values(NotificationPriority)).withMessage('Invalid priority'),
-    query('recipientType').optional().isIn(Object.values(RecipientType)).withMessage('Invalid recipient type'),
-    query('page').optional().isInt({ min: 1 }).withMessage('Page must be a positive integer'),
-    query('limit').optional().isInt({ min: 1, max: 100 }).withMessage('Limit must be between 1 and 100'),
-    query('dateFrom').optional().isISO8601().withMessage('Invalid date format'),
-    query('dateTo').optional().isISO8601().withMessage('Invalid date format')
-  ],
-
-  getNotificationById: [
-    param('id').isUUID().withMessage('Invalid notification ID')
-  ],
-
-  markAsRead: [
-    param('id').isUUID().withMessage('Invalid notification ID')
-  ],
-
-  deleteNotification: [
-    param('id').isUUID().withMessage('Invalid notification ID')
-  ]
+// Per-endpoint role gates. Phase 1 idiom: throw `ApiError` with a stable code
+// instead of writing the response. The global error middleware formats it.
+export const allowAdminOrTeacher = (req: Request, _res: Response, next: NextFunction): void => {
+  const userType = req.user?.userType;
+  if (userType === UserType.SUPER_ADMIN || userType === UserType.TEACHER) {
+    return next();
+  }
+  next(
+    new ApiError(
+      403,
+      'الوصول مرفوض. هذا الإجراء مسموح للمسؤولين والمعلمين فقط',
+      ErrorCodes.ROLE_REQUIRED
+    )
+  );
 };
+
+export const allowAdminOnly = (req: Request, _res: Response, next: NextFunction): void => {
+  if (req.user?.userType === UserType.SUPER_ADMIN) {
+    return next();
+  }
+  next(
+    new ApiError(403, 'الوصول مرفوض. هذا الإجراء مسموح للمسؤولين فقط', ErrorCodes.ROLE_REQUIRED)
+  );
+};
+
+// Compatibility shim: any importer of the legacy `notificationValidation`
+// object now gets an empty object. The new route file uses Zod schemas from
+// `src/schemas/notification.schemas.ts` directly.
+export const notificationValidation = {};

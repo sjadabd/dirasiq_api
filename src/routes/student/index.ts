@@ -1,20 +1,34 @@
+// Student router.
+//
+// Phase 1.B-2 invariant: every endpoint under /api/student/* requires
+// authentication + the student role. Both are applied at this level so each
+// sub-route file no longer needs `authenticateToken, requireStudent` per
+// handler.
+
 import { Router } from 'express';
+
 import assignmentRoutes from './assignment.routes';
 import attendanceRoutes from './attendance.routes';
 import courseRoutes from './course.routes';
 import courseBookingRoutes from './course-booking.routes';
-import examRoutes from './exam.routes';
+import dashboardRoutes from './dashboard.routes';
 import enrollmentRoutes from './enrollment.routes';
+import examRoutes from './exam.routes';
 import invoiceRoutes from './invoice.routes';
+import searchRoutes from './search.routes';
 import studentEvaluationRoutes from './student-evaluation.routes';
 import teacherRoutes from './teacher.routes';
-import dashboardRoutes from './dashboard.routes';
-import searchRoutes from './search.routes';
-import { authenticateToken } from '../../middleware/auth.middleware';
+
+import { authenticateToken, requireRole } from '../../middleware/auth.middleware';
 import { UserType } from '../../types';
 import { UserModel } from '../../models/user.model';
+import { ApiError, ErrorCodes } from '../../utils/api-error';
+import { asyncHandler } from '../../utils/async-handler';
+import { okEmpty } from '../../utils/response.util';
 
 const router = Router();
+
+router.use(authenticateToken, requireRole(UserType.STUDENT));
 
 router.use('/assignments', assignmentRoutes);
 router.use('/attendance', attendanceRoutes);
@@ -30,24 +44,19 @@ router.use('/teachers', teacherRoutes);
 router.use('/dashboard', dashboardRoutes);
 router.use('/search', searchRoutes);
 
-router.delete('/account', authenticateToken, async (req, res) => {
-  try {
-    if (!req.user || req.user.userType !== UserType.STUDENT) {
-      res.status(403).json({ success: false, message: 'الوصول مرفوض', errors: ['مسموح للطلاب فقط'] });
-      return;
+// Self-service account deletion (student only — enforced by the router-level
+// requireRole above). The legacy inline handler used to live here; migrated to
+// the Phase 1 envelope.
+router.delete(
+  '/account',
+  asyncHandler(async (req, res) => {
+    const studentId = req.user.id as string;
+    const success = await UserModel.delete(studentId);
+    if (!success) {
+      throw new ApiError(400, 'تعذر حذف الحساب', ErrorCodes.INVALID_REQUEST);
     }
-
-    const ok = await UserModel.delete(req.user.id);
-    if (!ok) {
-      res.status(400).json({ success: false, message: 'فشل حذف الحساب', errors: ['تعذر حذف الحساب'] });
-      return;
-    }
-
-    res.status(200).json({ success: true, message: 'تم حذف الحساب بنجاح' });
-  } catch (error) {
-    res.status(500).json({ success: false, message: 'حدث خطأ في الخادم', errors: ['خطأ داخلي في الخادم'] });
-  }
-});
+    res.status(200).json(okEmpty('تم حذف الحساب بنجاح'));
+  })
+);
 
 export default router;
-

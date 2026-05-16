@@ -1,14 +1,33 @@
 import { Router } from 'express';
+
 import { StudentTeacherController } from '../../controllers/student/teacher.controller';
-import { authenticateToken } from '../../middleware/auth.middleware';
 import { TeacherProfileController } from '../../controllers/teacher/profile.controller';
+import { validate } from '../../middleware/validate.middleware';
+import { asyncHandler } from '../../utils/async-handler';
+import { teacherIdParamSchema } from '../../schemas/common.schemas';
+import {
+  suggestedTeachersQuerySchema,
+  teacherSubjectsCoursesQuerySchema,
+} from '../../schemas/student.schemas';
 
 const router = Router();
 
-router.use(authenticateToken);
+router.get(
+  '/suggested',
+  validate({ query: suggestedTeachersQuerySchema }),
+  asyncHandler(StudentTeacherController.getSuggestedTeachers)
+);
 
-router.get('/suggested', StudentTeacherController.getSuggestedTeachers);
-router.get('/:teacherId/subjects-courses', StudentTeacherController.getTeacherSubjectsAndCourses);
-router.get('/:teacherId/intro-video', TeacherProfileController.getTeacherIntroVideo);
+router.get(
+  '/:teacherId/subjects-courses',
+  validate({ params: teacherIdParamSchema, query: teacherSubjectsCoursesQuerySchema }),
+  asyncHandler(StudentTeacherController.getTeacherSubjectsAndCourses)
+);
+
+router.get(
+  '/:teacherId/intro-video',
+  validate({ params: teacherIdParamSchema }),
+  asyncHandler(TeacherProfileController.getTeacherIntroVideo)
+);
 
 export default router;

@@ -1,21 +1,38 @@
 import { Router } from 'express';
+
 import { StudentEnrollmentController } from '../../controllers/student/enrollment.controller';
-import { authenticateToken } from '../../middleware/auth.middleware';
+import { validate } from '../../middleware/validate.middleware';
+import { asyncHandler } from '../../utils/async-handler';
+import { courseIdParamSchema } from '../../schemas/common.schemas';
+import {
+  enrollmentListQuerySchema,
+  weeklyScheduleQuerySchema,
+} from '../../schemas/student.schemas';
 
 const router = Router();
 
-router.use(authenticateToken);
+router.get(
+  '/',
+  validate({ query: enrollmentListQuerySchema }),
+  asyncHandler(StudentEnrollmentController.getMyEnrolledCourses)
+);
 
-// Get courses the student is enrolled in for the active academic year
-router.get('/', StudentEnrollmentController.getMyEnrolledCourses);
+router.get(
+  '/schedule',
+  validate({ query: weeklyScheduleQuerySchema }),
+  asyncHandler(StudentEnrollmentController.getWeeklySchedule)
+);
 
-// Get student's weekly schedule
-router.get('/schedule', StudentEnrollmentController.getWeeklySchedule);
+router.get(
+  '/schedule/weekly',
+  validate({ query: weeklyScheduleQuerySchema }),
+  asyncHandler(StudentEnrollmentController.getWeeklyScheduleComprehensive)
+);
 
-// Get comprehensive weekly schedule (alias)
-router.get('/schedule/weekly', StudentEnrollmentController.getWeeklyScheduleComprehensive);
-
-// Get weekly schedule for a specific course
-router.get('/schedule/weekly/by-course/:courseId', StudentEnrollmentController.getWeeklyScheduleByCourse);
+router.get(
+  '/schedule/weekly/by-course/:courseId',
+  validate({ params: courseIdParamSchema, query: weeklyScheduleQuerySchema }),
+  asyncHandler(StudentEnrollmentController.getWeeklyScheduleByCourse)
+);
 
 export default router;

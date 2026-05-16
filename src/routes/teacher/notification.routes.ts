@@ -1,22 +1,38 @@
 import { Router } from 'express';
+
 import { TeacherNotificationController } from '../../controllers/teacher/notification.controller';
-import { authenticateToken, requireTeacher } from '../../middleware/auth.middleware';
+import { validate } from '../../middleware/validate.middleware';
+import { asyncHandler } from '../../utils/async-handler';
+import { idParamSchema, paginationQuerySchema } from '../../schemas/common.schemas';
+import {
+  teacherNotificationCreateSchema,
+  teacherNotificationListQuerySchema,
+} from '../../schemas/teacher.schemas';
 
 const router = Router();
 
-router.use(authenticateToken, requireTeacher);
+router.get(
+  '/',
+  validate({ query: teacherNotificationListQuerySchema }),
+  asyncHandler(TeacherNotificationController.listMyNotifications)
+);
 
-// GET /api/teacher/notifications
-// query: page, limit, q, type, courseId
-router.get('/', TeacherNotificationController.listMyNotifications);
+router.get(
+  '/unread',
+  validate({ query: paginationQuerySchema }),
+  asyncHandler(TeacherNotificationController.listMyUnreadNotifications)
+);
 
-// GET /api/teacher/notifications/unread
-router.get('/unread', TeacherNotificationController.listMyUnreadNotifications);
+router.post(
+  '/',
+  validate({ body: teacherNotificationCreateSchema }),
+  asyncHandler(TeacherNotificationController.createNotification)
+);
 
-// POST /api/teacher/notifications
-router.post('/', TeacherNotificationController.createNotification);
-
-// DELETE /api/teacher/notifications/:id (soft delete)
-router.delete('/:id', TeacherNotificationController.deleteNotification);
+router.delete(
+  '/:id',
+  validate({ params: idParamSchema }),
+  asyncHandler(TeacherNotificationController.deleteNotification)
+);
 
 export default router;

@@ -1,24 +1,12 @@
 import { Router } from 'express';
+
 import { TeacherDashboardController } from '../../controllers/teacher/dashboard.controller';
-import {
-  authenticateToken,
-  requireTeacher,
-} from '../../middleware/auth.middleware';
+import { asyncHandler } from '../../utils/async-handler';
 
 const router = Router();
 
-// Require teacher authentication
-router.use(authenticateToken);
-router.use(requireTeacher);
-
-// GET /api/teacher/dashboard
-router.get('/', TeacherDashboardController.getDashboard);
-// GET /api/teacher/dashboard/upcoming-today
-router.get(
-  '/upcoming-today',
-  TeacherDashboardController.getTodayUpcomingSessions
-);
-// GET /api/teacher/dashboard/referrals
-router.get('/referrals', TeacherDashboardController.getReferralStats);
+router.get('/', asyncHandler(TeacherDashboardController.getDashboard));
+router.get('/upcoming-today', asyncHandler(TeacherDashboardController.getTodayUpcomingSessions));
+router.get('/referrals', asyncHandler(TeacherDashboardController.getReferralStats));
 
 export default router;

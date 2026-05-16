@@ -1,15 +1,23 @@
 import { Router } from 'express';
+
 import { StudentAttendanceController } from '../../controllers/student/attendance.controller';
-import { authenticateToken, requireStudent } from '../../middleware/auth.middleware';
+import { validate } from '../../middleware/validate.middleware';
+import { asyncHandler } from '../../utils/async-handler';
+import { courseIdParamSchema } from '../../schemas/common.schemas';
+import { attendanceCheckInBodySchema } from '../../schemas/student.schemas';
 
 const router = Router();
 
-router.use(authenticateToken, requireStudent);
+router.post(
+  '/check-in',
+  validate({ body: attendanceCheckInBodySchema }),
+  asyncHandler(StudentAttendanceController.checkIn)
+);
 
-// POST /api/student/attendance/check-in
-router.post('/check-in', StudentAttendanceController.checkIn);
-
-// GET /api/student/attendance/by-course/:courseId
-router.get('/by-course/:courseId', StudentAttendanceController.getMyAttendanceByCourse);
+router.get(
+  '/by-course/:courseId',
+  validate({ params: courseIdParamSchema }),
+  asyncHandler(StudentAttendanceController.getMyAttendanceByCourse)
+);
 
 export default router;
