@@ -15,6 +15,7 @@ import publicNewsRoutes from './routes/public/news.routes';
 import studentRoutes from './routes/student';
 import academicYearRoutes from './routes/super_admin/academic-year.routes';
 import superAdminDashboardRoutes from './routes/super_admin/dashboard.routes';
+import internalRoutes from './routes/internal.routes';
 import gradeRoutes from './routes/super_admin/grade.routes';
 import newsRoutes from './routes/super_admin/news.routes';
 import superAdminSettingsRoutes from './routes/super_admin/settings.routes';
@@ -145,12 +146,21 @@ app.use(compression());
 // asset paths. The wrapper attaches it after the canonical envelope is
 // built, so it lives outside ApiResponse.data and stays backwards-compatible.
 // =====================================================
-const APP_URL = process.env['APP_URL'] || 'https://api.mulhimiq.com/';
-app.use((_req, res, next) => {
+// content_url is derived from the live request origin so the same code
+// returns http://localhost:3000 in dev and https://api.mulhimiq.com in
+// production without any env config. Set APP_URL to override (e.g. behind
+// a reverse proxy where the public hostname differs from req.get('host')).
+//
+// We emit content_url WITHOUT a trailing slash because every stored asset
+// path begins with one (e.g. "/uploads/news/x.svg"). Concatenating
+// content_url + image_url then yields a single-slash URL.
+app.use((req, res, next) => {
   const originalJson = res.json.bind(res);
   res.json = (data: any) => {
     if (typeof data === 'object' && data !== null) {
-      data.content_url = APP_URL;
+      const override = process.env['APP_URL']?.trim();
+      const raw = override || `${req.protocol}://${req.get('host')}`;
+      data.content_url = raw.replace(/\/+$/, '');
     }
     return originalJson(data);
   };
@@ -260,6 +270,10 @@ app.use('/api/super-admin/dashboard', superAdminDashboardRoutes);
 app.use('/api/super-admin/teachers', superAdminTeacherRoutes);
 app.use('/api/super-admin/settings', superAdminSettingsRoutes);
 app.use('/api/payments/wayl', waylRoutes);
+
+// Header-gated internal endpoints consumed by other in-house services
+// (currently only `dirasiq_chat`). Never reached by end-user clients.
+app.use('/api/internal', internalRoutes);
 
 // =====================================================
 // 🔹 404 + Global Error Handler (must be LAST)

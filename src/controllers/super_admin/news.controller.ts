@@ -11,28 +11,51 @@ import { ok } from '../../utils/response.util';
 
 const UPLOAD_DIR = path.resolve(process.cwd(), 'public', 'uploads', 'news');
 
-const MIME_TO_EXT: Record<string, string> = {
+// Strict allowlist: raster formats the Flutter app's `Image.network` can decode
+// on Android (which uses platform ImageDecoder). SVG / GIF / BMP are rejected
+// because Flutter renders them only via extra packages (flutter_svg, etc.) and
+// we don't want to ship those for a marketing-grade asset path.
+const ALLOWED_IMAGE_MIME_TO_EXT: Record<string, string> = {
   'image/jpeg': '.jpg',
   'image/jpg': '.jpg',
   'image/png': '.png',
-  'image/gif': '.gif',
   'image/webp': '.webp',
-  'image/bmp': '.bmp',
-  'image/svg+xml': '.svg',
 };
+
+const ALLOWED_IMAGE_LABEL = 'JPG, PNG, أو WEBP';
+
+// ~6 MB after base64 decoding. Marketing-grade news images shouldn't need more.
+const MAX_NEWS_IMAGE_BYTES = 6 * 1024 * 1024;
 
 const saveBase64Image = async (base64Data: string): Promise<string> => {
   const matches = base64Data.match(/^data:(image\/[-+\w.]+);base64,(.+)$/i);
   if (!matches) {
     throw new ApiError(400, 'بيانات الصورة غير صحيحة', ErrorCodes.VALIDATION_ERROR);
   }
-  const mimeType = matches[1] as string;
+  const mimeType = (matches[1] as string).toLowerCase();
   const base64String = matches[2] as string;
-  const ext = MIME_TO_EXT[mimeType] || '.png';
+  const ext = ALLOWED_IMAGE_MIME_TO_EXT[mimeType];
+  if (!ext) {
+    throw new ApiError(
+      400,
+      `صيغة الصورة غير مدعومة. الصيغ المسموح بها: ${ALLOWED_IMAGE_LABEL}.`,
+      ErrorCodes.VALIDATION_ERROR,
+      { fields: [{ field: 'body.imageUrl', message: `صيغة الصورة غير مدعومة (${mimeType}).`, code: 'unsupported_image_format' }] }
+    );
+  }
+  const buffer = Buffer.from(base64String, 'base64');
+  if (buffer.byteLength > MAX_NEWS_IMAGE_BYTES) {
+    throw new ApiError(
+      400,
+      `حجم الصورة كبير جداً. الحد الأقصى ${(MAX_NEWS_IMAGE_BYTES / (1024 * 1024)).toFixed(0)} ميغابايت.`,
+      ErrorCodes.VALIDATION_ERROR,
+      { fields: [{ field: 'body.imageUrl', message: 'حجم الصورة يتجاوز الحد المسموح.', code: 'image_too_large' }] }
+    );
+  }
   const fileName = `news_${Date.now()}_${Math.random().toString(36).slice(2, 8)}${ext}`;
   const filePath = path.join(UPLOAD_DIR, fileName);
   await fs.promises.mkdir(UPLOAD_DIR, { recursive: true });
-  await fs.promises.writeFile(filePath, Buffer.from(base64String, 'base64'));
+  await fs.promises.writeFile(filePath, buffer);
   return `/uploads/news/${fileName}`;
 };
 

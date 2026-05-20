@@ -821,6 +821,51 @@ Operational flow:
 
 This closes the race-condition vulnerability: previously two concurrent requests on a fresh DB could both observe `superAdminExists() = false` and both succeed.
 
+#### How to add a super admin (recipe)
+
+The bootstrap endpoint only works when ZERO super admins exist. For every subsequent admin, INSERT directly. Two shell-friendly recipes:
+
+**Recipe A — first ever super admin (empty DB):**
+```bash
+# 1. Set the bootstrap env and restart the API
+echo 'BOOTSTRAP_TOKEN=<random-32-bytes>' >> dirasiq_api/.env
+# 2. Restart the API so the env is loaded (Ctrl-C the running nodemon, then npm run dev)
+# 3. Register
+curl -X POST http://localhost:3000/api/auth/register/super-admin \
+  -H "Authorization: Bearer <BOOTSTRAP_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Admin","email":"admin@example.com","password":"YourPassword123"}'
+# 4. UNSET BOOTSTRAP_TOKEN in .env and restart so the endpoint returns 404 again
+```
+
+**Recipe B — additional super admin (one already exists):**
+```bash
+# 1. Generate the bcrypt hash (cost=BCRYPT_ROUNDS, default 12)
+cd dirasiq_api
+node -e "require('bcryptjs').hash('YourPassword123', 12).then(h => console.log(h))"
+# → copy the $2a$12$... string
+
+# 2. Insert via SQL (UPSERT keeps it idempotent)
+PGPASSWORD=<pwd> psql -h localhost -U postgres -d mulhimiq_local -c "
+INSERT INTO users (name, email, password, user_type, status, email_verified, auth_provider)
+VALUES ('Admin Name', 'admin2@example.com', '<paste-bcrypt-hash>',
+        'super_admin', 'active', true, 'email')
+ON CONFLICT (email) DO UPDATE SET
+  password = EXCLUDED.password, status = 'active',
+  email_verified = true, name = EXCLUDED.name, updated_at = now();
+"
+
+# 3. No restart needed. Verify with a login round-trip:
+curl -X POST http://localhost:3000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin2@example.com","password":"YourPassword123"}'
+# Expect: HTTP 200 + token + userType: "super_admin"
+```
+
+Why the SQL path is correct (not a workaround): the `superAdminExists()` guard exists to stop privilege escalation via the public `/register/super-admin` endpoint. An out-of-band SQL INSERT requires DB shell access, which is itself a privileged operation — the threat model is preserved.
+
+Reset the password the same way: re-run step 1+2 with the same email; the `ON CONFLICT` clause updates `password` in place. The first login after a password reset issues a fresh JWT.
+
 ### 2. CORS bypass removed
 
 `src/index.ts` previously had a manual `app.use((req, res, next) => { res.header('Access-Control-Allow-Origin', req.headers.origin || '*'); … })` block AFTER the `cors()` allowlist. That defeated the allowlist — any Origin received a permissive `Access-Control-Allow-Origin` header. Removed in Phase 0. The `cors()` middleware now exclusively controls CORS responses, including preflight (OPTIONS).

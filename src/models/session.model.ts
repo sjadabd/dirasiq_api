@@ -172,27 +172,38 @@ export class SessionModel {
     teacherId: string,
     page = 1,
     limit = 20,
-    filters?: { weekday?: number | null; courseId?: string | null }
+    filters?: { weekday?: number | null; courseId?: string | null; search?: string | null }
   ): Promise<{ sessions: any[]; total: number }> {
     const offset = (page - 1) * limit;
+    const searchTerm = filters?.search?.trim();
 
-    // Build dynamic filters for count query
-    const countConds: string[] = ['teacher_id = $1', 'is_deleted = false'];
+    // Build dynamic filters for count query. NOTE: search hits course_name so
+    // we need the join even on the count query — handled below.
+    const countConds: string[] = ['s.teacher_id = $1', 's.is_deleted = false'];
     const countParams: any[] = [teacherId];
     let pIndex = 2;
     if (filters && filters.weekday !== undefined && filters.weekday !== null) {
-      countConds.push(`weekday = $${pIndex}`);
+      countConds.push(`s.weekday = $${pIndex}`);
       countParams.push(filters.weekday);
       pIndex++;
     }
     if (filters && filters.courseId) {
-      countConds.push(`course_id = $${pIndex}`);
+      countConds.push(`s.course_id = $${pIndex}`);
       countParams.push(filters.courseId);
       pIndex++;
     }
-    const countQ = `SELECT COUNT(*) FROM sessions WHERE ${countConds.join(' AND ')}`;
+    if (searchTerm) {
+      countConds.push(`(s.title ILIKE $${pIndex} OR c.course_name ILIKE $${pIndex})`);
+      countParams.push(`%${searchTerm}%`);
+      pIndex++;
+    }
+    const countQ = `
+      SELECT COUNT(*) FROM sessions s
+      JOIN courses c ON c.id = s.course_id
+      WHERE ${countConds.join(' AND ')}
+    `;
 
-    // Build dynamic filters for list query (with alias s.)
+    // List query mirrors the count filters.
     const listConds: string[] = ['s.teacher_id = $1', 's.is_deleted = false'];
     const listParams: any[] = [teacherId];
     let lIndex = 2;
@@ -204,6 +215,11 @@ export class SessionModel {
     if (filters && filters.courseId) {
       listConds.push(`s.course_id = $${lIndex}`);
       listParams.push(filters.courseId);
+      lIndex++;
+    }
+    if (searchTerm) {
+      listConds.push(`(s.title ILIKE $${lIndex} OR c.course_name ILIKE $${lIndex})`);
+      listParams.push(`%${searchTerm}%`);
       lIndex++;
     }
 

@@ -30,4 +30,14 @@ router.get(
   asyncHandler(TeacherProfileController.getTeacherIntroVideo)
 );
 
+// Aggregate for the student↔teacher workspace screen. Returns teacher profile,
+// shared courses, assignments, exams (with my-grade), invoices, totals, and
+// urgency alerts in one call. Ownership check inside the service throws 404
+// (not 403) if the student has no active booking with this teacher.
+router.get(
+  '/:teacherId/aggregate',
+  validate({ params: teacherIdParamSchema }),
+  asyncHandler(StudentTeacherController.getTeacherAggregate)
+);
+
 export default router;

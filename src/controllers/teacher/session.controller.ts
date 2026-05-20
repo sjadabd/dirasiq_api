@@ -347,11 +347,13 @@ export class TeacherSessionController {
       limit?: number;
       weekday?: number;
       courseId?: string;
+      search?: string;
     };
     const { page, limit } = parsePagination(query);
     const filters = {
       weekday: typeof query.weekday === 'number' ? query.weekday : null,
       courseId: query.courseId ?? null,
+      search: query.search ?? null,
     };
 
     const { sessions, total } = await SessionModel.getTeacherSessions(teacherId, page, limit, filters);

@@ -1,442 +1,184 @@
+// =============================================================================
+// Teacher Invoice Service v2 — rebuilt 2026-05-17.
+//
+// What changed vs. v1:
+//   • The 300-line monolithic `updateInvoice()` is gone. Replaced by two tiny
+//     methods: `updateMeta()` (dates+notes) and `updateDiscount()` (set exact
+//     discount). To change mode/amount/installments, soft-delete + recreate.
+//   • `addPayment()` now supports PARTIAL payments. Previously the service
+//     rejected anything that wasn't exactly the installment remainder, which
+//     made the `partial` status enum dead code.
+//   • `createInvoice()` supports auto-split installments: pass
+//     `installmentsCount` + optional `installmentIntervalDays` (default 30)
+//     + optional `installmentFirstDueDate` (default = dueDate or today+30),
+//     and the service generates evenly-spaced rows. Manual `installments[]`
+//     still works for irregular plans.
+//   • `getInvoiceFull()` is the single read endpoint — replaces the v1 trio
+//     (`/full` + `/installments` + `/entries/report`).
+//   • Forces invoiceType = 'course' for everything created here. Reservation
+//     deposits have their own table + endpoint and are not the concern of
+//     this surface.
+// =============================================================================
+
 import pool from '../../config/database';
 import { CourseInvoiceModel } from '../../models/course-invoice.model';
 import { InvoiceInstallmentModel } from '../../models/invoice-installment.model';
-import { InvoiceStatus, InvoiceType, PaymentMethod } from '../../types';
+import type { InvoiceStatus, PaymentMethod } from '../../types';
+import { ApiError, ErrorCodes } from '../../utils/api-error';
 
-export class TeacherInvoiceService {
-  static async updateInvoice(
-    teacherId: string,
-    invoiceId: string,
-    updates: {
-      dueDate?: string | null;
-      notes?: string | null;
-      invoiceType?: InvoiceType;
-      paymentMode?: 'cash' | 'installments';
-      amountDue?: number;
-      // extended fields
-      studentId?: string;
-      invoiceDate?: string | null;
-      discountAmount?: number; // sets invoice-level discount_total
-      installments?: Array<{
-        id?: string;
-        installmentNumber: number;
-        plannedAmount: number;
-        dueDate: string;
-        notes?: string | null;
-        status?: 'pending' | 'partial' | 'paid';
-        paidAmount?: number; // required if status=partial
-        paidDate?: string | null;
-      }>;
-      removeInstallmentIds?: string[];
-    }
-  ) {
-    // Fetch and authorize
-    const inv = await CourseInvoiceModel.findById(invoiceId);
-    if (!inv) throw new Error('Invoice not found');
-    if (String(inv.teacher_id) !== String(teacherId))
-      throw new Error('Forbidden');
-
-    const client = await pool.connect();
-    try {
-      await client.query('BEGIN');
-
-      // Defensive normalization for date-only fields
-      const normDate = (d: any) => {
-        if (!d) return null;
-        if (typeof d === 'string') return d.slice(0, 10);
-        try { return new Date(d).toISOString().slice(0, 10); } catch { return null; }
-      };
-      if (updates.invoiceDate !== undefined) {
-        updates.invoiceDate = normDate(updates.invoiceDate);
-      }
-      if (updates.dueDate !== undefined) {
-        updates.dueDate = normDate(updates.dueDate);
-      }
-
-      // If amountDue will change, validate it won't be less than existing discounts + paid
-      if (updates.amountDue != null) {
-        const newAmount = Math.max(Number(updates.amountDue || 0), 0);
-        const minAllowed = Number(inv.discount_total) + Number(inv.amount_paid);
-        if (newAmount < minAllowed) {
-          throw new Error(
-            'قيمة الفاتورة الجديدة يجب ألا تقل عن مجموع الخصومات والمدفوع'
-          );
-        }
-      }
-
-      // Build dynamic SET
-      const setParts: string[] = [];
-      const args: any[] = [];
-      let i = 1;
-
-      if (updates.dueDate !== undefined) {
-        setParts.push(`due_date = $${i++}`);
-        args.push(updates.dueDate);
-      }
-      if (updates.notes !== undefined) {
-        setParts.push(`notes = $${i++}`);
-        args.push(updates.notes);
-      }
-      if (updates.invoiceType !== undefined) {
-        setParts.push(`invoice_type = $${i++}`);
-        args.push(updates.invoiceType);
-      }
-      if (updates.paymentMode !== undefined) {
-        setParts.push(`payment_mode = $${i++}`);
-        args.push(updates.paymentMode);
-      }
-      if (updates.invoiceDate !== undefined) {
-        setParts.push(`invoice_date = $${i++}`);
-        args.push(updates.invoiceDate);
-      }
-      if (updates.amountDue !== undefined) {
-        const newAmount = Math.max(Number(updates.amountDue || 0), 0);
-        setParts.push(`amount_due = $${i++}`);
-        args.push(newAmount);
-      }
-
-      if (setParts.length === 0) {
-        await client.query('ROLLBACK');
-        return inv; // nothing to update
-      }
-      setParts.push('updated_at = NOW()');
-      const q = `
-        UPDATE course_invoices
-        SET ${setParts.join(', ')}
-        WHERE id = $${i}
-          AND teacher_id = $${i + 1}
-        RETURNING *
-      `;
-      args.push(invoiceId, teacherId);
-      await client.query(q, args);
-
-      // If discountAmount is specified, set discount_total explicitly with validation
-      if (updates.discountAmount !== undefined) {
-        const newDiscount = Math.max(Number(updates.discountAmount || 0), 0);
-        const fresh = await CourseInvoiceModel.findById(invoiceId);
-        if (!fresh) throw new Error('Invoice not found');
-        const maxDiscount = Math.max(
-          Number(fresh.amount_due) - Number(fresh.amount_paid),
-          0
-        );
-        if (newDiscount > maxDiscount) {
-          throw new Error(
-            'إجمالي الدفعات مع الخصم لا يجب أن يتجاوز المبلغ الأصلي للفاتورة'
-          );
-        }
-        await client.query(
-          `UPDATE course_invoices
-             SET discount_total = $1,
-                 updated_at = NOW()
-           WHERE id = $2 AND teacher_id = $3`,
-          [newDiscount, invoiceId, teacherId]
-        );
-      }
-
-      // Handle installments edits only if requested
-      if (updates.installments || (updates.removeInstallmentIds && updates.removeInstallmentIds.length > 0)) {
-        // Ensure current payment_mode is installments (after potential change)
-        const curInvRes = await client.query(
-          'SELECT payment_mode FROM course_invoices WHERE id = $1 AND teacher_id = $2',
-          [invoiceId, teacherId]
-        );
-        if (curInvRes.rows.length === 0) throw new Error('Invoice not found');
-        const curMode = String(curInvRes.rows[0].payment_mode);
-        if (curMode !== 'installments') {
-          // If switched to cash, ignore installments edits gracefully
-        } else {
-          // Remove installments if requested
-          if (updates.removeInstallmentIds && updates.removeInstallmentIds.length > 0) {
-            const placeholders = updates.removeInstallmentIds.map((_, idx) => `$${idx + 3}`).join(', ');
-            await client.query(
-              `UPDATE invoice_installments
-                 SET deleted_at = NOW(), updated_at = NOW()
-               WHERE invoice_id = $1 AND deleted_at IS NULL AND id IN (${placeholders})`,
-              [invoiceId, teacherId, ...updates.removeInstallmentIds]
-            );
-          }
-
-          // Upsert installments
-          if (updates.installments && updates.installments.length > 0) {
-            for (const it of updates.installments) {
-              // Accept either explicit status or legacy boolean is_paid
-              let instStatus = (it.status || 'pending') as 'pending' | 'partial' | 'paid';
-              if (!it.status && (it as any).is_paid !== undefined) {
-                instStatus = (it as any).is_paid ? 'paid' : 'pending';
-              }
-              let targetPaid = 0;
-              if (instStatus === 'paid') targetPaid = Math.max(Number(it.plannedAmount || 0), 0);
-              else if (instStatus === 'partial') targetPaid = Math.max(Number(it.paidAmount || 0), 0);
-              else targetPaid = 0;
-
-              // Respect explicitly provided status instead of recomputing from amounts
-              const targetStatus: 'pending' | 'partial' | 'paid' = instStatus;
-
-              const paidDateVal = targetStatus === 'paid' ? (it.paidDate ? normDate(it.paidDate) : normDate(new Date())) : null;
-
-              // If no id is provided, try to upsert by (invoice_id, installment_number)
-              // to avoid duplicate key violations.
-              if (!it.id) {
-                const existRes = await client.query(
-                  `SELECT id FROM invoice_installments
-                   WHERE invoice_id = $1 AND installment_number = $2 AND deleted_at IS NULL`,
-                  [invoiceId, it.installmentNumber]
-                );
-                if (existRes.rows.length > 0) {
-                  // Treat as update for the found row
-                  it.id = existRes.rows[0].id as string;
-                }
-              }
-
-              if (it.id) {
-                // Check for conflicting installment_number assigned to another row
-                const conflict = await client.query(
-                  `SELECT 1 FROM invoice_installments
-                   WHERE invoice_id = $1 AND installment_number = $2 AND deleted_at IS NULL AND id <> $3`,
-                  [invoiceId, it.installmentNumber, it.id]
-                );
-                if (conflict.rows.length > 0) {
-                  throw new Error('رقم القسط مكرر ضمن نفس الفاتورة، يرجى اختيار رقم مختلف');
-                }
-                // update existing installment
-                await client.query(
-                  `UPDATE invoice_installments
-                     SET installment_number = $1,
-                         planned_amount = $2,
-                         due_date = $3,
-                         notes = $4,
-                         paid_amount = $5,
-                         installment_status = $6,
-                         paid_date = $7,
-                         updated_at = NOW()
-                   WHERE id = $8 AND invoice_id = $9`,
-                  [
-                    it.installmentNumber,
-                    it.plannedAmount,
-                    it.dueDate,
-                    it.notes || null,
-                    targetPaid,
-                    targetStatus,
-                    paidDateVal,
-                    it.id,
-                    invoiceId,
-                  ]
-                );
-              } else {
-                // create new installment
-                // Double-check there is no row already with this number
-                const dupCheck = await client.query(
-                  `SELECT 1 FROM invoice_installments
-                   WHERE invoice_id = $1 AND installment_number = $2 AND deleted_at IS NULL`,
-                  [invoiceId, it.installmentNumber]
-                );
-                if (dupCheck.rows.length > 0) {
-                  throw new Error('رقم القسط مكرر ضمن نفس الفاتورة، يرجى اختيار رقم مختلف');
-                }
-                await client.query(
-                  `INSERT INTO invoice_installments
-                     (invoice_id, installment_number, planned_amount, due_date, notes, paid_amount, installment_status, paid_date)
-                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-                  [
-                    invoiceId,
-                    it.installmentNumber,
-                    it.plannedAmount,
-                    it.dueDate,
-                    it.notes || null,
-                    targetPaid,
-                    targetStatus,
-                    paidDateVal,
-                  ]
-                );
-              }
-            }
-          }
-
-          // Recompute invoice amount_paid from installments (remaining_amount is generated by DB)
-          await client.query(
-            `WITH sums AS (
-               SELECT COALESCE(SUM(GREATEST(ii.paid_amount, 0)), 0) AS paid_sum
-               FROM invoice_installments ii
-               WHERE ii.invoice_id = $1 AND ii.deleted_at IS NULL
-             )
-             UPDATE course_invoices ci
-             SET amount_paid = s.paid_sum,
-                 updated_at = NOW()
-             FROM sums s
-             WHERE ci.id = $1`,
-            [invoiceId]
-          );
-        }
-      }
-
-      // If payment_mode is cash after updates: remove installments and set amount_paid accordingly
-      if (updates.paymentMode === 'cash') {
-        // Soft-delete installments
-        await client.query(
-          'UPDATE invoice_installments SET deleted_at = NOW(), updated_at = NOW() WHERE invoice_id = $1 AND deleted_at IS NULL',
-          [invoiceId]
-        );
-        // Set amount_paid to amount_due - discount_total
-        await client.query(
-          `UPDATE course_invoices
-             SET amount_paid = GREATEST(amount_due - discount_total, 0),
-                 updated_at = NOW()
-           WHERE id = $1`,
-          [invoiceId]
-        );
-      }
-
-      await client.query('COMMIT');
-
-      // Update final status and return fresh invoice
-      await CourseInvoiceModel.updateStatusPaidIfZeroRemaining(invoiceId);
-      return await CourseInvoiceModel.findById(invoiceId);
-    } catch (e) {
-      await client.query('ROLLBACK');
-      throw e;
-    } finally {
-      client.release();
-    }
+// -----------------------------------------------------------------------------
+// Helpers
+// -----------------------------------------------------------------------------
+const toMoneyNum = (n: any): number => Number(Number(n ?? 0).toFixed(2));
+const toDateOnly = (d: any): string | null => {
+  if (!d) return null;
+  if (typeof d === 'string' && /^\d{4}-\d{2}-\d{2}/.test(d)) return d.slice(0, 10);
+  try {
+    return new Date(d).toISOString().slice(0, 10);
+  } catch {
+    return null;
   }
+};
+const addDays = (base: Date, days: number): Date => {
+  const d = new Date(base.getTime());
+  d.setUTCDate(d.getUTCDate() + days);
+  return d;
+};
 
-  static async createInvoice(options: {
+// Split `amount` into `n` parts so the sum equals exactly `amount` (cents-safe).
+// Any rounding remainder is added to the LAST installment.
+function splitAmount(amount: number, n: number): number[] {
+  const cents = Math.round(amount * 100);
+  const baseCents = Math.floor(cents / n);
+  const remainder = cents - baseCents * n;
+  const parts = new Array(n).fill(baseCents / 100);
+  parts[n - 1] = (baseCents + remainder) / 100;
+  return parts.map((p) => Number(p.toFixed(2)));
+}
+
+// -----------------------------------------------------------------------------
+// Service
+// -----------------------------------------------------------------------------
+export class TeacherInvoiceService {
+  // ===========================================================================
+  // CREATE
+  // ===========================================================================
+  static async createInvoice(opts: {
     teacherId: string;
     studentId: string;
     courseId: string;
     studyYear: string;
-    invoiceType: InvoiceType;
     paymentMode: 'cash' | 'installments';
     amountDue: number;
     discountAmount?: number;
     invoiceDate?: string | null;
     dueDate?: string | null;
     notes?: string | null;
-    installments?: Array<{
-      installmentNumber: number;
-      plannedAmount: number;
-      dueDate: string;
-      notes?: string;
-      paid?: boolean; // if true, mark this installment as fully paid at creation
-      paidDate?: string; // optional paid date when paid=true
-    }>; // for installments mode only
+    // Manual plan (irregular installments)
+    installments?: Array<{ plannedAmount: number; dueDate: string; notes?: string }>;
+    // Auto-split plan (preferred, simpler)
+    installmentsCount?: number;
+    installmentIntervalDays?: number;
+    installmentFirstDueDate?: string;
   }) {
-    // Create base invoice
+    const amountDue = toMoneyNum(opts.amountDue);
+    const discount = toMoneyNum(opts.discountAmount || 0);
+
+    if (amountDue <= 0) {
+      throw new ApiError(400, 'المبلغ المستحق يجب أن يكون أكبر من صفر', ErrorCodes.VALIDATION_ERROR);
+    }
+    if (discount > amountDue) {
+      throw new ApiError(400, 'الخصم لا يمكن أن يتجاوز المبلغ المستحق', ErrorCodes.VALIDATION_ERROR);
+    }
+
+    // 1. Create the base invoice (always type='course' — see header comment).
     const invoice = await CourseInvoiceModel.create({
-      studentId: options.studentId,
-      teacherId: options.teacherId,
-      courseId: options.courseId,
-      studyYear: options.studyYear,
-      invoiceType: options.invoiceType,
-      paymentMode: options.paymentMode,
-      amountDue: options.amountDue,
-      invoiceDate: options.invoiceDate || null,
-      dueDate: options.dueDate || null,
-      notes: options.notes || null,
+      studentId: opts.studentId,
+      teacherId: opts.teacherId,
+      courseId: opts.courseId,
+      studyYear: opts.studyYear,
+      invoiceType: 'course' as any,
+      paymentMode: opts.paymentMode,
+      amountDue,
+      invoiceDate: opts.invoiceDate || null,
+      dueDate: opts.dueDate || null,
+      notes: opts.notes || null,
     });
 
-    // Helper: apply discount directly to invoice aggregates
-    const applyDiscount = async (amount: number) => {
-      const val = Math.max(Number(amount || 0), 0);
-      if (val <= 0) return;
-      const invFresh = await CourseInvoiceModel.findById(invoice.id);
-      if (!invFresh) throw new Error('Invoice not found');
-      const remaining = Math.max(
-        Number(invFresh.amount_due) -
-        (Number(invFresh.discount_total) + Number(invFresh.amount_paid)),
-        0
-      );
-      if (val > remaining) {
-        throw new Error(
-          'إجمالي الدفعات مع الخصم لا يجب أن يتجاوز المبلغ الأصلي للفاتورة'
-        );
+    // 2. Apply discount (if any) BEFORE installments / payments so the remaining
+    //    target is consistent.
+    if (discount > 0) {
+      await CourseInvoiceModel.updateAggregates(invoice.id, { discountTotal: discount });
+    }
+
+    const targetCollect = toMoneyNum(amountDue - discount); // what we expect to collect
+
+    // 3. Branch on paymentMode.
+    if (opts.paymentMode === 'cash') {
+      // Cash → fully paid immediately by convention. Skip installments table.
+      if (targetCollect > 0) {
+        await CourseInvoiceModel.updateAggregates(invoice.id, { amountPaid: targetCollect });
       }
-      await CourseInvoiceModel.updateAggregates(invoice.id, {
-        discountTotal: val,
-      });
-    };
-
-    if (options.paymentMode === 'installments') {
-      if (!options.installments || options.installments.length === 0) {
-        throw new Error(
-          'Installments plan is required for installments payment mode'
-        );
-      }
-      const created = await InvoiceInstallmentModel.createMany(
-        invoice.id,
-        options.installments
-      );
-
-      // Apply base discountAmount if provided (invoice-level)
-      if (options.discountAmount && options.discountAmount > 0) {
-        await applyDiscount(options.discountAmount);
-      }
-
-      // If some installments are flagged as paid on creation, apply full payments
-      // Validate total (discount + initial paid) does not exceed amount due
-      const toInitialPay = created
-        .map((c, idx) => ({
-          created: c,
-          input: options.installments![idx],
-        }))
-        .filter(x => !!x.input?.paid);
-
-      if (toInitialPay.length > 0) {
-        // Compute remaining before initial payments after discount application
-        const invAfterDiscount = await CourseInvoiceModel.findById(invoice.id);
-        if (!invAfterDiscount) throw new Error('Invoice not found');
-        let remaining = Math.max(
-          Number(invAfterDiscount.amount_due) -
-          (Number(invAfterDiscount.discount_total) + Number(invAfterDiscount.amount_paid)),
-          0
-        );
-
-        for (const { created: instRow, input } of toInitialPay) {
-          const amount = Math.max(Number(instRow.planned_amount || 0), 0);
-          if (amount > remaining) {
-            throw new Error(
-              'إجمالي الدفعات مع الخصم لا يجب أن يتجاوز المبلغ الأصلي للفاتورة'
-            );
-          }
-          // Apply payment to installment and invoice
-          await InvoiceInstallmentModel.addPayment(
-            instRow.id,
-            amount,
-            input?.paidDate ? new Date(input.paidDate) : undefined
-          );
-          await CourseInvoiceModel.updateAggregates(invoice.id, {
-            amountPaid: amount,
-          });
-          remaining = Math.max(remaining - amount, 0);
-        }
-      }
-
-      // Update final status
       await CourseInvoiceModel.updateStatusPaidIfZeroRemaining(invoice.id);
       return await CourseInvoiceModel.findById(invoice.id);
     }
 
-    // Cash invoice: apply discount then mark as paid fully (remaining = 0)
-    const discount = Math.max(Number(options.discountAmount || 0), 0);
-    if (discount > 0) await applyDiscount(discount);
+    // paymentMode === 'installments'
+    let plan: Array<{ installmentNumber: number; plannedAmount: number; dueDate: string; notes?: string }>;
 
-    const invFresh = await CourseInvoiceModel.findById(invoice.id);
-    if (!invFresh) throw new Error('Invoice not found');
-    const toPay = Math.max(
-      Number(invFresh.amount_due) - Number(invFresh.discount_total),
-      0
-    );
-    if (toPay > 0) {
-      await CourseInvoiceModel.updateAggregates(invoice.id, {
-        amountPaid: toPay,
+    if (opts.installments && opts.installments.length >= 2) {
+      // Manual plan — validate the total matches targetCollect (or amountDue if
+      // we want strict matching to the gross amount).
+      const totalPlanned = opts.installments.reduce((s, i) => s + toMoneyNum(i.plannedAmount), 0);
+      if (Math.abs(totalPlanned - targetCollect) > 0.01) {
+        throw new ApiError(
+          400,
+          `إجمالي الأقساط (${totalPlanned}) لا يطابق المبلغ المستحق بعد الخصم (${targetCollect})`,
+          ErrorCodes.VALIDATION_ERROR,
+        );
+      }
+      plan = opts.installments.map((row, idx) => {
+        const out: { installmentNumber: number; plannedAmount: number; dueDate: string; notes?: string } = {
+          installmentNumber: idx + 1,
+          plannedAmount: toMoneyNum(row.plannedAmount),
+          dueDate: row.dueDate,
+        };
+        if (row.notes) out.notes = row.notes;
+        return out;
       });
+    } else if (opts.installmentsCount && opts.installmentsCount >= 2) {
+      // Auto-split: even amounts, evenly-spaced dates.
+      const n = Math.min(opts.installmentsCount, 36);
+      const interval = opts.installmentIntervalDays || 30;
+      const firstDueStr =
+        opts.installmentFirstDueDate
+        || opts.dueDate
+        || toDateOnly(addDays(new Date(), interval));
+      const firstDue = new Date((firstDueStr || '') + 'T00:00:00Z');
+      const amounts = splitAmount(targetCollect, n);
+      plan = amounts.map((amt, idx) => ({
+        installmentNumber: idx + 1,
+        plannedAmount: amt,
+        dueDate: toDateOnly(addDays(firstDue, idx * interval)) as string,
+      }));
+    } else {
+      throw new ApiError(
+        400,
+        'لخطة الأقساط: أعطِ installmentsCount أو installments[] (الحد الأدنى قسطان)',
+        ErrorCodes.VALIDATION_ERROR,
+      );
     }
 
-    // Update final status
+    await InvoiceInstallmentModel.createMany(invoice.id, plan);
     await CourseInvoiceModel.updateStatusPaidIfZeroRemaining(invoice.id);
     return await CourseInvoiceModel.findById(invoice.id);
   }
 
-  static async addPayment(options: {
+  // ===========================================================================
+  // ADD PAYMENT — partial-friendly
+  // ===========================================================================
+  static async addPayment(opts: {
+    teacherId: string;
     invoiceId: string;
     amount: number;
     paymentMethod: PaymentMethod;
@@ -444,129 +186,242 @@ export class TeacherInvoiceService {
     paidAt?: Date | null;
     notes?: string | null;
   }) {
-    const inv = await CourseInvoiceModel.findById(options.invoiceId);
-    if (!inv) throw new Error('Invoice not found');
+    const inv = await this.getOwnedInvoice(opts.teacherId, opts.invoiceId);
+    const amount = toMoneyNum(opts.amount);
 
-    // Only allow installment payments in installments mode
-    if (inv.payment_mode !== 'installments') {
-      throw new Error('Payments are not allowed for cash invoices');
+    if (amount <= 0) {
+      throw new ApiError(400, 'المبلغ يجب أن يكون أكبر من صفر', ErrorCodes.VALIDATION_ERROR);
     }
 
-    if (!options.installmentId) {
-      throw new Error('installmentId is required for installment payments');
-    }
-
-    // Fetch installment to validate full payment (no partials)
-    const instRes = await pool.query(
-      'SELECT * FROM invoice_installments WHERE id = $1 AND invoice_id = $2 AND deleted_at IS NULL',
-      [options.installmentId, options.invoiceId]
+    // Compute invoice-level remaining (independent of installments — same
+    // ceiling applies to both modes).
+    const invRemaining = toMoneyNum(
+      Number(inv.amount_due) - (Number(inv.discount_total) + Number(inv.amount_paid)),
     );
-    if (instRes.rows.length === 0) throw new Error('Installment not found');
-    const inst = instRes.rows[0];
-
-    // remaining for installment must equal payment amount
-    const instRemaining = Math.max(
-      Number(inst.planned_amount) - Number(inst.paid_amount || 0),
-      0
-    );
-    if (Number(options.amount) !== instRemaining) {
-      throw new Error('يجب سداد القسط كاملاً، لا يُسمح بالدفعات الجزئية');
-    }
-
-    // Also ensure invoice remaining can cover the amount
-    const remaining = Math.max(
-      Number(inv.amount_due) -
-      (Number(inv.discount_total) + Number(inv.amount_paid)),
-      0
-    );
-    if (Number(options.amount) > remaining) {
-      throw new Error(
-        'إجمالي الدفعات مع الخصم لا يجب أن يتجاوز المبلغ الأصلي للفاتورة'
+    if (amount > invRemaining) {
+      throw new ApiError(
+        400,
+        `المبلغ (${amount}) يتجاوز المتبقّي على الفاتورة (${invRemaining})`,
+        ErrorCodes.VALIDATION_ERROR,
       );
     }
 
-    // Apply payment to installment and invoice aggregates
-    await InvoiceInstallmentModel.addPayment(
-      options.installmentId,
-      options.amount,
-      options.paidAt || undefined
-    );
+    // Branch on whether a specific installment was targeted.
+    if (opts.installmentId) {
+      if (inv.payment_mode !== 'installments') {
+        throw new ApiError(
+          400,
+          'لا يمكن استهداف قسط في فاتورة كاش',
+          ErrorCodes.VALIDATION_ERROR,
+        );
+      }
 
-    await CourseInvoiceModel.updateAggregates(options.invoiceId, {
-      amountPaid: options.amount,
-    });
-    const updated = await CourseInvoiceModel.updateStatusPaidIfZeroRemaining(
-      options.invoiceId
-    );
+      const instRes = await pool.query(
+        'SELECT * FROM invoice_installments WHERE id = $1 AND invoice_id = $2 AND deleted_at IS NULL',
+        [opts.installmentId, opts.invoiceId],
+      );
+      if (instRes.rows.length === 0) {
+        throw new ApiError(404, 'القسط غير موجود', ErrorCodes.NOT_FOUND);
+      }
+      const inst = instRes.rows[0];
+      const instRemaining = toMoneyNum(
+        Number(inst.planned_amount) - Number(inst.paid_amount || 0),
+      );
+      if (amount > instRemaining) {
+        throw new ApiError(
+          400,
+          `المبلغ (${amount}) يتجاوز المتبقّي على القسط (${instRemaining})`,
+          ErrorCodes.VALIDATION_ERROR,
+        );
+      }
+
+      // Apply to installment (model handles partial → status transition).
+      await InvoiceInstallmentModel.addPayment(
+        opts.installmentId,
+        amount,
+        opts.paidAt || undefined,
+      );
+    } else if (inv.payment_mode === 'installments') {
+      // Distribute the payment across pending installments by due_date (oldest
+      // first). Stops once the amount runs out. This is opt-in: pass NO
+      // installmentId to let the server auto-allocate.
+      let left = amount;
+      const pendingRes = await pool.query(
+        `SELECT id, planned_amount, paid_amount
+           FROM invoice_installments
+          WHERE invoice_id = $1 AND deleted_at IS NULL AND installment_status <> 'paid'
+          ORDER BY due_date ASC, installment_number ASC`,
+        [opts.invoiceId],
+      );
+      for (const row of pendingRes.rows) {
+        if (left <= 0) break;
+        const rem = toMoneyNum(Number(row.planned_amount) - Number(row.paid_amount || 0));
+        if (rem <= 0) continue;
+        const toApply = Math.min(left, rem);
+        await InvoiceInstallmentModel.addPayment(row.id, toApply, opts.paidAt || undefined);
+        left = toMoneyNum(left - toApply);
+      }
+      if (left > 0.005) {
+        // Should never happen because invRemaining check upstream limits us,
+        // but guard anyway.
+        throw new ApiError(
+          400,
+          'لا توجد أقساط معلّقة كافية لاستيعاب الدفعة',
+          ErrorCodes.VALIDATION_ERROR,
+        );
+      }
+    }
+    // (Cash mode with no installmentId → just bump the invoice aggregate.)
+
+    // Update invoice-level aggregates + status.
+    await CourseInvoiceModel.updateAggregates(opts.invoiceId, { amountPaid: amount });
+    const updated = await CourseInvoiceModel.updateStatusPaidIfZeroRemaining(opts.invoiceId);
     return updated;
   }
 
-  static async addDiscount(options: {
+  // ===========================================================================
+  // UPDATE META — dates + notes only
+  // ===========================================================================
+  static async updateMeta(opts: {
+    teacherId: string;
     invoiceId: string;
-    amount: number;
+    invoiceDate?: string | null;
+    dueDate?: string | null;
     notes?: string | null;
   }) {
-    const inv = await CourseInvoiceModel.findById(options.invoiceId);
-    if (!inv) throw new Error('Invoice not found');
-    const remaining = Math.max(
-      Number(inv.amount_due) -
-      (Number(inv.discount_total) + Number(inv.amount_paid)),
-      0
+    await this.getOwnedInvoice(opts.teacherId, opts.invoiceId);
+
+    const sets: string[] = [];
+    const params: any[] = [];
+    let i = 1;
+    if (opts.invoiceDate !== undefined) {
+      sets.push(`invoice_date = $${i++}`);
+      params.push(opts.invoiceDate);
+    }
+    if (opts.dueDate !== undefined) {
+      sets.push(`due_date = $${i++}`);
+      params.push(opts.dueDate);
+    }
+    if (opts.notes !== undefined) {
+      sets.push(`notes = $${i++}`);
+      params.push(opts.notes);
+    }
+    if (!sets.length) {
+      throw new ApiError(400, 'لا يوجد حقول للتحديث', ErrorCodes.VALIDATION_ERROR);
+    }
+    sets.push(`updated_at = NOW()`);
+    params.push(opts.invoiceId);
+
+    await pool.query(
+      `UPDATE course_invoices SET ${sets.join(', ')} WHERE id = $${i}`,
+      params,
     );
-    if (Number(options.amount) > remaining) {
-      throw new Error(
-        'إجمالي الدفعات مع الخصم لا يجب أن يتجاوز المبلغ الأصلي للفاتورة'
+    return await CourseInvoiceModel.findById(opts.invoiceId);
+  }
+
+  // ===========================================================================
+  // UPDATE DISCOUNT — set to an exact value
+  // ===========================================================================
+  static async updateDiscount(opts: {
+    teacherId: string;
+    invoiceId: string;
+    discountAmount: number;
+  }) {
+    const inv = await this.getOwnedInvoice(opts.teacherId, opts.invoiceId);
+    const target = toMoneyNum(opts.discountAmount);
+    if (target < 0) {
+      throw new ApiError(400, 'الخصم لا يمكن أن يكون سالباً', ErrorCodes.VALIDATION_ERROR);
+    }
+    const maxAllowed = toMoneyNum(Number(inv.amount_due) - Number(inv.amount_paid));
+    if (target > maxAllowed) {
+      throw new ApiError(
+        400,
+        `الخصم (${target}) لا يمكن أن يتجاوز المتبقّي بعد المدفوع (${maxAllowed})`,
+        ErrorCodes.VALIDATION_ERROR,
       );
     }
-
-    await CourseInvoiceModel.updateAggregates(options.invoiceId, {
-      discountTotal: Math.max(Number(options.amount || 0), 0),
-    });
-    const updated = await CourseInvoiceModel.updateStatusPaidIfZeroRemaining(
-      options.invoiceId
-    );
+    // Calculate the delta so we can reuse the additive `updateAggregates`.
+    const currentDiscount = toMoneyNum(inv.discount_total);
+    const delta = toMoneyNum(target - currentDiscount);
+    if (delta !== 0) {
+      await CourseInvoiceModel.updateAggregates(opts.invoiceId, { discountTotal: delta });
+    }
+    const updated = await CourseInvoiceModel.updateStatusPaidIfZeroRemaining(opts.invoiceId);
     return updated;
   }
 
-  static async listTeacherInvoices(
-    teacherId: string,
-    studyYear: string,
-    status?: InvoiceStatus,
-    deleted?: 'true' | 'false' | 'all',
-    page?: number,
-    limit?: number
-  ) {
-    // Build dynamic query to support deleted filter
-    // Keep separate WHERE arrays for count (no alias) and data (with ci.) to avoid ambiguity
+  // ===========================================================================
+  // LIST
+  // ===========================================================================
+  static async listTeacherInvoices(opts: {
+    teacherId: string;
+    studyYear: string;
+    status?: InvoiceStatus;
+    studentId?: string;
+    courseId?: string;
+    paymentMode?: 'cash' | 'installments';
+    deleted?: 'true' | 'false' | 'all';
+    search?: string;
+    page?: number;
+    limit?: number;
+  }) {
     const whereCount: string[] = ['teacher_id = $1', 'study_year = $2'];
     const whereData: string[] = ['ci.teacher_id = $1', 'ci.study_year = $2'];
-    const params: any[] = [teacherId, studyYear];
+    const params: any[] = [opts.teacherId, opts.studyYear];
     let i = 3;
-    if (status) {
+
+    if (opts.status) {
       whereCount.push(`invoice_status = $${i}`);
       whereData.push(`ci.invoice_status = $${i}`);
-      params.push(status);
+      params.push(opts.status);
       i++;
     }
-    // deleted filter: default exclude deleted (false)
-    if (deleted === 'true') {
+    if (opts.studentId) {
+      whereCount.push(`student_id = $${i}`);
+      whereData.push(`ci.student_id = $${i}`);
+      params.push(opts.studentId);
+      i++;
+    }
+    if (opts.courseId) {
+      whereCount.push(`course_id = $${i}`);
+      whereData.push(`ci.course_id = $${i}`);
+      params.push(opts.courseId);
+      i++;
+    }
+    if (opts.paymentMode) {
+      whereCount.push(`payment_mode = $${i}`);
+      whereData.push(`ci.payment_mode = $${i}`);
+      params.push(opts.paymentMode);
+      i++;
+    }
+    if (opts.deleted === 'true') {
       whereCount.push('deleted_at IS NOT NULL');
       whereData.push('ci.deleted_at IS NOT NULL');
-    } else if (deleted === 'all') {
-      // no condition
-    } else {
-      // undefined or 'false'
+    } else if (opts.deleted !== 'all') {
       whereCount.push('deleted_at IS NULL');
       whereData.push('ci.deleted_at IS NULL');
     }
+    // Free-text search is applied AFTER the count query because it needs the
+    // JOIN to `users` for student name + `courses` for course name. The count
+    // for a search query is approximate (matches the filtered page only).
+    let searchClause = '';
+    if (opts.search && opts.search.trim()) {
+      searchClause = ` AND (u.name ILIKE $${i} OR c.course_name ILIKE $${i})`;
+      params.push(`%${opts.search.trim()}%`);
+      i++;
+    }
 
-    const countQ = `SELECT COUNT(*)::int AS cnt FROM course_invoices WHERE ${whereCount.join(' AND ')}`;
+    const countQ = opts.search
+      ? `SELECT COUNT(*)::int AS cnt FROM course_invoices ci
+         JOIN users u ON u.id = ci.student_id
+         JOIN courses c ON c.id = ci.course_id
+         WHERE ${whereData.join(' AND ')}${searchClause}`
+      : `SELECT COUNT(*)::int AS cnt FROM course_invoices WHERE ${whereCount.join(' AND ')}`;
     const countR = await pool.query(countQ, params);
-    const total: number = (countR.rows[0]?.cnt as number) || 0;
+    const total: number = countR.rows[0]?.cnt || 0;
 
-    // Pagination defaults
-    const pageNum = Math.max(Number(page || 1), 1);
-    const limitNum = Math.max(Number(limit || 10), 1);
+    const pageNum = Math.max(Number(opts.page || 1), 1);
+    const limitNum = Math.max(Number(opts.limit || 10), 1);
     const offset = (pageNum - 1) * limitNum;
 
     const dataQ = `
@@ -575,154 +430,180 @@ export class TeacherInvoiceService {
         u.name AS student_name,
         c.course_name,
         g.name AS grade_name,
-        s.name AS subject_name,
-        (
-          SELECT ss.title
-          FROM sessions ss
-          JOIN session_attendees sa
-            ON sa.session_id = ss.id
-           AND sa.student_id = ci.student_id
-          WHERE ss.course_id = ci.course_id
-            AND ss.is_deleted = false
-          ORDER BY ss.created_at DESC NULLS LAST
-          LIMIT 1
-        ) AS session_title
+        s.name AS subject_name
       FROM course_invoices ci
       JOIN users u ON u.id = ci.student_id AND u.user_type = 'student'
       JOIN courses c ON c.id = ci.course_id
       LEFT JOIN grades g ON g.id = c.grade_id
       LEFT JOIN subjects s ON s.id = c.subject_id
-      WHERE ${whereData.join(' AND ')}
+      WHERE ${whereData.join(' AND ')}${searchClause}
       ORDER BY ci.created_at DESC
       LIMIT $${i} OFFSET $${i + 1}
     `;
     const dataR = await pool.query(dataQ, [...params, limitNum, offset]);
-
     return { items: dataR.rows, total };
   }
 
-  static async getTeacherInvoicesSummary(
-    teacherId: string,
-    studyYear: string,
-    status?: InvoiceStatus,
-    deleted?: 'true' | 'false' | 'all'
-  ) {
-    // Build dynamic where similar to listTeacherInvoices
+  // ===========================================================================
+  // SUMMARY (KPIs)
+  // ===========================================================================
+  static async getSummary(opts: {
+    teacherId: string;
+    studyYear: string;
+    status?: InvoiceStatus;
+    deleted?: 'true' | 'false' | 'all';
+  }) {
     const where: string[] = ['teacher_id = $1', 'study_year = $2'];
-    const params: any[] = [teacherId, studyYear];
+    const params: any[] = [opts.teacherId, opts.studyYear];
     let i = 3;
-    if (status) {
+    if (opts.status) {
       where.push(`invoice_status = $${i++}`);
-      params.push(status);
+      params.push(opts.status);
     }
-    if (deleted === 'true') where.push('deleted_at IS NOT NULL');
-    else if (deleted === 'all') {
-      // no condition
-    } else {
-      where.push('deleted_at IS NULL');
-    }
+    if (opts.deleted === 'true') where.push('deleted_at IS NOT NULL');
+    else if (opts.deleted !== 'all') where.push('deleted_at IS NULL');
 
     const q = `
       SELECT
-        COALESCE(SUM(amount_due), 0)                        AS total_amount_due,
-        COALESCE(SUM(amount_paid), 0)                       AS total_amount_paid,
-        COALESCE(SUM(discount_total), 0)                    AS total_discount,
-        COALESCE(SUM(remaining_amount), 0)                  AS total_remaining,
-        COALESCE(SUM(CASE WHEN invoice_status = 'partial' THEN amount_paid ELSE 0 END), 0) AS partial_paid_total,
-        COUNT(*)::int                                       AS total_count,
-        SUM(CASE WHEN remaining_amount = 0 THEN 1 ELSE 0 END)::int AS paid_count,
-        SUM(CASE WHEN discount_total > 0 THEN 1 ELSE 0 END)::int   AS discount_count,
-        SUM(CASE WHEN remaining_amount > 0 THEN 1 ELSE 0 END)::int AS remaining_count
+        COALESCE(SUM(amount_due), 0)                                                  AS total_amount_due,
+        COALESCE(SUM(amount_paid), 0)                                                 AS total_amount_paid,
+        COALESCE(SUM(discount_total), 0)                                              AS total_discount,
+        COALESCE(SUM(remaining_amount), 0)                                            AS total_remaining,
+        COUNT(*)::int                                                                 AS total_count,
+        SUM(CASE WHEN invoice_status = 'paid' THEN 1 ELSE 0 END)::int                 AS paid_count,
+        SUM(CASE WHEN invoice_status = 'partial' THEN 1 ELSE 0 END)::int              AS partial_count,
+        SUM(CASE WHEN invoice_status = 'pending' THEN 1 ELSE 0 END)::int              AS pending_count,
+        SUM(CASE WHEN invoice_status = 'overdue' THEN 1 ELSE 0 END)::int              AS overdue_count,
+        SUM(CASE WHEN discount_total > 0 THEN 1 ELSE 0 END)::int                      AS discount_count
       FROM course_invoices
       WHERE ${where.join(' AND ')}
     `;
     const r = await pool.query(q, params);
     const row = r.rows[0] || {};
     return {
-      totalAmount: Number(row.total_amount_due || 0),
-      totalPaid: Number(row.total_amount_paid || 0),
-      partialPaidTotal: Number(row.partial_paid_total || 0),
-      totalDiscount: Number(row.total_discount || 0),
-      totalRemaining: Number(row.total_remaining || 0),
-      totalCount: Number(row.total_count || 0),
-      paidCount: Number(row.paid_count || 0),
-      discountCount: Number(row.discount_count || 0),
-      remainingCount: Number(row.remaining_count || 0),
+      totalAmount: toMoneyNum(row.total_amount_due),
+      totalPaid: toMoneyNum(row.total_amount_paid),
+      totalDiscount: toMoneyNum(row.total_discount),
+      totalRemaining: toMoneyNum(row.total_remaining),
+      totalCount: Number(row.total_count) || 0,
+      paidCount: Number(row.paid_count) || 0,
+      partialCount: Number(row.partial_count) || 0,
+      pendingCount: Number(row.pending_count) || 0,
+      overdueCount: Number(row.overdue_count) || 0,
+      discountCount: Number(row.discount_count) || 0,
     };
   }
 
+  // ===========================================================================
+  // GET FULL — single endpoint for invoice + installments + computed totals
+  // ===========================================================================
+  static async getInvoiceFull(teacherId: string, invoiceId: string) {
+    const invoice = await this.getOwnedInvoice(teacherId, invoiceId);
+    const installments = (await InvoiceInstallmentModel.listByInvoice(invoiceId)) || [];
+    const todayStr = toDateOnly(new Date()) as string;
+
+    const totals = {
+      count: installments.length,
+      paidCount: installments.filter((i) => String(i.installment_status) === 'paid').length,
+      partialCount: installments.filter((i) => String(i.installment_status) === 'partial').length,
+      pendingCount: installments.filter((i) => String(i.installment_status) === 'pending').length,
+      overdueCount: installments.filter(
+        (i) => String(i.installment_status) !== 'paid'
+          && (toDateOnly(i.due_date) || '') < todayStr,
+      ).length,
+      plannedTotal: toMoneyNum(
+        installments.reduce((s, i) => s + Number(i.planned_amount || 0), 0),
+      ),
+      paidTotal: toMoneyNum(installments.reduce((s, i) => s + Number(i.paid_amount || 0), 0)),
+      remainingTotal: toMoneyNum(
+        installments.reduce((s, i) => s + Number(i.remaining_amount || 0), 0),
+      ),
+    };
+
+    return { invoice, installments, totals };
+  }
+
+  // ===========================================================================
+  // SOFT DELETE / RESTORE
+  // ===========================================================================
+  static async softDelete(teacherId: string, invoiceId: string) {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const invRes = await client.query(
+        'SELECT id FROM course_invoices WHERE id = $1 AND teacher_id = $2 AND deleted_at IS NULL',
+        [invoiceId, teacherId],
+      );
+      if (invRes.rows.length === 0) {
+        throw new ApiError(404, 'الفاتورة غير موجودة أو محذوفة سابقاً', ErrorCodes.NOT_FOUND);
+      }
+      await client.query(
+        'UPDATE invoice_installments SET deleted_at = NOW() WHERE invoice_id = $1 AND deleted_at IS NULL',
+        [invoiceId],
+      );
+      await client.query(
+        'UPDATE course_invoices SET deleted_at = NOW(), updated_at = NOW() WHERE id = $1',
+        [invoiceId],
+      );
+      await client.query('COMMIT');
+      return true;
+    } catch (e) {
+      await client.query('ROLLBACK');
+      throw e;
+    } finally {
+      client.release();
+    }
+  }
+
+  static async restore(teacherId: string, invoiceId: string) {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const invRes = await client.query(
+        'SELECT id FROM course_invoices WHERE id = $1 AND teacher_id = $2',
+        [invoiceId, teacherId],
+      );
+      if (invRes.rows.length === 0) {
+        throw new ApiError(404, 'الفاتورة غير موجودة', ErrorCodes.NOT_FOUND);
+      }
+      await client.query(
+        'UPDATE course_invoices SET deleted_at = NULL, updated_at = NOW() WHERE id = $1',
+        [invoiceId],
+      );
+      await client.query(
+        'UPDATE invoice_installments SET deleted_at = NULL WHERE invoice_id = $1',
+        [invoiceId],
+      );
+      await client.query('COMMIT');
+      return true;
+    } catch (e) {
+      await client.query('ROLLBACK');
+      throw e;
+    } finally {
+      client.release();
+    }
+  }
+
+  // ===========================================================================
+  // Ownership helper — single source of truth for "this teacher owns this invoice".
+  // ===========================================================================
+  static async getOwnedInvoice(teacherId: string, invoiceId: string) {
+    const inv = await CourseInvoiceModel.findById(invoiceId);
+    if (!inv || String(inv.teacher_id) !== String(teacherId)) {
+      throw new ApiError(404, 'الفاتورة غير موجودة', ErrorCodes.NOT_FOUND);
+    }
+    return inv;
+  }
+
+  // Backwards-compat thin wrappers (in case other modules import these names).
   static async getInvoiceForTeacher(teacherId: string, invoiceId: string) {
     const inv = await CourseInvoiceModel.findById(invoiceId);
     if (!inv || String(inv.teacher_id) !== String(teacherId)) return null;
     return inv;
   }
-
   static async listInstallmentsByInvoice(teacherId: string, invoiceId: string) {
     const inv = await this.getInvoiceForTeacher(teacherId, invoiceId);
     if (!inv) return null;
     return await InvoiceInstallmentModel.listByInvoice(invoiceId);
-  }
-
-  static async softDeleteInvoice(teacherId: string, invoiceId: string) {
-    const client = await pool.connect();
-    try {
-      await client.query('BEGIN');
-      // Ensure ownership
-      const invRes = await client.query(
-        'SELECT id FROM course_invoices WHERE id = $1 AND teacher_id = $2 AND deleted_at IS NULL',
-        [invoiceId, teacherId]
-      );
-      if (invRes.rows.length === 0) {
-        throw new Error('Invoice not found or already deleted');
-      }
-      await client.query(
-        'UPDATE invoice_installments SET deleted_at = NOW() WHERE invoice_id = $1 AND deleted_at IS NULL',
-        [invoiceId]
-      );
-      // Soft delete invoice
-      await client.query(
-        'UPDATE course_invoices SET deleted_at = NOW(), updated_at = NOW() WHERE id = $1',
-        [invoiceId]
-      );
-      await client.query('COMMIT');
-      return true;
-    } catch (e) {
-      await client.query('ROLLBACK');
-      throw e;
-    } finally {
-      client.release();
-    }
-  }
-
-  static async restoreInvoice(teacherId: string, invoiceId: string) {
-    const client = await pool.connect();
-    try {
-      await client.query('BEGIN');
-      // Ensure ownership (allow restoring if invoice exists regardless of deleted_at)
-      const invRes = await client.query(
-        'SELECT id FROM course_invoices WHERE id = $1 AND teacher_id = $2',
-        [invoiceId, teacherId]
-      );
-      if (invRes.rows.length === 0) {
-        throw new Error('Invoice not found');
-      }
-      // Restore invoice first
-      await client.query(
-        'UPDATE course_invoices SET deleted_at = NULL, updated_at = NOW() WHERE id = $1',
-        [invoiceId]
-      );
-      // Restore children
-      await client.query(
-        'UPDATE invoice_installments SET deleted_at = NULL WHERE invoice_id = $1',
-        [invoiceId]
-      );
-      await client.query('COMMIT');
-      return true;
-    } catch (e) {
-      await client.query('ROLLBACK');
-      throw e;
-    } finally {
-      client.release();
-    }
   }
 }

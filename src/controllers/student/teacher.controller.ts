@@ -1,9 +1,20 @@
 import type { Request, Response } from 'express';
 
 import { StudentService } from '../../services/student/student.service';
+import { StudentTeacherAggregateService } from '../../services/student/teacher-aggregate.service';
 import { ok } from '../../utils/response.util';
 
 export class StudentTeacherController {
+  // GET /api/student/teachers/:teacherId/aggregate
+  // Single round-trip aggregate for the student↔teacher workspace screen.
+  static async getTeacherAggregate(req: Request, res: Response): Promise<void> {
+    const studentId = req.user.id as string;
+    const { teacherId } = req.params as { teacherId: string };
+    const data = await StudentTeacherAggregateService.getAggregate(studentId, teacherId);
+    res.status(200).json(ok(data, 'تم جلب بيانات الأستاذ'));
+  }
+
+
   // GET /api/student/teachers/suggested
   static async getSuggestedTeachers(req: Request, res: Response): Promise<void> {
     const studentId = req.user.id as string;

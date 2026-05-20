@@ -26,22 +26,37 @@ import {
 // Expense
 // =============================================================================
 
+export const expenseCategoryEnum = z.enum([
+  'salaries', 'rent', 'utilities', 'maintenance', 'stationery', 'other',
+]);
+export const expensePaymentMethodEnum = z.enum([
+  'cash', 'bank_transfer', 'card',
+]);
+
 export const expenseCreateSchema = z.object({
   amount: moneySchema,
   note: z.string().nullable().optional(),
   expense_date: isoDateSchema.nullable().optional(),
+  category: expenseCategoryEnum.optional(),
+  paymentMethod: expensePaymentMethodEnum.optional(),
 });
 
 export const expenseUpdateSchema = z.object({
   amount: moneySchema.optional(),
   note: z.string().nullable().optional(),
   expense_date: isoDateSchema.nullable().optional(),
+  category: expenseCategoryEnum.optional(),
+  paymentMethod: expensePaymentMethodEnum.optional(),
 });
 
 export const expenseListQuerySchema = paginationQuerySchema.extend({
   from: optionalString,
   to: optionalString,
   studyYear: optionalStudyYear,
+  category: expenseCategoryEnum.optional(),
+  paymentMethod: expensePaymentMethodEnum.optional(),
+  search: optionalString,
+  deleted: optionalBooleanQuery,
 });
 
 // =============================================================================
@@ -66,12 +81,12 @@ export const financialReportQuerySchema = z.object({
 
 export const subjectCreateSchema = z.object({
   name: z.string().trim().min(1, 'اسم المادة مطلوب'),
-  description: z.string().optional(),
+  description: z.string().nullable().optional(),
 });
 
 export const subjectUpdateSchema = z.object({
   name: z.string().trim().min(1, 'اسم المادة مطلوب').optional(),
-  description: z.string().optional(),
+  description: z.string().nullable().optional(),
 });
 
 export const subjectListQuerySchema = paginationQuerySchema.extend({
@@ -89,7 +104,7 @@ export const courseCreateSchema = z
     grade_id: uuidSchema,
     subject_id: uuidSchema,
     course_name: z.string().trim().min(1, 'اسم الدورة مطلوب'),
-    description: z.string().optional(),
+    description: z.string().nullable().optional(),
     start_date: isoDateSchema,
     end_date: isoDateSchema,
     price: moneySchema,
@@ -113,7 +128,7 @@ export const courseUpdateSchema = z.object({
   grade_id: uuidSchema.optional(),
   subject_id: uuidSchema.optional(),
   course_name: z.string().trim().min(1, 'اسم الدورة مطلوب').optional(),
-  description: z.string().optional(),
+  description: z.string().nullable().optional(),
   start_date: isoDateSchema.optional(),
   end_date: isoDateSchema.optional(),
   price: moneySchema.optional(),
@@ -174,7 +189,7 @@ const sessionBaseFields = z.object({
   title: z.string().optional(),
   start_time: hhmmTimeSchema,
   end_time: hhmmTimeSchema,
-  recurrence: z.string().optional(),
+  recurrence: z.coerce.boolean().optional(),
   flex_type: z.string().optional(),
   flex_minutes: z.coerce.number().int().optional(),
   flex_alternates: z.unknown().optional(),
@@ -226,7 +241,7 @@ export const sessionUpdateSchema = z
     weekday: weekdaySchema.optional(),
     start_time: hhmmTimeSchema.optional(),
     end_time: hhmmTimeSchema.optional(),
-    recurrence: z.string().optional(),
+    recurrence: z.coerce.boolean().optional(),
     flex_type: z.string().optional(),
     flex_minutes: z.coerce.number().int().optional(),
     flex_alternates: z.unknown().optional(),
@@ -239,6 +254,7 @@ export const sessionUpdateSchema = z
 export const sessionListQuerySchema = paginationQuerySchema.extend({
   weekday: z.coerce.number().int().min(0).max(6).optional(),
   courseId: optionalUuid,
+  search: optionalString,
 });
 
 export const sessionAttendeesBodySchema = z.object({
@@ -362,7 +378,9 @@ export const examGradeBodySchema = z.object({
 // Student evaluation
 // =============================================================================
 
-const evaluationLevelSchema = z.coerce.number().int().min(0).max(10);
+// Enum strings match the DB CHECK constraint on student_evaluations
+// (migration 023). NEVER change this without a DB migration.
+const evaluationLevelSchema = z.enum(['excellent', 'very_good', 'good', 'fair', 'weak']);
 
 const evaluationItemSchema = z.object({
   student_id: uuidSchema,
@@ -466,81 +484,98 @@ export const rosterSessionNamesQuerySchema = z.object({
 });
 
 // =============================================================================
-// Invoice
+// Invoice (simplified 2026-05-17)
+//
+// Backwards-compat note: the legacy `invoiceType` enum had 4 values
+// (reservation / course / installment / penalty). In practice only `course`
+// (tuition) was used and route logic treated them identically. Reservation
+// deposits live in `reservation_payments` (different table + endpoint).
+// We keep the column tolerant of any 20-char string at the DB layer; the
+// service forces 'course' for everything created via this teacher surface.
 // =============================================================================
 
-const invoiceTypeSchema = z.enum(['reservation', 'course', 'installment', 'penalty']);
 const paymentModeSchema = z.enum(['cash', 'installments']);
 const paymentMethodSchema = z.enum(['cash', 'bank_transfer', 'credit_card', 'mobile_payment']);
-const installmentStatusSchema = z.enum(['pending', 'partial', 'paid', 'overdue']);
+const invoiceStatusSchema = z.enum(['pending', 'partial', 'paid', 'overdue', 'cancelled']);
 
-const installmentInputSchema = z.object({
-  id: z.string().optional(),
-  installmentNumber: z.coerce.number().int().positive(),
-  plannedAmount: moneySchema,
+// Manual installment row (advanced path — most teachers will use auto-split).
+const installmentManualSchema = z.object({
+  plannedAmount: positiveMoneySchema,
   dueDate: isoDateSchema,
-  notes: z.string().nullable().optional(),
-  status: installmentStatusSchema.optional(),
-  paidAmount: moneySchema.optional(),
-  paidDate: isoDateSchema.nullable().optional(),
-  is_paid: z.boolean().optional(),
-});
-
-export const invoiceCreateSchema = z.object({
-  studentId: uuidSchema,
-  courseId: uuidSchema,
-  studyYear: studyYearSchema,
-  paymentMode: paymentModeSchema,
-  invoiceType: invoiceTypeSchema.optional(),
-  amountDue: moneySchema,
-  invoiceDate: isoDateSchema.optional(),
-  discountAmount: moneySchema.optional(),
-  dueDate: isoDateSchema.optional(),
   notes: z.string().optional(),
-  installments: z.array(installmentInputSchema).optional(),
 });
 
-export const invoiceUpdateSchema = z.object({
-  dueDate: isoDateSchema.nullable().optional(),
-  notes: z.string().nullable().optional(),
-  invoiceType: invoiceTypeSchema.optional(),
-  paymentMode: paymentModeSchema.optional(),
-  amountDue: moneySchema.optional(),
-  studentId: uuidSchema.optional(),
-  invoiceDate: isoDateSchema.nullable().optional(),
-  discountAmount: moneySchema.optional(),
-  installments: z.array(installmentInputSchema).optional(),
-  removeInstallmentIds: z.array(z.string()).optional(),
+export const invoiceCreateSchema = z
+  .object({
+    studentId: uuidSchema,
+    courseId: uuidSchema,
+    studyYear: studyYearSchema,
+    paymentMode: paymentModeSchema,
+    amountDue: positiveMoneySchema,
+
+    // Optional metadata
+    invoiceDate: isoDateSchema.optional(),
+    dueDate: isoDateSchema.optional(),
+    discountAmount: moneySchema.optional(),
+    notes: z.string().optional(),
+
+    // === INSTALLMENT PLAN — two ways ===
+    // (A) Auto-split: server divides amountDue across N evenly-spaced installments.
+    installmentsCount: z.coerce.number().int().min(2).max(36).optional(),
+    installmentIntervalDays: z.coerce.number().int().min(1).max(365).default(30).optional(),
+    installmentFirstDueDate: isoDateSchema.optional(),
+    // (B) Manual: caller provides each row (uncommon — for irregular plans).
+    installments: z.array(installmentManualSchema).optional(),
+  })
+  .refine(
+    (d) =>
+      d.paymentMode !== 'installments'
+      || (Array.isArray(d.installments) && d.installments.length >= 2)
+      || (typeof d.installmentsCount === 'number' && d.installmentsCount >= 2),
+    {
+      message: 'لخطة الأقساط: أعطِ installmentsCount (>= 2) أو installments[]',
+      path: ['installmentsCount'],
+    },
+  );
+
+// Targeted update — meta only (dates + notes). No mode/amount/installments changes.
+// To change those, soft-delete and recreate.
+export const invoiceUpdateMetaSchema = z
+  .object({
+    invoiceDate: isoDateSchema.nullable().optional(),
+    dueDate: isoDateSchema.nullable().optional(),
+    notes: z.string().nullable().optional(),
+  })
+  .refine((d) => Object.keys(d).length > 0, { message: 'لا يوجد حقول للتحديث' });
+
+// Set the discount to an exact amount (replaces the previous additive POST /discounts).
+export const invoiceUpdateDiscountSchema = z.object({
+  discountAmount: moneySchema,
 });
 
+// Add a payment — supports PARTIAL payments (used to be full-only).
 export const invoicePaymentBodySchema = z.object({
   amount: positiveMoneySchema,
   paymentMethod: paymentMethodSchema,
   installmentId: uuidSchema.nullable().optional(),
   paidAt: z.string().optional(),
   notes: z.string().nullable().optional(),
-  studentId: uuidSchema.optional(),
-  courseId: uuidSchema.optional(),
-  studyYear: studyYearSchema.optional(),
 });
 
-export const invoiceDiscountBodySchema = z.object({
-  amount: positiveMoneySchema,
-  notes: z.string().nullable().optional(),
-  studentId: uuidSchema.optional(),
-  courseId: uuidSchema.optional(),
-  studyYear: studyYearSchema.optional(),
-});
-
+// List + filters. Extras: studentId / courseId / paymentMode for faster queries.
 export const invoiceListQuerySchema = paginationQuerySchema.extend({
   studyYear: studyYearSchema,
-  status: z.enum(['pending', 'partial', 'paid', 'overdue', 'cancelled']).optional(),
+  status: invoiceStatusSchema.optional(),
+  studentId: optionalUuid,
+  courseId: optionalUuid,
+  paymentMode: paymentModeSchema.optional(),
   deleted: z.enum(['true', 'false', 'all']).optional(),
+  search: optionalString,
 });
 
 export const invoiceSummaryQuerySchema = z.object({
   studyYear: studyYearSchema,
-  status: z.enum(['pending', 'partial', 'paid', 'overdue', 'cancelled']).optional(),
+  status: invoiceStatusSchema.optional(),
   deleted: z.enum(['true', 'false', 'all']).optional(),
 });
 

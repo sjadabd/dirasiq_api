@@ -64,17 +64,33 @@ export const userGradesQuerySchema = z.object({
 
 const newsTypeSchema = z.enum(['web', 'mobile', 'web_and_mobile']);
 
+// Reject obviously-unsupported image formats at the validator boundary. Same
+// allowlist as the controller's `ALLOWED_IMAGE_MIME_TO_EXT` (jpg/png/webp).
+// Non-data-URI strings (regular URL paths) pass through untouched — the
+// controller's logic only triggers when the string starts with `data:image`.
+const newsImageUrlSchema = z
+  .string()
+  .refine(
+    (v) => {
+      if (!v.startsWith('data:image')) return true;
+      return /^data:image\/(jpe?g|png|webp);base64,/i.test(v);
+    },
+    {
+      message: 'صيغة الصورة غير مدعومة. الصيغ المسموح بها: JPG, PNG, أو WEBP.',
+    }
+  );
+
 export const newsCreateSchema = z.object({
   title: z.string().trim().min(1, 'عنوان الخبر مطلوب'),
   details: z.string().trim().min(1, 'تفاصيل الخبر مطلوبة'),
-  imageUrl: z.string().optional(), // accepts base64 data URI or a URL/path
+  imageUrl: newsImageUrlSchema.optional(),
   newsType: newsTypeSchema.optional(),
 });
 
 export const newsUpdateSchema = z.object({
   title: z.string().trim().min(1, 'عنوان الخبر مطلوب').optional(),
   details: z.string().trim().min(1, 'تفاصيل الخبر مطلوبة').optional(),
-  imageUrl: z.string().optional(),
+  imageUrl: newsImageUrlSchema.optional(),
   newsType: newsTypeSchema.optional(),
   isActive: z.boolean().optional(),
 });

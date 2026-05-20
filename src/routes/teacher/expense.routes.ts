@@ -36,4 +36,10 @@ router.delete(
   asyncHandler(TeacherExpenseController.remove)
 );
 
+router.patch(
+  '/:id/restore',
+  validate({ params: idParamSchema }),
+  asyncHandler(TeacherExpenseController.restore)
+);
+
 export default router;
