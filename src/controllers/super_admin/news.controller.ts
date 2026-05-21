@@ -2,6 +2,7 @@ import type { Request, Response } from 'express';
 import fs from 'fs';
 import path from 'path';
 
+import pool from '../../config/database';
 import { NewsService } from '../../services/news.service';
 import { type CreateNewsRequest, NewsType, type UpdateNewsRequest } from '../../types';
 import { NotificationController } from '../notification.controller';
@@ -156,6 +157,7 @@ export class NewsController {
     const id = req.params['id'] as string;
     const data = { ...(req.body as UpdateNewsRequest) };
 
+    let imageChanged = false;
     if (data.imageUrl && typeof data.imageUrl === 'string' && data.imageUrl.startsWith('data:image')) {
       const current = await NewsService.getNewsById(id);
       if (!current) {
@@ -165,12 +167,36 @@ export class NewsController {
         await deleteLocalImageIfExists(current.imageUrl);
       }
       data.imageUrl = await saveBase64Image(data.imageUrl);
+      imageChanged = true;
     }
 
     const news = await NewsService.updateNews(id, data);
     if (!news) {
       throw new ApiError(404, 'الخبر غير موجود', ErrorCodes.NOT_FOUND);
     }
+
+    // Keep the snapshot in already-sent notifications pointing at the new
+    // image. Without this, the old file gets deleted above but the
+    // notifications still link to it → 404 in the bell drawer for every
+    // teacher who already received the announcement.
+    if (imageChanged && news.imageUrl) {
+      try {
+        await pool.query(
+          `UPDATE notifications
+              SET data = jsonb_set(
+                COALESCE(data::jsonb, '{}'::jsonb),
+                '{imageUrl}',
+                to_jsonb($1::text),
+                true
+              )
+            WHERE data->>'newsId' = $2`,
+          [news.imageUrl, id]
+        );
+      } catch (err) {
+        req.log?.warn({ err, newsId: id }, 'news image: notification sync failed');
+      }
+    }
+
     res.status(200).json(ok(news, 'تم تحديث الخبر'));
   }
 
