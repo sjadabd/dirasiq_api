@@ -40,7 +40,10 @@ env:
   # COMPOSE path.
   VPS_REPO_PATH: /opt/mulhimiq/main-api
   VPS_COMPOSE_PATH: /opt/mulhimiq
-  VPS_ENV_FILE: .env.production
+  # Env file path is RELATIVE to VPS_COMPOSE_PATH (where docker compose runs).
+  # The real file lives inside the project subdir, so we point compose at it
+  # explicitly instead of moving it.
+  VPS_ENV_FILE: ./main-api/.env.production
 
 jobs:
   # ───────────────────────────────────────────────────────────────────────
@@ -120,41 +123,59 @@ jobs:
           script: |
             set -euo pipefail
 
+            # ── 0. Debug — print every value the script will use ─────
+            echo "================== Deploy context =================="
+            echo "  SERVICE_NAME       = ${SERVICE_NAME}"
+            echo "  VPS_REPO_PATH      = ${VPS_REPO_PATH}"
+            echo "  VPS_COMPOSE_PATH   = ${VPS_COMPOSE_PATH}"
+            echo "  VPS_ENV_FILE       = ${VPS_ENV_FILE}"
+            echo "  INTERNAL_HEALTH_URL= ${INTERNAL_HEALTH_URL}"
+            echo "  EXTERNAL_HEALTH_URL= ${EXTERNAL_HEALTH_URL}"
+            echo "  whoami             = $(whoami)"
+            echo "  pwd                = $(pwd)"
+            echo "===================================================="
+
             # ── 1. Snapshot current state for rollback ────────────────
+            echo "→ Step 1: snapshot current state"
             cd "${VPS_REPO_PATH}"
             OLD_SHA=$(git rev-parse HEAD)
             cd "${VPS_COMPOSE_PATH}"
             OLD_IMAGE_ID=$(docker compose images -q ${SERVICE_NAME} 2>/dev/null || true)
-            echo "Rollback target: commit=${OLD_SHA} image=${OLD_IMAGE_ID:-<none>}"
+            echo "  Rollback target: commit=${OLD_SHA} image=${OLD_IMAGE_ID:-<none>}"
 
             # ── 2. Pre-flight: env file MUST be present (workflow MUST
             #     NEVER create or overwrite it). .env.production carries
             #     real secrets and lives only on the VPS.
-            test -f "${VPS_ENV_FILE}" || {
-              echo "FATAL: ${VPS_COMPOSE_PATH}/${VPS_ENV_FILE} missing — refusing to deploy"
+            echo "→ Step 2: env file check"
+            if [ ! -f "${VPS_ENV_FILE}" ]; then
+              echo "FATAL: ${VPS_COMPOSE_PATH}/${VPS_ENV_FILE} missing"
+              echo "  ls -la ${VPS_COMPOSE_PATH}:"
+              ls -la "${VPS_COMPOSE_PATH}" || true
               exit 1
-            }
+            fi
+            echo "  ✓ ${VPS_COMPOSE_PATH}/${VPS_ENV_FILE} present"
 
             # ── 3. Pull new code (in the repo dir, NOT compose dir) ───
+            echo "→ Step 3: git fetch + reset"
             cd "${VPS_REPO_PATH}"
             git fetch --tags origin main
             NEW_SHA=$(git rev-parse origin/main)
+            echo "  OLD_SHA=${OLD_SHA}"
+            echo "  NEW_SHA=${NEW_SHA}"
             if [ "${OLD_SHA}" = "${NEW_SHA}" ]; then
-              echo "Already at ${NEW_SHA} — nothing to deploy."
+              echo "  Already at ${NEW_SHA} — nothing to deploy."
               exit 0
             fi
             git reset --hard "${NEW_SHA}"
-            echo "Pulled ${OLD_SHA} → ${NEW_SHA} in ${VPS_REPO_PATH}"
+            echo "  ✓ Pulled ${OLD_SHA:0:8} → ${NEW_SHA:0:8} in ${VPS_REPO_PATH}"
 
             # ── 4. Build new image (compose-context, cached layers reused)
+            echo "→ Step 4: docker compose build ${SERVICE_NAME}"
             cd "${VPS_COMPOSE_PATH}"
             docker compose --env-file "${VPS_ENV_FILE}" build ${SERVICE_NAME}
 
             # ── 5. Zero-downtime restart of only the changed service.
-            #     `up -d --no-deps` rolls the service container without
-            #     touching postgres/redis. The new container starts AFTER
-            #     the new image is built, so the old one keeps serving
-            #     until docker swaps them.
+            echo "→ Step 5: docker compose up -d --no-deps ${SERVICE_NAME}"
             docker compose --env-file "${VPS_ENV_FILE}" up -d --no-deps ${SERVICE_NAME}
 
             # ── 6. Internal health probe — give the service 60s to boot.
