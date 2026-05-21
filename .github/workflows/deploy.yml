@@ -1,0 +1,218 @@
+# =============================================================================
+#  Production deploy — Main API (api.mulhimiq.com)
+# =============================================================================
+#
+# Triggered on every push to `main`. Validates the build locally in CI, then
+# SSHes into the VPS, pulls + rebuilds, runs healthchecks, and rolls back to
+# the previous commit + image if anything fails.
+#
+# Required GitHub repo secrets:
+#   VPS_HOST     — IP or DNS of the production server.
+#   VPS_USER     — SSH login (e.g. `deploy`).
+#   VPS_SSH_KEY  — private key (the matching public key lives in the user's
+#                  ~/.ssh/authorized_keys on the VPS).
+#   VPS_PORT     — SSH port (22 by default).
+#
+# See `DEPLOY_AUTOMATION.md` at repo root for the one-time VPS bootstrap.
+
+name: Deploy API
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:    # allow manual re-run from the Actions tab
+
+concurrency:
+  # Cancel any in-flight deploy when a newer push lands. Prevents two
+  # deploys colliding on `git pull` + `docker compose up`.
+  group: deploy-api-production
+  cancel-in-progress: false   # safer to let the running one finish
+
+env:
+  SERVICE_NAME: api
+  INTERNAL_HEALTH_URL: http://localhost:3000/health
+  EXTERNAL_HEALTH_URL: https://api.mulhimiq.com/health
+  VPS_PROJECT_PATH: /opt/mulhimiq/dirasiq_api
+
+jobs:
+  # ───────────────────────────────────────────────────────────────────────
+  #  1. Pre-deploy validation — never push a broken build to prod.
+  # ───────────────────────────────────────────────────────────────────────
+  validate:
+    name: Build validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install (clean)
+        run: |
+          rm -rf node_modules package-lock.json
+          npm install --no-audit --no-fund
+
+      - name: TypeScript check
+        run: npx tsc --noEmit
+
+      - name: Compile
+        run: npm run build
+
+      - name: Forbidden URL scan
+        # Reject if a localhost or staging IP slipped into source. The dev
+        # tooling URLs are allowed under `.env*` / docs / comments — we
+        # only fail when they appear in real source code.
+        run: |
+          set -e
+          if git grep -nE "localhost:300[01]|38\.60\.250\.|http://10\.0\.2\.2" -- \
+              'src/**/*.ts' 'src/**/*.js' \
+              ':!src/**/*test*' ':!src/test/**' \
+              2>/dev/null; then
+            echo "::error::Forbidden dev URLs found in source (see grep matches above)"
+            exit 1
+          fi
+          echo "✓ no forbidden URLs in src/"
+
+      - name: Validate docker-compose.yml (if present)
+        run: |
+          if [ -f docker-compose.yml ]; then
+            DB_NAME=ci DB_USER=ci DB_PASSWORD=ci JWT_SECRET=ci \
+              CORS_ALLOWED_ORIGINS=https://x docker compose config > /dev/null
+            echo "✓ docker-compose.yml parses cleanly"
+          else
+            echo "(no compose file at repo root — server-side compose is canonical)"
+          fi
+
+  # ───────────────────────────────────────────────────────────────────────
+  #  2. Deploy via SSH — atomic with rollback on any healthcheck failure.
+  # ───────────────────────────────────────────────────────────────────────
+  deploy:
+    name: SSH deploy + health probe
+    runs-on: ubuntu-latest
+    needs: validate
+    timeout-minutes: 20
+
+    steps:
+      - name: Deploy
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT }}
+          command_timeout: 15m
+          script_stop: true     # any failed line halts the script
+          envs: SERVICE_NAME,INTERNAL_HEALTH_URL,EXTERNAL_HEALTH_URL,VPS_PROJECT_PATH
+          script: |
+            set -euo pipefail
+
+            cd "${VPS_PROJECT_PATH}"
+
+            # ── 1. Snapshot current state for rollback ────────────────
+            OLD_SHA=$(git rev-parse HEAD)
+            OLD_IMAGE_ID=$(docker compose images -q ${SERVICE_NAME} 2>/dev/null || true)
+            echo "Rollback target: commit=${OLD_SHA} image=${OLD_IMAGE_ID:-<none>}"
+
+            # ── 2. Pre-flight: env file MUST be present (workflow MUST
+            #     NEVER create or overwrite it). .env.production carries
+            #     real secrets and lives only on the VPS.
+            test -f .env.production || {
+              echo "FATAL: .env.production missing on VPS — refusing to deploy"
+              exit 1
+            }
+
+            # ── 3. Pull new code ──────────────────────────────────────
+            git fetch --tags origin main
+            NEW_SHA=$(git rev-parse origin/main)
+            if [ "${OLD_SHA}" = "${NEW_SHA}" ]; then
+              echo "Already at ${NEW_SHA} — nothing to deploy."
+              exit 0
+            fi
+            git reset --hard "${NEW_SHA}"
+            echo "Pulled ${OLD_SHA} → ${NEW_SHA}"
+
+            # ── 4. Build new image (cached layers reused) ─────────────
+            docker compose --env-file .env.production build ${SERVICE_NAME}
+
+            # ── 5. Zero-downtime restart of only the changed service.
+            #     `up -d --no-deps` rolls the service container without
+            #     touching postgres/redis. The new container starts AFTER
+            #     the new image is built, so the old one keeps serving
+            #     until docker swaps them.
+            docker compose --env-file .env.production up -d --no-deps ${SERVICE_NAME}
+
+            # ── 6. Internal health probe — give the service 60s to boot.
+            echo "Waiting for ${INTERNAL_HEALTH_URL} ..."
+            HEALTH_OK=0
+            for i in $(seq 1 30); do
+              if curl -fsS --max-time 3 "${INTERNAL_HEALTH_URL}" > /dev/null; then
+                echo "✓ internal health OK after $((i * 2))s"
+                HEALTH_OK=1
+                break
+              fi
+              sleep 2
+            done
+
+            # ── 7. External health probe via nginx — only if internal passed.
+            if [ "${HEALTH_OK}" = "1" ]; then
+              echo "Verifying ${EXTERNAL_HEALTH_URL} ..."
+              if curl -fsS --max-time 5 "${EXTERNAL_HEALTH_URL}" > /dev/null; then
+                echo "✓ external health OK"
+              else
+                echo "✗ external health FAILED"
+                HEALTH_OK=0
+              fi
+            fi
+
+            # ── 8. Rollback on any failure ────────────────────────────
+            if [ "${HEALTH_OK}" != "1" ]; then
+              echo "==================================================="
+              echo "DEPLOY FAILED — rolling back to ${OLD_SHA}"
+              echo "==================================================="
+              git reset --hard "${OLD_SHA}"
+              docker compose --env-file .env.production build ${SERVICE_NAME}
+              docker compose --env-file .env.production up -d --no-deps ${SERVICE_NAME}
+              # Give the old container a moment to come back up.
+              sleep 10
+              if curl -fsS --max-time 5 "${INTERNAL_HEALTH_URL}" > /dev/null; then
+                echo "✓ rollback restored service at ${OLD_SHA}"
+              else
+                echo "✗ ROLLBACK ALSO FAILED — manual intervention required"
+              fi
+              exit 1
+            fi
+
+            # ── 9. Tag the new image for future rollback ──────────────
+            NEW_IMAGE_ID=$(docker compose images -q ${SERVICE_NAME})
+            docker tag "${NEW_IMAGE_ID}" "dirasiq-${SERVICE_NAME}:${NEW_SHA:0:12}" || true
+
+            # ── 10. Prune dangling images older than 7 days (cheap) ───
+            docker image prune -f --filter "until=168h" > /dev/null || true
+
+            echo "==================================================="
+            echo "✓ Deploy ${NEW_SHA} complete"
+            echo "==================================================="
+
+  # ───────────────────────────────────────────────────────────────────────
+  #  3. Notify (optional placeholder — wire to Slack/Discord later)
+  # ───────────────────────────────────────────────────────────────────────
+  notify:
+    name: Notify result
+    runs-on: ubuntu-latest
+    needs: [validate, deploy]
+    if: always()
+    steps:
+      - name: Summary
+        run: |
+          STATUS="${{ needs.deploy.result }}"
+          if [ "$STATUS" = "success" ]; then
+            echo "✓ API deploy succeeded for commit ${{ github.sha }}"
+          else
+            echo "✗ API deploy failed (status: $STATUS) — check the deploy job logs"
+          fi
