@@ -207,7 +207,10 @@ export const googleAuthSchema = z
     googleData: z.record(z.string(), z.unknown()).optional(),
     userType: userTypeSchema,
     referralCode: z.string().optional(),
-    oneSignalPlayerId: z.string().optional(),
+    // `nullish()` accepts both `undefined` AND `null` — clients (Flutter +
+    // dashboard) send `null` when OneSignal hasn't initialised yet or the
+    // user denied push permission; `.optional()` alone would reject `null`.
+    oneSignalPlayerId: z.string().nullish(),
   })
   .refine((v) => v.googleToken || v.googleData, {
     message: 'مطلوب إما Google token أو Google data',
@@ -220,7 +223,8 @@ export const appleAuthSchema = z.object({
   userType: userTypeSchema,
   firstName: z.string().optional(),
   lastName: z.string().optional(),
-  oneSignalPlayerId: z.string().optional(),
+  // Same nullish posture as googleAuthSchema for parity.
+  oneSignalPlayerId: z.string().nullish(),
 });
 
 // Profile completion / update — separate schemas per role. The controller
