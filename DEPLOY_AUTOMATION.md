@@ -9,8 +9,8 @@ but the procedures apply to all three deployable projects:
 
 | Repo | Domain | Workflow | Service |
 |---|---|---|---|
-| `dirasiq_api` | https://api.mulhimiq.com | `.github/workflows/deploy.yml` | docker compose `main-api` (`/opt/mulhimiq/main-api`) |
-| `dirasiq_chat` | https://chat.mulhimiq.com | `.github/workflows/deploy.yml` | docker compose `chat-api` (`/opt/mulhimiq/chat-api`) |
+| `dirasiq_api` | https://api.mulhimiq.com | `.github/workflows/deploy.yml` | service `main-api` in `/opt/mulhimiq/docker-compose.yml` (code in `/opt/mulhimiq/main-api`) |
+| `dirasiq_chat` | https://chat.mulhimiq.com | `.github/workflows/deploy.yml` | service `chat-api` in `/opt/mulhimiq/docker-compose.yml` (code in `/opt/mulhimiq/chat-api`) |
 | `dirasiq_dash` | https://mulhimiq.com | `.github/workflows/deploy.yml` | nginx static (SCP `dist/`) |
 
 The Flutter app (`dirasiq-f`) is NOT in this pipeline — mobile builds ship
@@ -145,6 +145,20 @@ Also add `VPS_HOST`, `VPS_USER` (=`deploy`), and `VPS_PORT`.
 
 ### 3.5 Layout the project directories on the VPS
 
+The production VPS uses ONE shared `docker-compose.yml` at
+`/opt/mulhimiq/` defining all services (`main-api`, `chat-api`,
+`postgres`, `redis`, …). Each project's source code lives in its own
+clone under `/opt/mulhimiq/<service>/`. The workflow pulls the project
+repo but builds via the shared compose:
+
+```
+/opt/mulhimiq/
+├── docker-compose.yml          ← unified, defines every service
+├── .env.production             ← shared env (NEVER committed)
+├── main-api/                   ← `git clone …/dirasiq_api`
+└── chat-api/                   ← `git clone …/dirasiq_chat`
+```
+
 As `deploy`:
 
 ```bash
@@ -152,30 +166,36 @@ sudo mkdir -p /opt/mulhimiq
 sudo chown -R deploy:deploy /opt/mulhimiq
 cd /opt/mulhimiq
 
-# Clone each repo. Directory names MUST match the workflow's
-# VPS_PROJECT_PATH (`main-api`, `chat-api`).
+# Clone each project repo. Directory name MUST match the service name in
+# docker-compose.yml AND the workflow env (`VPS_REPO_PATH`).
 git clone git@github.com:sjadabd/dirasiq_api.git  main-api
 git clone git@github.com:sjadabd/dirasiq_chat.git chat-api
-# Dashboard clone is optional — only needed if you also build on the VPS;
-# the workflow ships `dist/` via SCP so the repo isn't required there.
 
-# Create the env files (carefully — these are gitignored secrets):
-nano main-api/.env.production         # see .env.production.example
-nano chat-api/.env.production         # see .env.production.example
+# Place the unified docker-compose.yml at the root.
+nano docker-compose.yml          # defines services: main-api, chat-api, postgres, redis
+nano .env.production             # shared env (secrets — gitignored, never committed)
 
-# First-time bring-up so the containers exist.
-cd /opt/mulhimiq/main-api
-docker compose --env-file .env.production up -d --build
+# Each project's Dockerfile is referenced relative to the compose file:
+#   services:
+#     main-api:
+#       build:
+#         context: ./main-api
+#         dockerfile: Dockerfile
+#     chat-api:
+#       build:
+#         context: ./chat-api
+#         dockerfile: Dockerfile
 
-cd /opt/mulhimiq/chat-api
+# First-time bring-up for the whole stack.
 docker compose --env-file .env.production up -d --build
 
 # Verify
-docker compose -p main-api ps
-docker compose -p chat-api ps
-curl -fsS http://localhost:3000/health
-curl -fsS http://localhost:3001/health
+docker compose ps
+curl -fsS http://localhost:3000/health         # main-api
+curl -fsS http://localhost:3001/health         # chat-api
 ```
+
+Dashboard is OUT of this stack — it's static files behind nginx, see §3.6.
 
 ### 3.6 Dashboard release layout
 
@@ -202,8 +222,8 @@ and points `current` at it.
 
 | Path | Why protected |
 |---|---|
-| `/opt/mulhimiq/*/​.env.production` | Production secrets — gitignored, never touched by `git pull` or the workflow. |
-| `/opt/mulhimiq/*/​public/uploads/` | User-generated content — lives on a docker volume; container rebuild doesn't touch it. |
+| `/opt/mulhimiq/.env.production` | Shared production secrets — gitignored, never touched by `git pull` or the workflow. Workflow refuses to start if missing. |
+| `/opt/mulhimiq/*/public/uploads/` | User-generated content — lives on a docker named volume; container rebuild doesn't touch it. |
 | `/etc/letsencrypt/live/*` | SSL certs — owned by certbot, separate process. |
 | Postgres + Redis data | Named docker volumes (`*_pgdata`, `*_redis`) — `up -d --no-deps <service>` doesn't recreate them. |
 
@@ -271,9 +291,14 @@ If you spot a regression hours after deploy:
 **API / Chat:**
 ```bash
 ssh deploy@vps
-cd /opt/mulhimiq/main-api      # or chat-api
+
+# 1. Reset the project source code to the known-good commit.
+cd /opt/mulhimiq/main-api          # or chat-api
 git log --oneline -10              # find the last-known-good commit
 git reset --hard <known_good_sha>
+
+# 2. Rebuild + restart from the SHARED compose dir.
+cd /opt/mulhimiq
 docker compose --env-file .env.production build main-api    # or chat-api
 docker compose --env-file .env.production up -d --no-deps main-api
 curl -fsS https://api.mulhimiq.com/health
@@ -314,15 +339,18 @@ GitHub → Actions → workflow → **Run workflow** → pick `main` → Run.
 
 ```bash
 ssh deploy@vps
-cd /opt/mulhimiq/main-api          # or /opt/mulhimiq/chat-api
-docker compose ps
+cd /opt/mulhimiq                   # shared compose dir
+docker compose ps                  # all services at once
 docker compose images main-api     # or chat-api
+
+cd /opt/mulhimiq/main-api          # source-code dir for the service
 git log -1 --oneline
 ```
 
 ### See container logs
 
 ```bash
+cd /opt/mulhimiq
 docker compose logs --tail=200 -f main-api
 docker compose logs --tail=200 -f chat-api
 ```
@@ -391,17 +419,17 @@ GitHub → repo → **Settings → Actions → General** →
 # Local
 git push origin main                    # triggers the workflow
 
-# VPS — manual rollback
-cd /opt/mulhimiq/main-api          # or chat-api
-git reset --hard <sha> && docker compose up -d --build main-api
+# VPS — manual rollback (git in repo dir, compose in shared dir)
+cd /opt/mulhimiq/main-api && git reset --hard <sha>
+cd /opt/mulhimiq && docker compose --env-file .env.production up -d --build main-api
 
 # VPS — manual dashboard rollback
 ln -sfn /var/www/mulhimiq/dashboard/releases/<id> \
        /var/www/mulhimiq/dashboard/current
 sudo systemctl reload nginx
 
-# VPS — full restart (DB unaffected)
-docker compose --env-file .env.production restart main-api    # or chat-api
+# VPS — full restart of one service (DB unaffected)
+cd /opt/mulhimiq && docker compose --env-file .env.production restart main-api   # or chat-api
 
 # VPS — hard reset (use only when truly broken)
 docker compose down
