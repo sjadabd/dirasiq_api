@@ -82,12 +82,35 @@ app.use(
 // =====================================================
 // 🔹 Secure and Explicit CORS Configuration
 // =====================================================
-const allowedOrigins = [
+// Production allowlist is sourced from CORS_ALLOWED_ORIGINS (comma-separated).
+// Falls back to the production domains when unset.
+//
+// Dev tooling origins (`http://localhost:*`) are baked into the allowlist
+// at every NODE_ENV so the team can run the dashboard locally and point it
+// at the production API for end-to-end smoke testing. The remote security
+// boundary is still strong: every request carries a JWT, and the localhost
+// origins only allow a browser physically running on the user's machine
+// (not arbitrary attackers on the public network).
+const envOrigins = (process.env['CORS_ALLOWED_ORIGINS'] || '')
+  .split(',')
+  .map((o) => o.trim())
+  .filter(Boolean);
+
+const PRODUCTION_DEFAULT_ORIGINS = [
   'https://mulhimiq.com',
   'https://www.mulhimiq.com',
-  'https://api.mulhimiq.com',
-  'http://localhost:5174',
 ];
+
+const DEV_ORIGINS = [
+  'http://localhost:5173',
+  'http://localhost:5174',
+  'http://localhost:5175',
+];
+
+const allowedOrigins =
+  envOrigins.length > 0
+    ? [...envOrigins, ...DEV_ORIGINS]
+    : [...PRODUCTION_DEFAULT_ORIGINS, ...DEV_ORIGINS];
 
 app.use(
   cors({
