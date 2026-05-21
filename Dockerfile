@@ -7,8 +7,9 @@ WORKDIR /app
 # Copy package files
 COPY package*.json ./
 
-# Install dependencies
-RUN npm ci --only=production
+# Install ALL dependencies (devDependencies include `typescript` which the build step needs).
+# Cache is cleaned at the end of the same RUN to keep the layer small.
+RUN npm ci && npm cache clean --force
 
 # Copy source code
 COPY . .
