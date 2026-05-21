@@ -9,8 +9,8 @@ but the procedures apply to all three deployable projects:
 
 | Repo | Domain | Workflow | Service |
 |---|---|---|---|
-| `dirasiq_api` | https://api.mulhimiq.com | `.github/workflows/deploy.yml` | docker compose `api` |
-| `dirasiq_chat` | https://chat.mulhimiq.com | `.github/workflows/deploy.yml` | docker compose `chat_api` |
+| `dirasiq_api` | https://api.mulhimiq.com | `.github/workflows/deploy.yml` | docker compose `main-api` (`/opt/mulhimiq/main-api`) |
+| `dirasiq_chat` | https://chat.mulhimiq.com | `.github/workflows/deploy.yml` | docker compose `chat-api` (`/opt/mulhimiq/chat-api`) |
 | `dirasiq_dash` | https://mulhimiq.com | `.github/workflows/deploy.yml` | nginx static (SCP `dist/`) |
 
 The Flutter app (`dirasiq-f`) is NOT in this pipeline — mobile builds ship
@@ -152,26 +152,27 @@ sudo mkdir -p /opt/mulhimiq
 sudo chown -R deploy:deploy /opt/mulhimiq
 cd /opt/mulhimiq
 
-# Clone each repo:
-git clone git@github.com:sjadabd/dirasiq_api.git
-git clone git@github.com:sjadabd/dirasiq_chat.git
+# Clone each repo. Directory names MUST match the workflow's
+# VPS_PROJECT_PATH (`main-api`, `chat-api`).
+git clone git@github.com:sjadabd/dirasiq_api.git  main-api
+git clone git@github.com:sjadabd/dirasiq_chat.git chat-api
 # Dashboard clone is optional — only needed if you also build on the VPS;
 # the workflow ships `dist/` via SCP so the repo isn't required there.
 
 # Create the env files (carefully — these are gitignored secrets):
-nano dirasiq_api/.env.production         # see .env.production.example
-nano dirasiq_chat/.env.production        # see .env.production.example
+nano main-api/.env.production         # see .env.production.example
+nano chat-api/.env.production         # see .env.production.example
 
 # First-time bring-up so the containers exist.
-cd /opt/mulhimiq/dirasiq_api
+cd /opt/mulhimiq/main-api
 docker compose --env-file .env.production up -d --build
 
-cd /opt/mulhimiq/dirasiq_chat
+cd /opt/mulhimiq/chat-api
 docker compose --env-file .env.production up -d --build
 
 # Verify
-docker compose -p dirasiq_api ps
-docker compose -p dirasiq_chat ps
+docker compose -p main-api ps
+docker compose -p chat-api ps
 curl -fsS http://localhost:3000/health
 curl -fsS http://localhost:3001/health
 ```
@@ -213,8 +214,8 @@ on the VPS (sanity check at the start of the SSH script).
 
 | Component | Rebuild trigger |
 |---|---|
-| API container | `docker compose build api` after `git pull` |
-| Chat container | `docker compose build chat_api` after `git pull` |
+| API container | `docker compose build main-api` after `git pull` |
+| Chat container | `docker compose build chat-api` after `git pull` |
 | Dashboard static files | `npm run build` in CI, SCP to `releases/<id>/` |
 
 ### 4.3 Restarted (with zero downtime)
@@ -270,11 +271,11 @@ If you spot a regression hours after deploy:
 **API / Chat:**
 ```bash
 ssh deploy@vps
-cd /opt/mulhimiq/dirasiq_api      # or dirasiq_chat
+cd /opt/mulhimiq/main-api      # or chat-api
 git log --oneline -10              # find the last-known-good commit
 git reset --hard <known_good_sha>
-docker compose --env-file .env.production build api
-docker compose --env-file .env.production up -d --no-deps api
+docker compose --env-file .env.production build main-api    # or chat-api
+docker compose --env-file .env.production up -d --no-deps main-api
 curl -fsS https://api.mulhimiq.com/health
 ```
 
@@ -313,17 +314,17 @@ GitHub → Actions → workflow → **Run workflow** → pick `main` → Run.
 
 ```bash
 ssh deploy@vps
-cd /opt/mulhimiq/dirasiq_api
+cd /opt/mulhimiq/main-api          # or /opt/mulhimiq/chat-api
 docker compose ps
-docker compose images api
+docker compose images main-api     # or chat-api
 git log -1 --oneline
 ```
 
 ### See container logs
 
 ```bash
-docker compose logs --tail=200 -f api
-docker compose logs --tail=200 -f chat_api
+docker compose logs --tail=200 -f main-api
+docker compose logs --tail=200 -f chat-api
 ```
 
 ### Health endpoints
@@ -391,8 +392,8 @@ GitHub → repo → **Settings → Actions → General** →
 git push origin main                    # triggers the workflow
 
 # VPS — manual rollback
-cd /opt/mulhimiq/dirasiq_api
-git reset --hard <sha> && docker compose up -d --build api
+cd /opt/mulhimiq/main-api          # or chat-api
+git reset --hard <sha> && docker compose up -d --build main-api
 
 # VPS — manual dashboard rollback
 ln -sfn /var/www/mulhimiq/dashboard/releases/<id> \
@@ -400,7 +401,7 @@ ln -sfn /var/www/mulhimiq/dashboard/releases/<id> \
 sudo systemctl reload nginx
 
 # VPS — full restart (DB unaffected)
-docker compose --env-file .env.production restart api
+docker compose --env-file .env.production restart main-api    # or chat-api
 
 # VPS — hard reset (use only when truly broken)
 docker compose down

@@ -29,10 +29,12 @@ concurrency:
   cancel-in-progress: false   # safer to let the running one finish
 
 env:
-  SERVICE_NAME: api
+  # Service name as declared in the VPS-side docker-compose.yml.
+  SERVICE_NAME: main-api
   INTERNAL_HEALTH_URL: http://localhost:3000/health
   EXTERNAL_HEALTH_URL: https://api.mulhimiq.com/health
-  VPS_PROJECT_PATH: /opt/mulhimiq/dirasiq_api
+  # Project directory on the VPS — matches the existing layout.
+  VPS_PROJECT_PATH: /opt/mulhimiq/main-api
 
 jobs:
   # ───────────────────────────────────────────────────────────────────────
