@@ -5,6 +5,8 @@
 
 import { Router } from 'express';
 
+import { z } from 'zod';
+
 import { SuperAdminTeacherApplicationController } from '../../controllers/super_admin/teacher-application.controller';
 import {
   authenticateToken,
@@ -18,8 +20,15 @@ import {
   teacherApplicationNeedsMoreInfoBodySchema,
   teacherApplicationRejectBodySchema,
 } from '../../schemas/teacher-application.schemas';
+import { uuidSchema } from '../../schemas/common.schemas';
 import { UserType } from '../../types';
 import { asyncHandler } from '../../utils/async-handler';
+
+// Param schema for nested file endpoints: { id, fileId }.
+const applicationFileParamsSchema = z.object({
+  id: uuidSchema,
+  fileId: uuidSchema,
+});
 
 const router = Router();
 
@@ -62,6 +71,22 @@ router.patch(
     body: teacherApplicationNeedsMoreInfoBodySchema,
   }),
   asyncHandler(SuperAdminTeacherApplicationController.requestMoreInfo)
+);
+
+// ---------------------------------------------------------------------------
+// Phase 3 — file reads (auth-gated streaming)
+// ---------------------------------------------------------------------------
+
+router.get(
+  '/:id/files',
+  validate({ params: teacherApplicationIdParamSchema }),
+  asyncHandler(SuperAdminTeacherApplicationController.listFiles)
+);
+
+router.get(
+  '/:id/files/:fileId',
+  validate({ params: applicationFileParamsSchema }),
+  asyncHandler(SuperAdminTeacherApplicationController.streamFile)
 );
 
 export default router;

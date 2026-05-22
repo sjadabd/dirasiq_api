@@ -1075,3 +1075,30 @@ export interface CreateTeacherApplicationRequest {
   tiktokUrl?: string;
   youtubeUrl?: string;
 }
+
+// ---------------------------------------------------------------------------
+// Teacher Application Files (Phase 3)
+// ---------------------------------------------------------------------------
+
+export enum TeacherApplicationFileKind {
+  PROFILE_IMAGE = 'profile_image',
+  CERTIFICATE_IMAGE = 'certificate_image',
+  NATIONAL_ID_IMAGE = 'national_id_image',
+  OPTIONAL_ATTACHMENT = 'optional_attachment',
+  INTRO_VIDEO = 'intro_video',
+}
+
+export interface TeacherApplicationFile {
+  id: string;
+  applicationId: string;
+  kind: TeacherApplicationFileKind;
+  // Server-relative storage path (e.g. teacher-applications/<appId>/<uuid>.png).
+  // NEVER returned to the public — only used inside the storage service.
+  storageKey: string;
+  originalFilename: string | null;
+  mimeType: string;
+  byteSize: number;
+  magicValidated: boolean;
+  createdAt: string;
+  deletedAt: string | null;
+}

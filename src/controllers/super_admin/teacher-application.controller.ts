@@ -11,6 +11,8 @@
 
 import type { Request, Response } from 'express';
 
+import { PrivateStorageService } from '../../services/private-storage.service';
+import { TeacherApplicationFileService } from '../../services/teacher-application-file.service';
 import { TeacherApplicationService } from '../../services/teacher-application.service';
 import type {
   TeacherApplicationApproveInput,
@@ -20,6 +22,7 @@ import type {
 } from '../../schemas/teacher-application.schemas';
 import type { TeacherApplicationStatus } from '../../types';
 import { ApiError, ErrorCodes } from '../../utils/api-error';
+import { logger } from '../../utils/logger';
 import { buildPaginationMeta, parsePagination } from '../../utils/pagination';
 import { ok, paginated } from '../../utils/response.util';
 
@@ -97,5 +100,58 @@ export class SuperAdminTeacherApplicationController {
     res
       .status(200)
       .json(ok({ id }, 'تم تحويل الطلب إلى "بانتظار معلومات إضافية"'));
+  }
+
+  // -------------------------------------------------------------------------
+  // Phase 3 — files
+  // -------------------------------------------------------------------------
+
+  // GET /api/super-admin/teacher-applications/:id/files
+  static async listFiles(req: Request, res: Response): Promise<void> {
+    const id = req.params['id'] as string;
+    const files = await TeacherApplicationFileService.listForApplication(id);
+    res.status(200).json(ok(files, 'قائمة الملفات المرفقة'));
+  }
+
+  // GET /api/super-admin/teacher-applications/:id/files/:fileId
+  // Streams the file bytes through the API. The private store path is
+  // never exposed to the client — only a Content-Type + Content-Disposition
+  // header set from DB metadata.
+  static async streamFile(req: Request, res: Response): Promise<void> {
+    const id = req.params['id'] as string;
+    const fileId = req.params['fileId'] as string;
+
+    const meta = await TeacherApplicationFileService.getForStream(id, fileId);
+
+    res.setHeader('Content-Type', meta.mimeType);
+    res.setHeader('Content-Length', String(meta.byteSize));
+    res.setHeader(
+      'Content-Disposition',
+      meta.originalFilename
+        ? `inline; filename="${encodeURIComponent(meta.originalFilename)}"`
+        : 'inline'
+    );
+    // Defence-in-depth headers — these files should never be cached by
+    // shared caches and should never be embedded by a third-party origin.
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+
+    const stream = PrivateStorageService.streamFor(meta.storageKey);
+    stream.on('error', (err) => {
+      logger.warn(
+        { err, applicationId: id, fileId },
+        'stream error while serving teacher-application file'
+      );
+      // Headers already sent — best we can do is end the response. The
+      // global error middleware can't catch this asynchronously.
+      if (!res.headersSent) {
+        res
+          .status(500)
+          .json({ success: false, message: 'تعذر قراءة الملف', errors: [] });
+      } else {
+        res.end();
+      }
+    });
+    stream.pipe(res);
   }
 }

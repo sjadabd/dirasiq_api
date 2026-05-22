@@ -191,4 +191,81 @@ describe('Teacher Applications — Phase 1', () => {
       expect(res.body.errors[0].code).toBe('TOKEN_INVALID');
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // Phase 3 — file uploads + auth-gated reads
+  // ---------------------------------------------------------------------------
+
+  describe('Phase 3 — public upload (POST /:id/files)', () => {
+    const dummyAid = '00000000-0000-0000-0000-000000000000';
+
+    it('without X-Upload-Token → 401 UNAUTHORIZED', async () => {
+      const res = await request(app)
+        .post(`/api/teacher-applications/${dummyAid}/files`)
+        .attach('file', Buffer.from([0xff, 0xd8, 0xff]), 'tiny.jpg')
+        .field('kind', 'profile_image');
+      expect(res.status).toBe(401);
+      expect(res.body.errors[0].code).toBe('UNAUTHORIZED');
+    });
+
+    it('with a junk X-Upload-Token → 401 TOKEN_INVALID', async () => {
+      const res = await request(app)
+        .post(`/api/teacher-applications/${dummyAid}/files`)
+        .set('X-Upload-Token', 'not-a-real-jwt')
+        .attach('file', Buffer.from([0xff, 0xd8, 0xff]), 'tiny.jpg')
+        .field('kind', 'profile_image');
+      expect(res.status).toBe(401);
+      expect(res.body.errors[0].code).toBe('TOKEN_INVALID');
+    });
+  });
+
+  describe('Phase 3 — super-admin file reads', () => {
+    const dummyAid = '00000000-0000-0000-0000-000000000000';
+    const dummyFid = '11111111-1111-1111-1111-111111111111';
+
+    it('GET /:id/files without auth → 401', async () => {
+      const res = await request(app).get(
+        `/api/super-admin/teacher-applications/${dummyAid}/files`,
+      );
+      expect(res.status).toBe(401);
+    });
+
+    it('GET /:id/files/:fileId without auth → 401', async () => {
+      const res = await request(app).get(
+        `/api/super-admin/teacher-applications/${dummyAid}/files/${dummyFid}`,
+      );
+      expect(res.status).toBe(401);
+    });
+  });
+
+  describe('Phase 3 — file-signature util (magic-byte detection)', () => {
+    // Direct unit tests on the detection helper — proves a renamed
+    // executable cannot ride through as image/jpeg.
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const sig = require('../utils/file-signature') as typeof import('../utils/file-signature');
+
+    it('detects JPEG from FF D8 FF', () => {
+      const buf = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00]);
+      const det = sig.detectFileFormat(buf);
+      expect(det?.format).toBe('jpeg');
+      expect(det?.mimeType).toBe('image/jpeg');
+      expect(sig.mimeMatchesDetection('image/jpeg', 'jpeg')).toBe(true);
+    });
+
+    it('detects PNG from 89 50 4E 47 ...', () => {
+      const buf = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+      expect(sig.detectFileFormat(buf)?.format).toBe('png');
+    });
+
+    it('rejects an unknown format', () => {
+      const buf = Buffer.from('<?php echo("pwned"); ?>');
+      expect(sig.detectFileFormat(buf)).toBeNull();
+    });
+
+    it('mimeMatchesDetection rejects a spoofed mime', () => {
+      // bytes are PNG, declared as image/jpeg → mismatch
+      const declared = 'image/jpeg';
+      expect(sig.mimeMatchesDetection(declared, 'png')).toBe(false);
+    });
+  });
 });

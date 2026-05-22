@@ -21,6 +21,7 @@ import {
 } from '../types';
 import { ApiError, ErrorCodes } from '../utils/api-error';
 import { logger } from '../utils/logger';
+import { signUploadToken } from '../utils/upload-token';
 import { QrService } from './qr.service';
 import type {
   TeacherApplicationCreateInput,
@@ -121,7 +122,12 @@ export class TeacherApplicationService {
    */
   static async create(
     input: TeacherApplicationCreateInput
-  ): Promise<{ id: string; applicationStatus: TeacherApplicationStatus }> {
+  ): Promise<{
+    id: string;
+    applicationStatus: TeacherApplicationStatus;
+    uploadToken: string;
+    uploadTokenExpiresInSeconds: number;
+  }> {
     const email = input.email; // already lowercased/trimmed by emailSchema
     const phone = input.phone;
 
@@ -248,10 +254,17 @@ export class TeacherApplicationService {
       );
 
       const created = rows[0]!;
+      // Phase 3: issue a short-lived upload token bound to this
+      // application id. The Flutter client uses it to attach the
+      // certificate / national-id / profile / intro-video files via
+      // POST /api/teacher-applications/<id>/files within 30 minutes.
+      const tokenInfo = signUploadToken(created.id);
       logger.info({ applicationId: created.id }, 'teacher application submitted');
       return {
         id: created.id,
         applicationStatus: created.application_status,
+        uploadToken: tokenInfo.token,
+        uploadTokenExpiresInSeconds: tokenInfo.expiresInSeconds,
       };
     } catch (err: unknown) {
       // 23505 = unique_violation. Hit only under a race against the partial
