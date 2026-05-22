@@ -12,8 +12,11 @@ import {
 } from '../../middleware/auth.middleware';
 import { validate } from '../../middleware/validate.middleware';
 import {
+  teacherApplicationApproveBodySchema,
   teacherApplicationIdParamSchema,
   teacherApplicationListQuerySchema,
+  teacherApplicationNeedsMoreInfoBodySchema,
+  teacherApplicationRejectBodySchema,
 } from '../../schemas/teacher-application.schemas';
 import { UserType } from '../../types';
 import { asyncHandler } from '../../utils/async-handler';
@@ -32,6 +35,33 @@ router.get(
   '/:id',
   validate({ params: teacherApplicationIdParamSchema }),
   asyncHandler(SuperAdminTeacherApplicationController.detail)
+);
+
+router.patch(
+  '/:id/approve',
+  validate({
+    params: teacherApplicationIdParamSchema,
+    body: teacherApplicationApproveBodySchema,
+  }),
+  asyncHandler(SuperAdminTeacherApplicationController.approve)
+);
+
+router.patch(
+  '/:id/reject',
+  validate({
+    params: teacherApplicationIdParamSchema,
+    body: teacherApplicationRejectBodySchema,
+  }),
+  asyncHandler(SuperAdminTeacherApplicationController.reject)
+);
+
+router.patch(
+  '/:id/request-more-info',
+  validate({
+    params: teacherApplicationIdParamSchema,
+    body: teacherApplicationNeedsMoreInfoBodySchema,
+  }),
+  asyncHandler(SuperAdminTeacherApplicationController.requestMoreInfo)
 );
 
 export default router;

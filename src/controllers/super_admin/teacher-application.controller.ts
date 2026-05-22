@@ -13,9 +13,13 @@ import type { Request, Response } from 'express';
 
 import { TeacherApplicationService } from '../../services/teacher-application.service';
 import type {
+  TeacherApplicationApproveInput,
   TeacherApplicationListQuery,
+  TeacherApplicationNeedsMoreInfoInput,
+  TeacherApplicationRejectInput,
 } from '../../schemas/teacher-application.schemas';
 import type { TeacherApplicationStatus } from '../../types';
+import { ApiError, ErrorCodes } from '../../utils/api-error';
 import { buildPaginationMeta, parsePagination } from '../../utils/pagination';
 import { ok, paginated } from '../../utils/response.util';
 
@@ -49,5 +53,49 @@ export class SuperAdminTeacherApplicationController {
     const id = req.params['id'] as string;
     const application = await TeacherApplicationService.getByIdForAdmin(id);
     res.status(200).json(ok(application, 'تفاصيل طلب الانضمام'));
+  }
+
+  // PATCH /api/super-admin/teacher-applications/:id/approve
+  static async approve(req: Request, res: Response): Promise<void> {
+    const id = req.params['id'] as string;
+    const approvedById = req.user?.id;
+    if (!approvedById) {
+      // requireRole at the router level guarantees req.user — defensive.
+      throw new ApiError(401, 'مصادقة مطلوبة', ErrorCodes.UNAUTHORIZED);
+    }
+    const body = (req.body as TeacherApplicationApproveInput) ?? undefined;
+
+    const result = await TeacherApplicationService.approve(id, approvedById, body);
+    res
+      .status(200)
+      .json(ok(result, 'تمت الموافقة على الطلب وتفعيل حساب المعلم'));
+  }
+
+  // PATCH /api/super-admin/teacher-applications/:id/reject
+  static async reject(req: Request, res: Response): Promise<void> {
+    const id = req.params['id'] as string;
+    const rejectedById = req.user?.id;
+    if (!rejectedById) {
+      throw new ApiError(401, 'مصادقة مطلوبة', ErrorCodes.UNAUTHORIZED);
+    }
+    const body = req.body as TeacherApplicationRejectInput;
+
+    await TeacherApplicationService.reject(id, rejectedById, body);
+    res.status(200).json(ok({ id }, 'تم رفض الطلب'));
+  }
+
+  // PATCH /api/super-admin/teacher-applications/:id/request-more-info
+  static async requestMoreInfo(req: Request, res: Response): Promise<void> {
+    const id = req.params['id'] as string;
+    const requestedById = req.user?.id;
+    if (!requestedById) {
+      throw new ApiError(401, 'مصادقة مطلوبة', ErrorCodes.UNAUTHORIZED);
+    }
+    const body = req.body as TeacherApplicationNeedsMoreInfoInput;
+
+    await TeacherApplicationService.requestMoreInfo(id, requestedById, body);
+    res
+      .status(200)
+      .json(ok({ id }, 'تم تحويل الطلب إلى "بانتظار معلومات إضافية"'));
   }
 }

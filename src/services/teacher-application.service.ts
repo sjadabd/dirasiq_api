@@ -21,7 +21,13 @@ import {
 } from '../types';
 import { ApiError, ErrorCodes } from '../utils/api-error';
 import { logger } from '../utils/logger';
-import type { TeacherApplicationCreateInput } from '../schemas/teacher-application.schemas';
+import { QrService } from './qr.service';
+import type {
+  TeacherApplicationCreateInput,
+  TeacherApplicationApproveInput,
+  TeacherApplicationRejectInput,
+  TeacherApplicationNeedsMoreInfoInput,
+} from '../schemas/teacher-application.schemas';
 
 const BCRYPT_ROUNDS = Number(process.env['BCRYPT_ROUNDS'] || 12);
 const REJECTION_COOLDOWN_DAYS = 30;
@@ -325,5 +331,360 @@ export class TeacherApplicationService {
       throw new ApiError(404, 'طلب الانضمام غير موجود', ErrorCodes.NOT_FOUND);
     }
     return app;
+  }
+
+  // -------------------------------------------------------------------------
+  // Phase 2 — workflow actions
+  // -------------------------------------------------------------------------
+  //
+  // All three actions run inside a single pg transaction with SELECT … FOR
+  // UPDATE on the application row. This guarantees:
+  //   - no double-approval / double-reject race between concurrent admins
+  //   - any failure mid-flow rolls back EVERY write (users, wallet,
+  //     subscription, application update) atomically
+  //
+  // Side-effects that can't participate in a pg transaction (QR file write,
+  // Phase 4 push/email) run AFTER COMMIT, best-effort.
+
+  /**
+   * Approve a pending or needs_more_info application. Creates a teacher user,
+   * a wallet, an optional free subscription, then marks the application
+   * approved and NULLs out the password_hash (it now lives on users.password).
+   */
+  static async approve(
+    applicationId: string,
+    approvedById: string,
+    input: TeacherApplicationApproveInput
+  ): Promise<{
+    applicationId: string;
+    userId: string;
+    teacherEmail: string;
+  }> {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      // 1. Lock the application row against concurrent action.
+      const lockRes = await client.query<{
+        id: string;
+        full_name: string;
+        email: string;
+        phone: string;
+        password_hash: string | null;
+        gender: 'male' | 'female';
+        birth_date: string;
+        city: string;
+        area: string;
+        bio: string | null;
+        years_of_experience: number;
+        application_status: TeacherApplicationStatus;
+      }>(
+        `SELECT id, full_name, email, phone, password_hash,
+                gender, birth_date, city, area, bio, years_of_experience,
+                application_status
+           FROM teacher_applications
+          WHERE id = $1 AND deleted_at IS NULL
+          FOR UPDATE`,
+        [applicationId]
+      );
+      const app = lockRes.rows[0];
+      if (!app) {
+        throw new ApiError(404, 'طلب الانضمام غير موجود', ErrorCodes.NOT_FOUND);
+      }
+
+      // 2. Idempotency / state guard.
+      if (app.application_status === TeacherApplicationStatus.APPROVED) {
+        throw new ApiError(
+          409,
+          'تم الموافقة على هذا الطلب مسبقاً',
+          ErrorCodes.ALREADY_PROCESSED
+        );
+      }
+      if (app.application_status === TeacherApplicationStatus.REJECTED) {
+        throw new ApiError(
+          400,
+          'لا يمكن الموافقة على طلب مرفوض',
+          ErrorCodes.BUSINESS_RULE
+        );
+      }
+      // pending and needs_more_info are both allowed here.
+
+      // 3. password_hash sanity — Phase 2 expects it present. Phase 3+
+      //    will NULL it after the first approval, so any approved row
+      //    after that point won't reach here.
+      if (!app.password_hash) {
+        throw new ApiError(
+          500,
+          'بيانات الطلب غير مكتملة',
+          ErrorCodes.INTERNAL_ERROR
+        );
+      }
+
+      // 4. Final email-collision check inside the transaction (defence in
+      //    depth — Phase 1's create already checks at submit time, but a new
+      //    user row could have been added since).
+      const userCheck = await client.query<{ id: string }>(
+        `SELECT id FROM users WHERE email = $1 AND deleted_at IS NULL LIMIT 1`,
+        [app.email]
+      );
+      if (userCheck.rows.length > 0) {
+        throw new ApiError(
+          409,
+          'يوجد حساب بنفس البريد الإلكتروني مسبقاً',
+          ErrorCodes.EMAIL_ALREADY_EXISTS
+        );
+      }
+
+      // 5. Create the teacher user. Direct INSERT (not UserModel.create)
+      //    because we need to participate in the outer transaction AND we
+      //    already have a bcrypt hash; UserModel.create would double-hash.
+      const address = `${app.city}, ${app.area}`;
+      const newUserRes = await client.query<{ id: string }>(
+        `INSERT INTO users (
+            name, email, password,
+            user_type, status,
+            auth_provider, email_verified,
+            phone, address, bio, experience_years,
+            gender, birth_date, city
+          ) VALUES (
+            $1, LOWER($2), $3,
+            'teacher', 'active',
+            'email', true,
+            $4, $5, $6, $7,
+            $8, $9, $10
+          )
+          RETURNING id`,
+        [
+          app.full_name,
+          app.email,
+          app.password_hash,
+          app.phone,
+          address,
+          app.bio,
+          app.years_of_experience,
+          app.gender,
+          app.birth_date,
+          app.city,
+        ]
+      );
+      const newUserId = newUserRes.rows[0]!.id;
+
+      // 6. Wallet — every teacher gets one with zero balance.
+      await client.query(
+        `INSERT INTO teacher_wallets (teacher_id, balance) VALUES ($1, 0)`,
+        [newUserId]
+      );
+
+      // 7. Free subscription — best-effort. We INSERT directly (no model
+      //    call) so it stays inside the transaction.
+      const freePkgRes = await client.query<{
+        id: string;
+        duration_days: number;
+      }>(
+        `SELECT id, duration_days
+           FROM subscription_packages
+          WHERE is_free = true
+            AND is_active = true
+            AND deleted_at IS NULL
+          ORDER BY created_at DESC
+          LIMIT 1`
+      );
+      if (freePkgRes.rows.length > 0) {
+        const pkg = freePkgRes.rows[0]!;
+        const startDate = new Date();
+        const endDate = new Date(startDate);
+        endDate.setDate(
+          endDate.getDate() + Number(pkg.duration_days || 30)
+        );
+        await client.query(
+          `INSERT INTO teacher_subscriptions
+             (teacher_id, subscription_package_id, start_date, end_date)
+           VALUES ($1, $2, $3, $4)`,
+          [newUserId, pkg.id, startDate, endDate]
+        );
+      } else {
+        logger.info(
+          { applicationId },
+          'approve: no active free subscription package configured — skipping'
+        );
+      }
+
+      // 8. Finalise the application — set status, audit, and NULL the
+      //    hash now that it lives on users.password (Decision 4).
+      const adminNotes = input?.adminNotes ?? null;
+      await client.query(
+        `UPDATE teacher_applications
+            SET application_status = 'approved',
+                approved_by        = $1,
+                approved_at        = NOW(),
+                password_hash      = NULL,
+                admin_notes        = COALESCE($2, admin_notes)
+          WHERE id = $3`,
+        [approvedById, adminNotes, applicationId]
+      );
+
+      await client.query('COMMIT');
+
+      logger.info(
+        { applicationId, newUserId, approvedById },
+        'teacher application approved — user provisioned'
+      );
+
+      // 9. Side-effects that can't be inside the transaction. Failures are
+      //    logged but do not undo the approval — a missing QR file can be
+      //    regenerated by the next teacher login or by an admin tool.
+      try {
+        await QrService.ensureTeacherQr(newUserId);
+      } catch (err) {
+        logger.warn(
+          { err, newUserId, applicationId },
+          'post-approval QR generation failed (best-effort)'
+        );
+      }
+
+      return {
+        applicationId,
+        userId: newUserId,
+        teacherEmail: app.email,
+      };
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * Reject a pending or needs_more_info application. The rejection_reason
+   * will be shown to the applicant (Phase 4 notification); admin_notes is
+   * private to the dashboard.
+   */
+  static async reject(
+    applicationId: string,
+    rejectedById: string,
+    input: TeacherApplicationRejectInput
+  ): Promise<void> {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      const lockRes = await client.query<{
+        application_status: TeacherApplicationStatus;
+      }>(
+        `SELECT application_status
+           FROM teacher_applications
+          WHERE id = $1 AND deleted_at IS NULL
+          FOR UPDATE`,
+        [applicationId]
+      );
+      const row = lockRes.rows[0];
+      if (!row) {
+        throw new ApiError(404, 'طلب الانضمام غير موجود', ErrorCodes.NOT_FOUND);
+      }
+
+      if (row.application_status === TeacherApplicationStatus.APPROVED) {
+        throw new ApiError(
+          409,
+          'لا يمكن رفض طلب تم الموافقة عليه',
+          ErrorCodes.ALREADY_PROCESSED
+        );
+      }
+      if (row.application_status === TeacherApplicationStatus.REJECTED) {
+        throw new ApiError(
+          409,
+          'تم رفض هذا الطلب مسبقاً',
+          ErrorCodes.ALREADY_PROCESSED
+        );
+      }
+
+      await client.query(
+        `UPDATE teacher_applications
+            SET application_status = 'rejected',
+                rejection_reason   = $1,
+                admin_notes        = COALESCE($2, admin_notes),
+                rejected_at        = NOW(),
+                approved_by        = $3
+          WHERE id = $4`,
+        [
+          input.rejectionReason,
+          input.adminNotes ?? null,
+          rejectedById,
+          applicationId,
+        ]
+      );
+
+      await client.query('COMMIT');
+
+      logger.info(
+        { applicationId, rejectedById },
+        'teacher application rejected'
+      );
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * Move a pending application to needs_more_info with admin notes the
+   * applicant will see. Only allowed from 'pending' to avoid bouncing an
+   * application around the queue.
+   */
+  static async requestMoreInfo(
+    applicationId: string,
+    requestedById: string,
+    input: TeacherApplicationNeedsMoreInfoInput
+  ): Promise<void> {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      const lockRes = await client.query<{
+        application_status: TeacherApplicationStatus;
+      }>(
+        `SELECT application_status
+           FROM teacher_applications
+          WHERE id = $1 AND deleted_at IS NULL
+          FOR UPDATE`,
+        [applicationId]
+      );
+      const row = lockRes.rows[0];
+      if (!row) {
+        throw new ApiError(404, 'طلب الانضمام غير موجود', ErrorCodes.NOT_FOUND);
+      }
+      if (row.application_status !== TeacherApplicationStatus.PENDING) {
+        throw new ApiError(
+          400,
+          'يمكن طلب معلومات إضافية فقط للطلبات في انتظار المراجعة',
+          ErrorCodes.BUSINESS_RULE,
+          { currentStatus: row.application_status }
+        );
+      }
+
+      await client.query(
+        `UPDATE teacher_applications
+            SET application_status  = 'needs_more_info',
+                admin_notes         = $1,
+                needs_more_info_at  = NOW(),
+                approved_by         = $2
+          WHERE id = $3`,
+        [input.adminNotes, requestedById, applicationId]
+      );
+
+      await client.query('COMMIT');
+
+      logger.info(
+        { applicationId, requestedById },
+        'teacher application moved to needs_more_info'
+      );
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw err;
+    } finally {
+      client.release();
+    }
   }
 }

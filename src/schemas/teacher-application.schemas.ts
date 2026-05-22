@@ -124,3 +124,58 @@ export type TeacherApplicationListQuery = z.infer<typeof teacherApplicationListQ
 // Reuse the shared `{ id }` UUID param schema so the route parser produces a
 // fully-validated UUID before reaching the handler.
 export const teacherApplicationIdParamSchema = idParamSchema;
+
+// ---------------------------------------------------------------------------
+// Super-admin — actions (approve / reject / needs-more-info)
+// ---------------------------------------------------------------------------
+
+// Approve has an optional `adminNotes` only. The body itself is optional —
+// `PATCH /:id/approve` with no body is the common case.
+export const teacherApplicationApproveBodySchema = z
+  .object({
+    adminNotes: z
+      .string()
+      .trim()
+      .max(2000, 'الملاحظات طويلة جداً')
+      .transform((v) => (v === '' ? undefined : v))
+      .optional(),
+  })
+  .optional();
+
+export type TeacherApplicationApproveInput = z.infer<
+  typeof teacherApplicationApproveBodySchema
+>;
+
+// Reject — rejection_reason is mandatory (the teacher will see it). Admin
+// notes are private and optional.
+export const teacherApplicationRejectBodySchema = z.object({
+  rejectionReason: z
+    .string()
+    .trim()
+    .min(5, 'سبب الرفض مطلوب (5 أحرف على الأقل)')
+    .max(2000, 'سبب الرفض طويل جداً'),
+  adminNotes: z
+    .string()
+    .trim()
+    .max(2000, 'الملاحظات طويلة جداً')
+    .transform((v) => (v === '' ? undefined : v))
+    .optional(),
+});
+
+export type TeacherApplicationRejectInput = z.infer<
+  typeof teacherApplicationRejectBodySchema
+>;
+
+// Needs-more-info — the admin spells out what's missing. The applicant will
+// see this through the (Phase 4) notification + email.
+export const teacherApplicationNeedsMoreInfoBodySchema = z.object({
+  adminNotes: z
+    .string()
+    .trim()
+    .min(5, 'يرجى تحديد المعلومات المطلوبة (5 أحرف على الأقل)')
+    .max(2000, 'النص طويل جداً'),
+});
+
+export type TeacherApplicationNeedsMoreInfoInput = z.infer<
+  typeof teacherApplicationNeedsMoreInfoBodySchema
+>;

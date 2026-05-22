@@ -145,4 +145,50 @@ describe('Teacher Applications — Phase 1', () => {
       expect(res.body.success).toBe(false);
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // Phase 2 — workflow action routes
+  // ---------------------------------------------------------------------------
+
+  describe('Phase 2 actions — auth gate', () => {
+    const dummyId = '00000000-0000-0000-0000-000000000000';
+
+    it('PATCH /approve without a token → 401', async () => {
+      const res = await request(app)
+        .patch(`/api/super-admin/teacher-applications/${dummyId}/approve`)
+        .send({});
+      expect(res.status).toBe(401);
+    });
+
+    it('PATCH /reject without a token → 401', async () => {
+      const res = await request(app)
+        .patch(`/api/super-admin/teacher-applications/${dummyId}/reject`)
+        .send({ rejectionReason: 'some reason' });
+      expect(res.status).toBe(401);
+    });
+
+    it('PATCH /request-more-info without a token → 401', async () => {
+      const res = await request(app)
+        .patch(
+          `/api/super-admin/teacher-applications/${dummyId}/request-more-info`,
+        )
+        .send({ adminNotes: 'need more info' });
+      expect(res.status).toBe(401);
+    });
+  });
+
+  describe('Phase 2 actions — junk token returns 401, not 400 (auth before validate)', () => {
+    const dummyId = '00000000-0000-0000-0000-000000000000';
+
+    it('PATCH /reject with a junk token → 401', async () => {
+      const res = await request(app)
+        .patch(`/api/super-admin/teacher-applications/${dummyId}/reject`)
+        .set('Authorization', 'Bearer not-a-real-token')
+        .send({});
+      // Auth middleware runs first. 401 means the gate is correctly in front
+      // of validate() — even an empty body cannot leak the validation errors.
+      expect(res.status).toBe(401);
+      expect(res.body.errors[0].code).toBe('TOKEN_INVALID');
+    });
+  });
 });
