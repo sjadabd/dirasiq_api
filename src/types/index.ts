@@ -987,3 +987,91 @@ export interface UpdateNewsRequest {
   newsType?: NewsType;
   isActive?: boolean;
 }
+
+// ===========================================================================
+// Teacher Applications (onboarding — Phase 1)
+// ===========================================================================
+
+export enum TeacherApplicationStatus {
+  PENDING = 'pending',
+  APPROVED = 'approved',
+  REJECTED = 'rejected',
+  NEEDS_MORE_INFO = 'needs_more_info',
+}
+
+export interface TeacherApplication {
+  id: string;
+  firstName: string;
+  lastName: string;
+  fullName: string;
+  phone: string;
+  email: string;
+  // Hash is intentionally never serialised back to the client. The row shape
+  // returned by the model strips it; the field is present here only so the
+  // service layer can move it into users.password on approval (Phase 2).
+  passwordHash?: string | null;
+
+  gender: 'male' | 'female';
+  birthDate: string; // ISO date (YYYY-MM-DD)
+
+  city: string;
+  area: string;
+
+  subject: string;
+  teachingStage: string;
+  yearsOfExperience: number;
+  currentWorkplace: string | null;
+  hasPhysicalCourses: boolean;
+  estimatedStudentCount: number;
+
+  bio: string | null;
+
+  facebookUrl: string | null;
+  instagramUrl: string | null;
+  telegramUrl: string | null;
+  tiktokUrl: string | null;
+  youtubeUrl: string | null;
+
+  profileImage: string | null;
+  certificateImage: string | null;
+  nationalIdImage: string | null;
+  optionalAttachment: string | null;
+  introVideoUrl: string | null;
+
+  applicationStatus: TeacherApplicationStatus;
+  rejectionReason: string | null;
+  adminNotes: string | null;
+
+  approvedBy: string | null;
+  approvedAt: string | null;
+  rejectedAt: string | null;
+  needsMoreInfoAt: string | null;
+
+  createdAt: string;
+  updatedAt: string;
+  deletedAt: string | null;
+}
+
+export interface CreateTeacherApplicationRequest {
+  firstName: string;
+  lastName: string;
+  phone: string;
+  email: string;
+  password: string;
+  gender: 'male' | 'female';
+  birthDate: string;
+  city: string;
+  area: string;
+  subject: string;
+  teachingStage: string;
+  yearsOfExperience: number;
+  currentWorkplace?: string;
+  hasPhysicalCourses: boolean;
+  estimatedStudentCount: number;
+  bio?: string;
+  facebookUrl?: string;
+  instagramUrl?: string;
+  telegramUrl?: string;
+  tiktokUrl?: string;
+  youtubeUrl?: string;
+}

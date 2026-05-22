@@ -21,7 +21,9 @@ import newsRoutes from './routes/super_admin/news.routes';
 import superAdminSettingsRoutes from './routes/super_admin/settings.routes';
 import subscriptionPackageRoutes from './routes/super_admin/subscription-package.routes';
 import superAdminTeacherRoutes from './routes/super_admin/teacher.routes';
+import superAdminTeacherApplicationRoutes from './routes/super_admin/teacher-application.routes';
 import teacherRoutes from './routes/teacher';
+import teacherApplicationRoutes from './routes/teacher-application.routes';
 import teacherSearchRoutes from './routes/teacher-search.routes';
 import courseRoutes from './routes/teacher/course.routes';
 import subjectRoutes from './routes/teacher/subject.routes';
@@ -291,7 +293,9 @@ app.use('/api/notifications', notificationRoutes);
 app.use('/api/user', userOnesignalRoutes);
 app.use('/api/super-admin/dashboard', superAdminDashboardRoutes);
 app.use('/api/super-admin/teachers', superAdminTeacherRoutes);
+app.use('/api/super-admin/teacher-applications', superAdminTeacherApplicationRoutes);
 app.use('/api/super-admin/settings', superAdminSettingsRoutes);
+app.use('/api/teacher-applications', teacherApplicationRoutes);
 app.use('/api/payments/wayl', waylRoutes);
 
 // Header-gated internal endpoints consumed by other in-house services

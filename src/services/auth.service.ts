@@ -6,7 +6,6 @@ import { GradeModel } from '../models/grade.model';
 import { StudentGradeModel } from '../models/student-grade.model';
 import { SubscriptionPackageModel } from '../models/subscription-package.model';
 import { TeacherGradeModel } from '../models/teacher-grade.model';
-import { TeacherReferralModel } from '../models/teacher-referral.model';
 import { TeacherSubscriptionModel } from '../models/teacher-subscription.model';
 import { TokenModel } from '../models/token.model';
 import { UserModel } from '../models/user.model';
@@ -104,68 +103,33 @@ export class AuthService {
       );
     }
 
-    // New user — create with a random throwaway password (auth happens via
-    // the apple provider id, not the password). Then return a fresh session.
+    // No matching user — sign-up path. Teacher provisioning via Apple is
+    // closed (Phase 1 onboarding policy); teachers must come through the
+    // application flow at POST /api/teacher-applications. Students continue
+    // to be created here.
+    if (userType === 'teacher') {
+      throw new ApiError(
+        403,
+        'يرجى تقديم طلب الانضمام كأستاذ أولاً، وبعد الموافقة يمكنك تسجيل الدخول.',
+        ErrorCodes.BUSINESS_RULE
+      );
+    }
+
+    // Student provisioning. Throwaway password — auth runs through Apple.
     const tempPassword = `apple_${sub}_${randomUUID()}`;
     const hashedPassword = await bcrypt.hash(tempPassword, 12);
-
-    let newUser: User;
-    if (userType === 'teacher') {
-      const created = await UserModel.create({
-        name,
-        email,
-        password: hashedPassword,
-        userType: UserType.TEACHER,
-        status: UserStatus.ACTIVE,
-        authProvider: 'apple',
-        oauthProviderId: sub,
-        phone: '',
-        address: '',
-        bio: '',
-        experienceYears: 0,
-        deviceInfo: 'Apple SignIn',
-      });
-      newUser = created.user;
-
-      try {
-        const freePackage = await SubscriptionPackageModel.getFreePackage();
-        if (freePackage) {
-          const startDate = new Date();
-          const endDate = new Date(startDate);
-          endDate.setDate(
-            endDate.getDate() + Number(freePackage.durationDays || 30)
-          );
-          await TeacherSubscriptionModel.create({
-            teacherId: newUser.id,
-            subscriptionPackageId: freePackage.id,
-            startDate,
-            endDate,
-          });
-        }
-      } catch (err) {
-        logger.warn({ err }, 'failed to auto-create free subscription for apple teacher');
-      }
-
-      try {
-        await QrService.ensureTeacherQr(newUser.id);
-      } catch (err) {
-        logger.warn({ err }, 'auto-ensure teacher QR (apple new teacher) failed');
-      }
-    } else {
-      const created = await UserModel.create({
-        name,
-        email,
-        password: hashedPassword,
-        userType: UserType.STUDENT,
-        status: UserStatus.ACTIVE,
-        authProvider: 'apple',
-        oauthProviderId: sub,
-        studentPhone: '',
-        parentPhone: '',
-        schoolName: '',
-      });
-      newUser = created.user;
-    }
+    const { user: newUser } = await UserModel.create({
+      name,
+      email,
+      password: hashedPassword,
+      userType: UserType.STUDENT,
+      status: UserStatus.ACTIVE,
+      authProvider: 'apple',
+      oauthProviderId: sub,
+      studentPhone: '',
+      parentPhone: '',
+      schoolName: '',
+    });
 
     return this.buildOAuthSession(newUser, appleData.oneSignalPlayerId, true);
   }
@@ -784,90 +748,33 @@ export class AuthService {
       );
     }
 
-    // New user — provider id is the auth method; the password is throwaway.
+    // No matching user — this is a sign-up. Teacher provisioning via Google
+    // is closed (Phase 1 onboarding policy): teachers must come through the
+    // application flow at POST /api/teacher-applications. Students continue
+    // to be created here.
+    if (userType === 'teacher') {
+      throw new ApiError(
+        403,
+        'يرجى تقديم طلب الانضمام كأستاذ أولاً، وبعد الموافقة يمكنك تسجيل الدخول.',
+        ErrorCodes.BUSINESS_RULE
+      );
+    }
+
+    // Student provisioning. Password is throwaway — auth runs through Google.
     const tempPassword = `google_${sub}_${Date.now()}`;
     const hashedPassword = await bcrypt.hash(tempPassword, 12);
-
-    let newUser: User;
-    if (userType === 'teacher') {
-      const created = await UserModel.create({
-        name,
-        email,
-        password: hashedPassword,
-        userType: UserType.TEACHER,
-        status: UserStatus.ACTIVE,
-        authProvider: 'google',
-        oauthProviderId: sub,
-        phone: '',
-        address: '',
-        bio: '',
-        experienceYears: 0,
-        deviceInfo: 'Google OAuth',
-      });
-      newUser = created.user;
-
-      // Best-effort referral linking. Never fail the signup over this.
-      try {
-        const referralCode = (googleData as any).referralCode as
-          | string
-          | undefined;
-        if (referralCode && typeof referralCode === 'string') {
-          const referrer = await UserModel.findById(referralCode);
-          if (
-            referrer &&
-            referrer.userType === UserType.TEACHER &&
-            referrer.id !== newUser.id
-          ) {
-            await TeacherReferralModel.createPending({
-              referrerTeacherId: referrer.id,
-              referredTeacherId: newUser.id,
-              referralCodeUsed: referralCode,
-            });
-          }
-        }
-      } catch (err) {
-        logger.warn({ err }, 'failed to create teacher referral for google auth');
-      }
-
-      try {
-        const freePackage = await SubscriptionPackageModel.getFreePackage();
-        if (freePackage) {
-          const startDate = new Date();
-          const endDate = new Date(startDate);
-          endDate.setDate(
-            endDate.getDate() + Number(freePackage.durationDays || 30)
-          );
-          await TeacherSubscriptionModel.create({
-            teacherId: newUser.id,
-            subscriptionPackageId: freePackage.id,
-            startDate,
-            endDate,
-          });
-        }
-      } catch (err) {
-        logger.warn({ err }, 'failed to auto-create free subscription for google teacher');
-      }
-
-      try {
-        await QrService.ensureTeacherQr(newUser.id);
-      } catch (err) {
-        logger.warn({ err }, 'auto-ensure teacher QR (google new teacher) failed');
-      }
-    } else {
-      const created = await UserModel.create({
-        name,
-        email,
-        password: hashedPassword,
-        userType: UserType.STUDENT,
-        status: UserStatus.ACTIVE,
-        authProvider: 'google',
-        oauthProviderId: sub,
-        studentPhone: '',
-        parentPhone: '',
-        schoolName: '',
-      });
-      newUser = created.user;
-    }
+    const { user: newUser } = await UserModel.create({
+      name,
+      email,
+      password: hashedPassword,
+      userType: UserType.STUDENT,
+      status: UserStatus.ACTIVE,
+      authProvider: 'google',
+      oauthProviderId: sub,
+      studentPhone: '',
+      parentPhone: '',
+      schoolName: '',
+    });
 
     return this.buildOAuthSession(newUser, googleData.oneSignalPlayerId, true);
   }

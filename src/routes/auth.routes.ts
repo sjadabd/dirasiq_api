@@ -1,10 +1,11 @@
 import { Router } from 'express';
 
 import { AuthController } from '../controllers/auth.controller';
-import { authenticateToken } from '../middleware/auth.middleware';
+import { authenticateToken, requireRole } from '../middleware/auth.middleware';
 import { requireBootstrapToken } from '../middleware/bootstrap.middleware';
 import { validate } from '../middleware/validate.middleware';
 import { GoogleAuthService } from '../services/google-auth.service';
+import { UserType } from '../types';
 import { ApiError, ErrorCodes } from '../utils/api-error';
 import { asyncHandler } from '../utils/async-handler';
 import { ok } from '../utils/response.util';
@@ -37,8 +38,14 @@ router.post(
   asyncHandler(AuthController.registerSuperAdmin)
 );
 
+// Direct teacher registration is now restricted to super-admins. The default
+// path for any new teacher is the application flow under
+// /api/teacher-applications (Phase 1) — super-admins retain this endpoint as
+// an override for urgent or migrated accounts.
 router.post(
   '/register/teacher',
+  authenticateToken,
+  requireRole(UserType.SUPER_ADMIN),
   validate({ body: registerTeacherSchema }),
   asyncHandler(AuthController.registerTeacher)
 );
