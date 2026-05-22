@@ -238,6 +238,64 @@ describe('Teacher Applications — Phase 1', () => {
     });
   });
 
+  describe('Phase 4 — submit accepts optional oneSignalPlayerId', () => {
+    it('schema rejects only the genuinely-missing fields when oneSignalPlayerId is sent', async () => {
+      const res = await request(app)
+        .post('/api/teacher-applications')
+        .send({
+          firstName: 'Layla',
+          lastName: 'Hassan',
+          phone: '07700000123',
+          email: 'phase4-schema@example.com',
+          password: 'GoodPwd1',
+          gender: 'female',
+          birthDate: '1995-06-12',
+          city: 'بغداد',
+          area: 'الكرخ',
+          subject: 'الإنجليزية',
+          teachingStage: 'الإعدادي',
+          yearsOfExperience: 3,
+          hasPhysicalCourses: false,
+          estimatedStudentCount: 10,
+          oneSignalPlayerId: 'fake-player-id-from-flutter',
+        });
+      // Either 201 (production-style — schema accepts), or one of:
+      //   429 RATE_LIMITED  → noisy CI parallelism (rate limiter exhausted)
+      //   409 ALREADY_EXISTS / EMAIL_ALREADY_EXISTS  → repeat run against same DB
+      // In all cases the schema MUST NOT complain about body.oneSignalPlayerId.
+      const fields = Array.isArray(res.body?.errors)
+        ? (res.body.errors as { field?: string }[]).map((e) => e.field)
+        : [];
+      expect(fields).not.toContain('body.oneSignalPlayerId');
+    });
+
+    it('schema rejects an oneSignalPlayerId longer than 100 chars', async () => {
+      const tooLong = 'x'.repeat(101);
+      const res = await request(app)
+        .post('/api/teacher-applications')
+        .send({
+          firstName: 'Layla',
+          lastName: 'Hassan',
+          phone: '07700000124',
+          email: 'phase4-len@example.com',
+          password: 'GoodPwd1',
+          gender: 'female',
+          birthDate: '1995-06-12',
+          city: 'بغداد',
+          area: 'الكرخ',
+          subject: 'الإنجليزية',
+          teachingStage: 'الإعدادي',
+          yearsOfExperience: 3,
+          hasPhysicalCourses: false,
+          estimatedStudentCount: 10,
+          oneSignalPlayerId: tooLong,
+        });
+      expect(res.status).toBe(400);
+      const fields = (res.body.errors as { field: string }[]).map((e) => e.field);
+      expect(fields).toContain('body.oneSignalPlayerId');
+    });
+  });
+
   describe('Phase 3 — file-signature util (magic-byte detection)', () => {
     // Direct unit tests on the detection helper — proves a renamed
     // executable cannot ride through as image/jpeg.

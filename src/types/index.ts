@@ -1074,6 +1074,9 @@ export interface CreateTeacherApplicationRequest {
   telegramUrl?: string;
   tiktokUrl?: string;
   youtubeUrl?: string;
+  // Optional — used to push the pre-approval lifecycle events directly to
+  // the applicant's device. Cleared on approval.
+  oneSignalPlayerId?: string;
 }
 
 // ---------------------------------------------------------------------------

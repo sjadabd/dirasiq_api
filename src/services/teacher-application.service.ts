@@ -23,12 +23,22 @@ import { ApiError, ErrorCodes } from '../utils/api-error';
 import { logger } from '../utils/logger';
 import { signUploadToken } from '../utils/upload-token';
 import { QrService } from './qr.service';
+import { TeacherApplicationNotifyService } from './teacher-application-notify.service';
 import type {
   TeacherApplicationCreateInput,
   TeacherApplicationApproveInput,
   TeacherApplicationRejectInput,
   TeacherApplicationNeedsMoreInfoInput,
 } from '../schemas/teacher-application.schemas';
+
+// Tiny helper — fire a notify hook without awaiting (post-COMMIT), with a
+// catch that logs but never re-throws. Keeps the service layer free of
+// ad-hoc try/wraps at every call site.
+function fireNotify(p: Promise<void>, context: Record<string, unknown>): void {
+  p.catch((err) => {
+    logger.warn({ err, ...context }, 'teacher-application notify hook crashed');
+  });
+}
 
 const BCRYPT_ROUNDS = Number(process.env['BCRYPT_ROUNDS'] || 12);
 const REJECTION_COOLDOWN_DAYS = 30;
@@ -216,7 +226,8 @@ export class TeacherApplicationService {
            subject, teaching_stage, years_of_experience, current_workplace,
            has_physical_courses, estimated_student_count,
            bio,
-           facebook_url, instagram_url, telegram_url, tiktok_url, youtube_url
+           facebook_url, instagram_url, telegram_url, tiktok_url, youtube_url,
+           onesignal_player_id
          ) VALUES (
            $1,$2,$3,
            $4,$5,$6,
@@ -224,7 +235,8 @@ export class TeacherApplicationService {
            $11,$12,$13,$14,
            $15,$16,
            $17,
-           $18,$19,$20,$21,$22
+           $18,$19,$20,$21,$22,
+           $23
          )
          RETURNING id, application_status`,
         [
@@ -250,6 +262,7 @@ export class TeacherApplicationService {
           input.telegramUrl ?? null,
           input.tiktokUrl ?? null,
           input.youtubeUrl ?? null,
+          input.oneSignalPlayerId ?? null,
         ]
       );
 
@@ -260,6 +273,19 @@ export class TeacherApplicationService {
       // POST /api/teacher-applications/<id>/files within 30 minutes.
       const tokenInfo = signUploadToken(created.id);
       logger.info({ applicationId: created.id }, 'teacher application submitted');
+
+      // Phase 4: fire-and-forget welcome (push + email). Failure here must
+      // never block the response — the application is already persisted.
+      fireNotify(
+        TeacherApplicationNotifyService.onSubmitted({
+          applicationId: created.id,
+          email,
+          fullName,
+          oneSignalPlayerId: input.oneSignalPlayerId ?? null,
+        }),
+        { applicationId: created.id, hook: 'onSubmitted' }
+      );
+
       return {
         id: created.id,
         applicationStatus: created.application_status,
@@ -555,6 +581,18 @@ export class TeacherApplicationService {
         );
       }
 
+      // Phase 4: fire-and-forget welcome (push via external_user_id +
+      // approval email). Caller already has its response on the way back.
+      fireNotify(
+        TeacherApplicationNotifyService.onApproved({
+          applicationId,
+          userId: newUserId,
+          email: app.email,
+          fullName: app.full_name,
+        }),
+        { applicationId, hook: 'onApproved' }
+      );
+
       return {
         applicationId,
         userId: newUserId,
@@ -584,8 +622,11 @@ export class TeacherApplicationService {
 
       const lockRes = await client.query<{
         application_status: TeacherApplicationStatus;
+        email: string;
+        full_name: string;
+        onesignal_player_id: string | null;
       }>(
-        `SELECT application_status
+        `SELECT application_status, email, full_name, onesignal_player_id
            FROM teacher_applications
           WHERE id = $1 AND deleted_at IS NULL
           FOR UPDATE`,
@@ -633,6 +674,18 @@ export class TeacherApplicationService {
         { applicationId, rejectedById },
         'teacher application rejected'
       );
+
+      // Phase 4: rejection notify (email always; push if we have a player id).
+      fireNotify(
+        TeacherApplicationNotifyService.onRejected({
+          applicationId,
+          email: row.email,
+          fullName: row.full_name,
+          rejectionReason: input.rejectionReason,
+          oneSignalPlayerId: row.onesignal_player_id,
+        }),
+        { applicationId, hook: 'onRejected' }
+      );
     } catch (err) {
       await client.query('ROLLBACK').catch(() => undefined);
       throw err;
@@ -657,8 +710,11 @@ export class TeacherApplicationService {
 
       const lockRes = await client.query<{
         application_status: TeacherApplicationStatus;
+        email: string;
+        full_name: string;
+        onesignal_player_id: string | null;
       }>(
-        `SELECT application_status
+        `SELECT application_status, email, full_name, onesignal_player_id
            FROM teacher_applications
           WHERE id = $1 AND deleted_at IS NULL
           FOR UPDATE`,
@@ -692,6 +748,18 @@ export class TeacherApplicationService {
       logger.info(
         { applicationId, requestedById },
         'teacher application moved to needs_more_info'
+      );
+
+      // Phase 4: needs-more-info notify (email always; push if device known).
+      fireNotify(
+        TeacherApplicationNotifyService.onNeedsMoreInfo({
+          applicationId,
+          email: row.email,
+          fullName: row.full_name,
+          adminNotes: input.adminNotes,
+          oneSignalPlayerId: row.onesignal_player_id,
+        }),
+        { applicationId, hook: 'onNeedsMoreInfo' }
       );
     } catch (err) {
       await client.query('ROLLBACK').catch(() => undefined);

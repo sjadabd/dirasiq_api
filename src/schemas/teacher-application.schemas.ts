@@ -99,6 +99,16 @@ export const teacherApplicationCreateSchema = z.object({
   telegramUrl: socialHandle,
   tiktokUrl: socialHandle,
   youtubeUrl: socialHandle,
+
+  // Phase 4: device handle for pre-approval push notifications. The Flutter
+  // app sends this when OneSignal has registered a player id; it stays
+  // optional so the submit endpoint still works for web testers.
+  oneSignalPlayerId: z
+    .string()
+    .trim()
+    .max(100, 'معرّف OneSignal غير صحيح')
+    .transform((v) => (v === '' ? undefined : v))
+    .optional(),
 });
 
 export type TeacherApplicationCreateInput = z.infer<typeof teacherApplicationCreateSchema>;
