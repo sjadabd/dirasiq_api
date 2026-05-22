@@ -39,6 +39,73 @@ const shell = (
 });
 
 // ---------------------------------------------------------------------------
+// 0. EMAIL VERIFICATION — Phase 8. Sent before the application is queued.
+// ---------------------------------------------------------------------------
+export function applicationEmailVerificationCodeEmail(args: {
+  fullName: string;
+  code: string;
+  expiresInMinutes: number;
+}): BuiltEmail {
+  const subject = `رمز التحقق لطلب الانضمام إلى ${BRAND}`;
+  const lead = `مرحباً ${args.fullName}،`;
+
+  const html = `<p style="font-size: 16px; font-weight: 600;">${lead}</p>
+<p>شكراً لتقديمك طلب الانضمام كأستاذ إلى منصة ${BRAND}.</p>
+<p>للمتابعة، يرجى إدخال رمز التحقق التالي داخل التطبيق أو على الموقع:</p>
+<div style="background: #f4f4f4; padding: 20px; text-align: center; margin: 20px 0; border-radius: 8px;">
+  <h1 style="color: ${BRAND_PRIMARY}; font-size: 32px; margin: 0; letter-spacing: 4px;">${args.code}</h1>
+</div>
+<p>هذا الرمز صالح لمدة ${args.expiresInMinutes} دقيقة فقط.</p>
+<p style="color: #6b7280; font-size: 13px;">إذا لم تقم بتقديم طلب، يمكنك تجاهل هذه الرسالة.</p>`;
+
+  const text = [
+    lead,
+    '',
+    `شكراً لتقديمك طلب الانضمام كأستاذ إلى منصة ${BRAND}.`,
+    'للمتابعة، يرجى إدخال رمز التحقق التالي داخل التطبيق:',
+    '',
+    `  ${args.code}`,
+    '',
+    `هذا الرمز صالح لمدة ${args.expiresInMinutes} دقيقة فقط.`,
+    'إذا لم تقم بتقديم طلب، يمكنك تجاهل هذه الرسالة.',
+  ].join('\n');
+
+  const shelled = shell(html, text, BRAND_ACCENT_INFO);
+  return { subject, html: shelled.html, text: shelled.text };
+}
+
+// ---------------------------------------------------------------------------
+// 0b. SUPER-ADMIN NOTIFICATION — Phase 8. Sent when a new (verified)
+//     application arrives.
+// ---------------------------------------------------------------------------
+export function applicationReceivedForAdminEmail(args: {
+  applicantName: string;
+  subjectName: string;
+  applicationId: string;
+}): BuiltEmail {
+  const subject = `طلب انضمام أستاذ جديد — ${args.applicantName}`;
+  const html = `<p>وصل طلب انضمام جديد:</p>
+<ul style="font-size: 14px; line-height: 1.9;">
+  <li>الاسم: <strong>${escapeHtml(args.applicantName)}</strong></li>
+  <li>المادة: <strong>${escapeHtml(args.subjectName)}</strong></li>
+  <li>معرّف الطلب: <code>${escapeHtml(args.applicationId)}</code></li>
+</ul>
+<p>يرجى مراجعته من لوحة التحكم في قسم "طلبات انضمام الأساتذة".</p>`;
+
+  const text = [
+    'وصل طلب انضمام جديد:',
+    `  - الاسم: ${args.applicantName}`,
+    `  - المادة: ${args.subjectName}`,
+    `  - معرّف الطلب: ${args.applicationId}`,
+    '',
+    'يرجى مراجعته من لوحة التحكم في قسم "طلبات انضمام الأساتذة".',
+  ].join('\n');
+
+  const shelled = shell(html, text, BRAND_PRIMARY);
+  return { subject, html: shelled.html, text: shelled.text };
+}
+
+// ---------------------------------------------------------------------------
 // 1. SUBMITTED — application received.
 // ---------------------------------------------------------------------------
 export function applicationSubmittedEmail(args: {

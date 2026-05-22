@@ -18,15 +18,16 @@ describe('Teacher Applications — Phase 1', () => {
       expect(res.body.errors).toBeInstanceOf(Array);
 
       const fields = (res.body.errors as { field: string }[]).map((e) => e.field);
-      // The schema requires these top-level fields; the validator should
-      // surface a per-field error for each one.
+      // The schema requires these always-required top-level fields. Note:
+      // body.email + body.password are no longer asserted here — Phase 8
+      // makes them auth-method-dependent (only required when
+      // authProvider='email'); the dedicated Phase 8 tests below cover that
+      // case explicitly.
       expect(fields).toEqual(
         expect.arrayContaining([
           'body.firstName',
           'body.lastName',
           'body.phone',
-          'body.email',
-          'body.password',
           'body.gender',
           'body.birthDate',
           'body.city',
@@ -293,6 +294,124 @@ describe('Teacher Applications — Phase 1', () => {
       expect(res.status).toBe(400);
       const fields = (res.body.errors as { field: string }[]).map((e) => e.field);
       expect(fields).toContain('body.oneSignalPlayerId');
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Phase 8 — auth-method-aware submit + email verification + login blocking
+  // ---------------------------------------------------------------------------
+
+  describe('Phase 8 — submit defaults to email auth', () => {
+    it('omitted authProvider is accepted as "email" (back-compat) and requires email + password', async () => {
+      // Send every base field EXCEPT email/password so Zod's base parsing
+      // passes and the superRefine block actually runs. (Zod skips superRefine
+      // when base field parsing has already produced errors.)
+      const res = await request(app)
+        .post('/api/teacher-applications')
+        .send({
+          firstName: 'Layla',
+          lastName: 'Hassan',
+          phone: '07712345000',
+          gender: 'female',
+          birthDate: '1995-06-12',
+          city: 'بغداد',
+          area: 'الكرخ',
+          subject: 'الإنجليزية',
+          teachingStage: 'الإعدادي',
+          yearsOfExperience: 3,
+          hasPhysicalCourses: false,
+          estimatedStudentCount: 10,
+        });
+      expect(res.status).toBe(400);
+      const fields = (res.body.errors as { field: string }[]).map((e) => e.field);
+      // body.email + body.password should both be required since the default
+      // authProvider is "email" (back-compat with pre-Phase-8 clients).
+      expect(fields).toEqual(expect.arrayContaining(['body.email', 'body.password']));
+    });
+
+    it('authProvider="email" rejects when email or password is missing', async () => {
+      const res = await request(app)
+        .post('/api/teacher-applications')
+        .send({
+          authProvider: 'email',
+          firstName: 'Layla',
+          lastName: 'Hassan',
+          phone: '07712345001',
+          // no email, no password
+          gender: 'female',
+          birthDate: '1995-06-12',
+          city: 'بغداد',
+          area: 'الكرخ',
+          subject: 'الإنجليزية',
+          teachingStage: 'الإعدادي',
+          yearsOfExperience: 3,
+          hasPhysicalCourses: false,
+          estimatedStudentCount: 10,
+        });
+      expect(res.status).toBe(400);
+      const fields = (res.body.errors as { field: string }[]).map((e) => e.field);
+      expect(fields).toEqual(expect.arrayContaining(['body.email', 'body.password']));
+    });
+
+    it('authProvider="google" rejects when googleToken is missing', async () => {
+      const res = await request(app)
+        .post('/api/teacher-applications')
+        .send({
+          authProvider: 'google',
+          firstName: 'Layla',
+          lastName: 'Hassan',
+          phone: '07712345002',
+          gender: 'female',
+          birthDate: '1995-06-12',
+          city: 'بغداد',
+          area: 'الكرخ',
+          subject: 'الإنجليزية',
+          teachingStage: 'الإعدادي',
+          yearsOfExperience: 3,
+          hasPhysicalCourses: false,
+          estimatedStudentCount: 10,
+        });
+      expect(res.status).toBe(400);
+      const fields = (res.body.errors as { field: string }[]).map((e) => e.field);
+      expect(fields).toContain('body.googleToken');
+    });
+
+    it('schema accepts customTeachingStage as an optional string', async () => {
+      const res = await request(app)
+        .post('/api/teacher-applications')
+        .send({ customTeachingStage: 'مرحلة خاصة بالاوقاف' });
+      const fields = Array.isArray(res.body?.errors)
+        ? (res.body.errors as { field?: string }[]).map((e) => e.field)
+        : [];
+      // customTeachingStage must NOT appear in error fields (it's optional)
+      expect(fields).not.toContain('body.customTeachingStage');
+    });
+  });
+
+  describe('Phase 8 — verify-email + resend endpoints', () => {
+    const dummyAid = '00000000-0000-0000-0000-000000000000';
+
+    it('POST /:id/verify-email with bad code shape → 400 validation', async () => {
+      const res = await request(app)
+        .post(`/api/teacher-applications/${dummyAid}/verify-email`)
+        .send({ code: 'abc' });
+      expect(res.status).toBe(400);
+      const fields = (res.body.errors as { field: string }[]).map((e) => e.field);
+      expect(fields).toContain('body.code');
+    });
+
+    it('POST /:id/verify-email with bad UUID → 400 validation on params', async () => {
+      const res = await request(app)
+        .post(`/api/teacher-applications/not-a-uuid/verify-email`)
+        .send({ code: '123456' });
+      expect(res.status).toBe(400);
+    });
+
+    it('POST /:id/resend-verification with bad UUID → 400 validation', async () => {
+      const res = await request(app)
+        .post(`/api/teacher-applications/not-a-uuid/resend-verification`)
+        .send({});
+      expect(res.status).toBe(400);
     });
   });
 

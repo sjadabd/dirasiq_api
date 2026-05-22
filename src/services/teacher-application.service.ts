@@ -11,6 +11,8 @@
 // Phase 2 will add approve / reject / request-more-info actions.
 // Phase 3 will add the secure file upload pipeline.
 
+import crypto from 'crypto';
+
 import bcrypt from 'bcryptjs';
 
 import pool from '../config/database';
@@ -22,8 +24,11 @@ import {
 import { ApiError, ErrorCodes } from '../utils/api-error';
 import { logger } from '../utils/logger';
 import { signUploadToken } from '../utils/upload-token';
+import { GoogleAuthService } from './google-auth.service';
 import { QrService } from './qr.service';
 import { TeacherApplicationNotifyService } from './teacher-application-notify.service';
+import { applicationEmailVerificationCodeEmail } from './teacher-application-emails';
+import transporter from '../config/email';
 import type {
   TeacherApplicationCreateInput,
   TeacherApplicationApproveInput,
@@ -42,6 +47,39 @@ function fireNotify(p: Promise<void>, context: Record<string, unknown>): void {
 
 const BCRYPT_ROUNDS = Number(process.env['BCRYPT_ROUNDS'] || 12);
 const REJECTION_COOLDOWN_DAYS = 30;
+
+// Phase 8 — email-verification OTP settings.
+const EMAIL_OTP_EXPIRY_MINUTES = Number(process.env['EMAIL_OTP_EXPIRY_MINUTES'] || 10);
+const EMAIL_OTP_MAX_ATTEMPTS = Number(process.env['EMAIL_OTP_MAX_ATTEMPTS'] || 5);
+
+const FROM_ADDRESS =
+  process.env['EMAIL_FROM'] ||
+  process.env['EMAIL_USER'] ||
+  'mulhim@lamassu-iq.com';
+
+function generateOtp(): string {
+  // 6-digit, cryptographically random, zero-padded.
+  return (crypto.randomInt(0, 1_000_000)).toString().padStart(6, '0');
+}
+
+async function sendVerificationCodeEmail(args: {
+  to: string;
+  fullName: string;
+  code: string;
+}): Promise<void> {
+  const mail = applicationEmailVerificationCodeEmail({
+    fullName: args.fullName,
+    code: args.code,
+    expiresInMinutes: EMAIL_OTP_EXPIRY_MINUTES,
+  });
+  await transporter.sendMail({
+    from: FROM_ADDRESS,
+    to: args.to,
+    subject: mail.subject,
+    html: mail.html,
+    text: mail.text,
+  });
+}
 
 // SELECT list used by both list and detail endpoints. We never return
 // password_hash to clients — even to super-admin — there is no UI reason for
@@ -127,8 +165,18 @@ type AdminListRow = Pick<
 
 export class TeacherApplicationService {
   /**
-   * Public submission. Throws ApiError on any violation; the controller
-   * surfaces those via the canonical envelope.
+   * Public submission. Two paths depending on input.authProvider:
+   *
+   *   email  → email + password + 6-digit OTP that the applicant has to
+   *            confirm via verifyEmail() before the row counts as a
+   *            real pending application (super-admin notification + appearance
+   *            in the inbox is deferred until verification).
+   *   google → googleToken provides a verified email — no OTP needed.
+   *            email_verified_at is stamped immediately and the application
+   *            is queued + super-admins notified right away.
+   *
+   * Returns a Phase 3 upload token in both cases so the Flutter client can
+   * attach files without waiting for verification.
    */
   static async create(
     input: TeacherApplicationCreateInput
@@ -137,11 +185,33 @@ export class TeacherApplicationService {
     applicationStatus: TeacherApplicationStatus;
     uploadToken: string;
     uploadTokenExpiresInSeconds: number;
+    emailVerificationRequired: boolean;
+    authProvider: 'email' | 'google';
   }> {
-    const email = input.email; // already lowercased/trimmed by emailSchema
+    // 1. Resolve email + auth-method side-data.
+    let email: string;
+    let passwordHash: string | null = null;
+    let oauthProviderId: string | null = null;
+    let emailAlreadyVerified = false;
+
+    if (input.authProvider === 'google') {
+      // Verify the Google idToken server-side — never trust client claims.
+      const verified = await GoogleAuthService.verifyGoogleToken(input.googleToken!);
+      if (!verified?.email || !verified?.sub) {
+        throw new ApiError(400, 'بيانات Google ناقصة', ErrorCodes.INVALID_REQUEST);
+      }
+      email = String(verified.email).toLowerCase();
+      oauthProviderId = String(verified.sub);
+      emailAlreadyVerified = true;
+    } else {
+      // Email + password path. Zod's superRefine guarantees both are present.
+      email = input.email!;
+      passwordHash = await bcrypt.hash(input.password!, BCRYPT_ROUNDS);
+    }
+
     const phone = input.phone;
 
-    // ---- 1. Block if a real users row already exists ---------------------
+    // 2. Block if a real users row already exists.
     const existingUser = await UserModel.findByEmail(email);
     if (existingUser) {
       throw new ApiError(
@@ -151,8 +221,8 @@ export class TeacherApplicationService {
       );
     }
 
-    // ---- 2. Block if an active application already exists for that email
-    //         OR phone, and enforce the 30-day cooldown for rejected rows.
+    // 3. Block if an active application already exists for that email or
+    //    phone, and enforce the 30-day rejection cooldown.
     const { rows: existingApps } = await pool.query<{
       id: string;
       application_status: TeacherApplicationStatus;
@@ -188,14 +258,12 @@ export class TeacherApplicationService {
           { field }
         );
       }
-
       if (
         row.application_status === TeacherApplicationStatus.REJECTED &&
         row.rejected_at
       ) {
         const rejectedAt = new Date(row.rejected_at);
-        const ageDays =
-          (Date.now() - rejectedAt.getTime()) / (24 * 60 * 60 * 1000);
+        const ageDays = (Date.now() - rejectedAt.getTime()) / 86_400_000;
         if (ageDays < REJECTION_COOLDOWN_DAYS) {
           const waitDays = Math.ceil(REJECTION_COOLDOWN_DAYS - ageDays);
           throw new ApiError(
@@ -208,12 +276,19 @@ export class TeacherApplicationService {
       }
     }
 
-    // ---- 3. Hash the password ---------------------------------------------
-    const passwordHash = await bcrypt.hash(input.password, BCRYPT_ROUNDS);
-
     const fullName = `${input.firstName} ${input.lastName}`.trim();
 
-    // ---- 4. Insert (the partial unique index defends against races) -------
+    // 4. Prepare email-verification OTP (only for the email auth path).
+    let otpHash: string | null = null;
+    let otpExpiresAt: Date | null = null;
+    let plaintextOtp: string | null = null;
+    if (input.authProvider === 'email') {
+      plaintextOtp = generateOtp();
+      otpHash = await bcrypt.hash(plaintextOtp, BCRYPT_ROUNDS);
+      otpExpiresAt = new Date(Date.now() + EMAIL_OTP_EXPIRY_MINUTES * 60_000);
+    }
+
+    // 5. Insert.
     try {
       const { rows } = await pool.query<{
         id: string;
@@ -223,20 +298,28 @@ export class TeacherApplicationService {
            first_name, last_name, full_name,
            phone, email, password_hash,
            gender, birth_date, city, area,
-           subject, teaching_stage, years_of_experience, current_workplace,
+           subject, teaching_stage, custom_teaching_stage,
+           years_of_experience, current_workplace,
            has_physical_courses, estimated_student_count,
            bio,
            facebook_url, instagram_url, telegram_url, tiktok_url, youtube_url,
-           onesignal_player_id
+           onesignal_player_id,
+           application_auth_provider, oauth_provider_id,
+           email_verified_at,
+           email_verification_code_hash, email_verification_expires_at
          ) VALUES (
            $1,$2,$3,
            $4,$5,$6,
            $7,$8,$9,$10,
-           $11,$12,$13,$14,
-           $15,$16,
-           $17,
-           $18,$19,$20,$21,$22,
-           $23
+           $11,$12,$13,
+           $14,$15,
+           $16,$17,
+           $18,
+           $19,$20,$21,$22,$23,
+           $24,
+           $25,$26,
+           $27,
+           $28,$29
          )
          RETURNING id, application_status`,
         [
@@ -252,6 +335,7 @@ export class TeacherApplicationService {
           input.area,
           input.subject,
           input.teachingStage,
+          input.customTeachingStage ?? null,
           input.yearsOfExperience,
           input.currentWorkplace ?? null,
           input.hasPhysicalCourses,
@@ -263,38 +347,56 @@ export class TeacherApplicationService {
           input.tiktokUrl ?? null,
           input.youtubeUrl ?? null,
           input.oneSignalPlayerId ?? null,
+          input.authProvider,
+          oauthProviderId,
+          emailAlreadyVerified ? new Date() : null,
+          otpHash,
+          otpExpiresAt,
         ]
       );
 
       const created = rows[0]!;
-      // Phase 3: issue a short-lived upload token bound to this
-      // application id. The Flutter client uses it to attach the
-      // certificate / national-id / profile / intro-video files via
-      // POST /api/teacher-applications/<id>/files within 30 minutes.
       const tokenInfo = signUploadToken(created.id);
-      logger.info({ applicationId: created.id }, 'teacher application submitted');
-
-      // Phase 4: fire-and-forget welcome (push + email). Failure here must
-      // never block the response — the application is already persisted.
-      fireNotify(
-        TeacherApplicationNotifyService.onSubmitted({
+      logger.info(
+        {
           applicationId: created.id,
-          email,
-          fullName,
-          oneSignalPlayerId: input.oneSignalPlayerId ?? null,
-        }),
-        { applicationId: created.id, hook: 'onSubmitted' }
+          authProvider: input.authProvider,
+          requiresVerification: !emailAlreadyVerified,
+        },
+        'teacher application created'
       );
+
+      if (emailAlreadyVerified) {
+        // Google submissions are immediately "received" — notify applicant
+        // and super-admins. Fire-and-forget.
+        fireNotify(
+          TeacherApplicationNotifyService.onSubmitted({
+            applicationId: created.id,
+            email,
+            fullName,
+            subject: input.subject,
+            oneSignalPlayerId: input.oneSignalPlayerId ?? null,
+          }),
+          { applicationId: created.id, hook: 'onSubmitted' }
+        );
+      } else if (plaintextOtp) {
+        // Email submissions — send the OTP only. The full "received"
+        // notification fires after verifyEmail() succeeds.
+        fireNotify(
+          sendVerificationCodeEmail({ to: email, fullName, code: plaintextOtp }),
+          { applicationId: created.id, hook: 'sendVerificationCodeEmail' }
+        );
+      }
 
       return {
         id: created.id,
         applicationStatus: created.application_status,
         uploadToken: tokenInfo.token,
         uploadTokenExpiresInSeconds: tokenInfo.expiresInSeconds,
+        emailVerificationRequired: !emailAlreadyVerified,
+        authProvider: input.authProvider,
       };
     } catch (err: unknown) {
-      // 23505 = unique_violation. Hit only under a race against the partial
-      // unique index — surface as the same 409 as the explicit check above.
       if (
         typeof err === 'object' &&
         err !== null &&
@@ -308,6 +410,170 @@ export class TeacherApplicationService {
       }
       throw err;
     }
+  }
+
+  /**
+   * Verify the OTP for an email-provider application. On first success,
+   * fires the full onSubmitted notification (applicant ack + super-admin
+   * alert). Idempotent — verifying an already-verified application is a
+   * no-op success.
+   */
+  static async verifyEmail(
+    applicationId: string,
+    code: string
+  ): Promise<{ verified: true; alreadyVerified: boolean }> {
+    const { rows } = await pool.query<{
+      id: string;
+      email: string;
+      full_name: string;
+      subject: string;
+      application_auth_provider: string;
+      application_status: TeacherApplicationStatus;
+      email_verified_at: string | null;
+      email_verification_code_hash: string | null;
+      email_verification_expires_at: string | null;
+      email_verification_attempts: number;
+      onesignal_player_id: string | null;
+    }>(
+      `SELECT id, email, full_name, subject,
+              application_auth_provider, application_status,
+              email_verified_at, email_verification_code_hash,
+              email_verification_expires_at, email_verification_attempts,
+              onesignal_player_id
+         FROM teacher_applications
+        WHERE id = $1 AND deleted_at IS NULL
+        LIMIT 1`,
+      [applicationId]
+    );
+    const row = rows[0];
+    if (!row) {
+      throw new ApiError(404, 'طلب الانضمام غير موجود', ErrorCodes.NOT_FOUND);
+    }
+    if (row.application_auth_provider !== 'email') {
+      throw new ApiError(
+        400,
+        'هذا الطلب لا يحتاج تحقق بريد إلكتروني',
+        ErrorCodes.BUSINESS_RULE
+      );
+    }
+    if (row.email_verified_at) {
+      return { verified: true, alreadyVerified: true };
+    }
+    if (row.email_verification_attempts >= EMAIL_OTP_MAX_ATTEMPTS) {
+      throw new ApiError(
+        429,
+        'تجاوزت عدد المحاولات المسموح بها — يرجى طلب رمز جديد',
+        ErrorCodes.CODE_LOCKED
+      );
+    }
+    if (!row.email_verification_code_hash || !row.email_verification_expires_at) {
+      throw new ApiError(
+        400,
+        'لا يوجد رمز تحقق فعّال — يرجى طلب رمز جديد',
+        ErrorCodes.INVALID_CODE
+      );
+    }
+    if (new Date(row.email_verification_expires_at).getTime() < Date.now()) {
+      throw new ApiError(
+        400,
+        'انتهت صلاحية رمز التحقق — يرجى طلب رمز جديد',
+        ErrorCodes.CODE_EXPIRED
+      );
+    }
+
+    const ok = await bcrypt.compare(code, row.email_verification_code_hash);
+    if (!ok) {
+      await pool.query(
+        `UPDATE teacher_applications
+            SET email_verification_attempts = email_verification_attempts + 1
+          WHERE id = $1`,
+        [applicationId]
+      );
+      throw new ApiError(400, 'رمز التحقق غير صحيح', ErrorCodes.INVALID_CODE);
+    }
+
+    await pool.query(
+      `UPDATE teacher_applications
+          SET email_verified_at             = NOW(),
+              email_verification_code_hash  = NULL,
+              email_verification_expires_at = NULL,
+              email_verification_attempts   = 0
+        WHERE id = $1`,
+      [applicationId]
+    );
+
+    logger.info({ applicationId }, 'teacher application email verified');
+
+    // Now that the email is verified, fire the full onSubmitted (applicant
+    // ack + super-admin alert).
+    fireNotify(
+      TeacherApplicationNotifyService.onSubmitted({
+        applicationId,
+        email: row.email,
+        fullName: row.full_name,
+        subject: row.subject,
+        oneSignalPlayerId: row.onesignal_player_id,
+      }),
+      { applicationId, hook: 'onSubmitted (post-verify)' }
+    );
+
+    return { verified: true, alreadyVerified: false };
+  }
+
+  /**
+   * Re-issue a fresh OTP and re-send the verification email. Only valid
+   * for email-provider applications still in pending state.
+   */
+  static async resendVerification(applicationId: string): Promise<{ sent: true }> {
+    const { rows } = await pool.query<{
+      email: string;
+      full_name: string;
+      application_auth_provider: string;
+      application_status: TeacherApplicationStatus;
+      email_verified_at: string | null;
+    }>(
+      `SELECT email, full_name, application_auth_provider, application_status, email_verified_at
+         FROM teacher_applications
+        WHERE id = $1 AND deleted_at IS NULL
+        LIMIT 1`,
+      [applicationId]
+    );
+    const row = rows[0];
+    if (!row) throw new ApiError(404, 'طلب الانضمام غير موجود', ErrorCodes.NOT_FOUND);
+    if (row.application_auth_provider !== 'email') {
+      throw new ApiError(
+        400,
+        'هذا الطلب لا يحتاج تحقق بريد إلكتروني',
+        ErrorCodes.BUSINESS_RULE
+      );
+    }
+    if (row.email_verified_at) {
+      throw new ApiError(
+        400,
+        'البريد الإلكتروني تم التحقق منه مسبقاً',
+        ErrorCodes.BUSINESS_RULE
+      );
+    }
+
+    const plaintextOtp = generateOtp();
+    const otpHash = await bcrypt.hash(plaintextOtp, BCRYPT_ROUNDS);
+    const otpExpiresAt = new Date(Date.now() + EMAIL_OTP_EXPIRY_MINUTES * 60_000);
+
+    await pool.query(
+      `UPDATE teacher_applications
+          SET email_verification_code_hash  = $2,
+              email_verification_expires_at = $3,
+              email_verification_attempts   = 0
+        WHERE id = $1`,
+      [applicationId, otpHash, otpExpiresAt]
+    );
+
+    fireNotify(
+      sendVerificationCodeEmail({ to: row.email, fullName: row.full_name, code: plaintextOtp }),
+      { applicationId, hook: 'sendVerificationCodeEmail (resend)' }
+    );
+
+    return { sent: true };
   }
 
   /**
@@ -417,10 +683,14 @@ export class TeacherApplicationService {
         bio: string | null;
         years_of_experience: number;
         application_status: TeacherApplicationStatus;
+        application_auth_provider: string;
+        oauth_provider_id: string | null;
+        email_verified_at: string | null;
       }>(
         `SELECT id, full_name, email, phone, password_hash,
                 gender, birth_date, city, area, bio, years_of_experience,
-                application_status
+                application_status,
+                application_auth_provider, oauth_provider_id, email_verified_at
            FROM teacher_applications
           WHERE id = $1 AND deleted_at IS NULL
           FOR UPDATE`,
@@ -448,15 +718,38 @@ export class TeacherApplicationService {
       }
       // pending and needs_more_info are both allowed here.
 
-      // 3. password_hash sanity — Phase 2 expects it present. Phase 3+
-      //    will NULL it after the first approval, so any approved row
-      //    after that point won't reach here.
-      if (!app.password_hash) {
-        throw new ApiError(
-          500,
-          'بيانات الطلب غير مكتملة',
-          ErrorCodes.INTERNAL_ERROR
-        );
+      // 3. Phase 8: email-verification gate. An email-provider application
+      //    that hasn't yet verified the OTP cannot be approved — otherwise
+      //    the resulting users row would have a password the applicant
+      //    might not even own.
+      const isGoogleProvider = app.application_auth_provider === 'google';
+      const isAppleProvider = app.application_auth_provider === 'apple';
+      const isEmailProvider = !isGoogleProvider && !isAppleProvider;
+
+      if (isEmailProvider) {
+        if (!app.email_verified_at) {
+          throw new ApiError(
+            400,
+            'لا يمكن الموافقة قبل تحقق المتقدم من بريده الإلكتروني',
+            ErrorCodes.BUSINESS_RULE,
+            { field: 'email_verified_at' }
+          );
+        }
+        if (!app.password_hash) {
+          throw new ApiError(
+            500,
+            'بيانات الطلب غير مكتملة (password_hash مفقود)',
+            ErrorCodes.INTERNAL_ERROR
+          );
+        }
+      } else if (isGoogleProvider) {
+        if (!app.oauth_provider_id) {
+          throw new ApiError(
+            500,
+            'بيانات الطلب غير مكتملة (oauth_provider_id مفقود)',
+            ErrorCodes.INTERNAL_ERROR
+          );
+        }
       }
 
       // 4. Final email-collision check inside the transaction (defence in
@@ -475,28 +768,36 @@ export class TeacherApplicationService {
       }
 
       // 5. Create the teacher user. Direct INSERT (not UserModel.create)
-      //    because we need to participate in the outer transaction AND we
-      //    already have a bcrypt hash; UserModel.create would double-hash.
+      //    because we need to participate in the outer transaction AND for
+      //    email submissions we already have the bcrypt hash; UserModel.create
+      //    would double-hash. For google submissions we mint a throwaway
+      //    password (auth happens via the provider id, not the password).
+      const passwordForUserRow = isEmailProvider
+        ? app.password_hash!
+        : await bcrypt.hash(`google_${app.oauth_provider_id}_${Date.now()}`, BCRYPT_ROUNDS);
+
       const address = `${app.city}, ${app.area}`;
       const newUserRes = await client.query<{ id: string }>(
         `INSERT INTO users (
             name, email, password,
             user_type, status,
-            auth_provider, email_verified,
+            auth_provider, oauth_provider_id, email_verified,
             phone, address, bio, experience_years,
             gender, birth_date, city
           ) VALUES (
             $1, LOWER($2), $3,
             'teacher', 'active',
-            'email', true,
-            $4, $5, $6, $7,
-            $8, $9, $10
+            $4, $5, true,
+            $6, $7, $8, $9,
+            $10, $11, $12
           )
           RETURNING id`,
         [
           app.full_name,
           app.email,
-          app.password_hash,
+          passwordForUserRow,
+          isGoogleProvider ? 'google' : (isAppleProvider ? 'apple' : 'email'),
+          isEmailProvider ? null : app.oauth_provider_id,
           app.phone,
           address,
           app.bio,

@@ -18,11 +18,13 @@
 
 import { Client as OneSignalClient } from 'onesignal-node';
 
+import pool from '../config/database';
 import transporter from '../config/email';
 import { logger } from '../utils/logger';
 import {
   applicationApprovedEmail,
   applicationNeedsMoreInfoEmail,
+  applicationReceivedForAdminEmail,
   applicationRejectedEmail,
   applicationSubmittedEmail,
 } from './teacher-application-emails';
@@ -117,29 +119,93 @@ async function sendEmail(to: string, mail: { subject: string; html: string; text
 
 export class TeacherApplicationNotifyService {
   /**
-   * Fire-and-forget hook called after a successful submit() commit.
+   * Fire-and-forget hook fired when an application becomes "real" — meaning
+   * the email has been verified (for email-provider applications) or it
+   * arrived via Google with an already-verified email. Sends:
+   *   - applicant ack (email + push)
+   *   - super-admin alert (email + push) to every active super-admin
    */
   static async onSubmitted(args: {
     applicationId: string;
     email: string;
     fullName: string;
+    subject: string;
     oneSignalPlayerId: string | null;
   }): Promise<void> {
     try {
-      const mail = applicationSubmittedEmail({ fullName: args.fullName });
+      const applicantMail = applicationSubmittedEmail({ fullName: args.fullName });
       await Promise.all([
-        sendEmail(args.email, mail),
+        sendEmail(args.email, applicantMail),
         pushToPlayer(args.oneSignalPlayerId, {
           title: 'تم استلام طلبك',
           message: 'سيقوم فريق الإدارة بمراجعة طلب انضمامك قريباً.',
           data: { type: 'teacher_application_submitted', applicationId: args.applicationId },
         }),
+        this.notifySuperAdmins({
+          applicationId: args.applicationId,
+          applicantName: args.fullName,
+          subjectName: args.subject,
+        }),
       ]);
     } catch (err) {
-      // Promise.all only rejects on the first rejection AFTER all settled, but
-      // we wrap defensively anyway.
       logger.warn({ err, applicationId: args.applicationId }, 'notify.onSubmitted failed');
     }
+  }
+
+  /**
+   * Iterate every active super-admin and ping them (email + push). Best-
+   * effort per recipient — one admin's bounced email never blocks the rest.
+   */
+  private static async notifySuperAdmins(args: {
+    applicationId: string;
+    applicantName: string;
+    subjectName: string;
+  }): Promise<void> {
+    let admins: Array<{ id: string; email: string; name: string }> = [];
+    try {
+      const { rows } = await pool.query<{ id: string; email: string; name: string }>(
+        `SELECT id, email, name
+           FROM users
+          WHERE user_type = 'super_admin'
+            AND status   = 'active'
+            AND deleted_at IS NULL`
+      );
+      admins = rows;
+    } catch (err) {
+      logger.warn({ err }, 'notify.notifySuperAdmins: failed to load super-admins');
+      return;
+    }
+    if (admins.length === 0) return;
+
+    const adminMail = applicationReceivedForAdminEmail({
+      applicantName: args.applicantName,
+      subjectName: args.subjectName,
+      applicationId: args.applicationId,
+    });
+
+    await Promise.all(
+      admins.map(async (admin) => {
+        try {
+          await Promise.all([
+            sendEmail(admin.email, adminMail),
+            pushToExternalUser(admin.id, {
+              title: 'طلب انضمام أستاذ جديد',
+              message: `تم تقديم طلب انضمام جديد من ${args.applicantName} لمادة ${args.subjectName}. يرجى مراجعته من لوحة التحكم.`,
+              data: {
+                type: 'teacher_application_received',
+                applicationId: args.applicationId,
+                route: '/admin/teacher-applications',
+              },
+            }),
+          ]);
+        } catch (err) {
+          logger.warn(
+            { err, adminId: admin.id },
+            'notify.notifySuperAdmins: per-admin delivery failed',
+          );
+        }
+      }),
+    );
   }
 
   /**

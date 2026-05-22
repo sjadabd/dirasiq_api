@@ -9,7 +9,10 @@ import type { Request, Response } from 'express';
 
 import { TeacherApplicationFileService } from '../services/teacher-application-file.service';
 import { TeacherApplicationService } from '../services/teacher-application.service';
-import type { TeacherApplicationCreateInput } from '../schemas/teacher-application.schemas';
+import type {
+  TeacherApplicationCreateInput,
+  TeacherApplicationVerifyEmailInput,
+} from '../schemas/teacher-application.schemas';
 import {
   TeacherApplicationFileKind,
   type TeacherApplicationFileKind as TFileKind,
@@ -38,6 +41,34 @@ export class TeacherApplicationController {
         'تم استلام طلبك بنجاح. سيتم مراجعته من قبل الإدارة وسنتواصل معك قريباً.'
       )
     );
+  }
+
+  // POST /api/teacher-applications/:id/verify-email
+  // Public. Verifies the OTP for an email-provider application. On success
+  // the full onSubmitted notification fires (applicant ack + super-admin
+  // alert). Returns the new ack so the client can navigate to a "thanks"
+  // screen.
+  static async verifyEmail(req: Request, res: Response): Promise<void> {
+    const id = req.params['id'] as string;
+    const { code } = req.body as TeacherApplicationVerifyEmailInput;
+    const result = await TeacherApplicationService.verifyEmail(id, code);
+    res.status(200).json(
+      ok(
+        result,
+        result.alreadyVerified
+          ? 'البريد الإلكتروني تم التحقق منه مسبقاً'
+          : 'تم التحقق من البريد الإلكتروني بنجاح'
+      )
+    );
+  }
+
+  // POST /api/teacher-applications/:id/resend-verification
+  // Public. Issues a fresh OTP + re-sends the verification email. Only valid
+  // for email-provider applications still awaiting verification.
+  static async resendVerification(req: Request, res: Response): Promise<void> {
+    const id = req.params['id'] as string;
+    const result = await TeacherApplicationService.resendVerification(id);
+    res.status(200).json(ok(result, 'تم إرسال رمز التحقق مجدداً'));
   }
 
   // POST /api/teacher-applications/:id/files

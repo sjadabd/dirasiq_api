@@ -1,6 +1,7 @@
 import bcrypt from 'bcryptjs';
 import { randomUUID } from 'crypto';
 import jwt from 'jsonwebtoken';
+import pool from '../config/database';
 import { sendPasswordResetEmail, sendVerificationEmail } from '../config/email';
 import { GradeModel } from '../models/grade.model';
 import { StudentGradeModel } from '../models/student-grade.model';
@@ -36,6 +37,76 @@ export type OAuthResult = {
 };
 
 export class AuthService {
+  /**
+   * Phase 8 — block login / OAuth-provisioning for an email that already
+   * has a teacher application on file. Without this, a Google sign-in by
+   * an applicant whose application is still pending would silently mint a
+   * student account behind the scenes and ask them for student profile
+   * data — completely wrong.
+   *
+   * Called by `login`, `googleAuth`, `appleAuth` only when no `users` row
+   * exists for the email (i.e. we're about to either reject or create one).
+   * Existing-user paths are unchanged.
+   */
+  private static async assertNoBlockingApplication(email: string): Promise<void> {
+    if (!email) return;
+    const { rows } = await pool.query<{
+      application_status: string;
+      rejection_reason: string | null;
+    }>(
+      `SELECT application_status, rejection_reason
+         FROM teacher_applications
+        WHERE email = $1 AND deleted_at IS NULL
+        ORDER BY created_at DESC
+        LIMIT 1`,
+      [email.toLowerCase()]
+    );
+    if (rows.length === 0) return;
+    const app = rows[0]!;
+    switch (app.application_status) {
+      case 'pending':
+        throw new ApiError(
+          403,
+          'طلب الانضمام كأستاذ قيد المراجعة. سنقوم بإشعارك عند الموافقة.',
+          ErrorCodes.BUSINESS_RULE,
+          { applicationStatus: 'pending' }
+        );
+      case 'needs_more_info':
+        throw new ApiError(
+          403,
+          'طلبك يحتاج معلومات إضافية من الإدارة. يرجى مراجعة طلبك وإكمال المطلوب.',
+          ErrorCodes.BUSINESS_RULE,
+          { applicationStatus: 'needs_more_info' }
+        );
+      case 'rejected':
+        throw new ApiError(
+          403,
+          app.rejection_reason
+            ? `تم رفض طلب الانضمام كأستاذ: ${app.rejection_reason}`
+            : 'تم رفض طلب الانضمام كأستاذ',
+          ErrorCodes.BUSINESS_RULE,
+          {
+            applicationStatus: 'rejected',
+            rejectionReason: app.rejection_reason ?? null,
+          }
+        );
+      case 'approved':
+        // Approved AND no users row found → provisioning glitch. Don't
+        // create a student silently — log + error.
+        logger.error(
+          { email },
+          'CRITICAL: approved teacher application has no matching users row'
+        );
+        throw new ApiError(
+          500,
+          'حدث خطأ في تفعيل الحساب، يرجى مراجعة الإدارة',
+          ErrorCodes.INTERNAL_ERROR
+        );
+      default:
+        return;
+    }
+  }
+
   static async registerSuperAdmin(
     data: RegisterSuperAdminRequest
   ): Promise<{ user: any }> {
@@ -101,10 +172,13 @@ export class AuthService {
       );
     }
 
-    // No matching user — sign-up path. Teacher provisioning via Apple is
-    // closed (Phase 1 onboarding policy); teachers must come through the
-    // application flow at POST /api/teacher-applications. Students continue
-    // to be created here.
+    // No matching user — sign-up path. Phase 8 — refuse if the email is
+    // tied to an existing teacher_application so we never silently mint a
+    // student account for an in-progress applicant.
+    await this.assertNoBlockingApplication(email);
+
+    // Teacher provisioning via Apple is closed (Phase 1 onboarding policy);
+    // teachers must come through the application flow.
     if (userType === 'teacher') {
       throw new ApiError(
         403,
@@ -389,6 +463,10 @@ export class AuthService {
   }> {
     const user = await UserModel.findByEmail(data.email);
     if (!user) {
+      // No user row yet. Before returning the generic 401, check whether
+      // this email is sitting in teacher_applications — if so, give a
+      // status-aware message so the applicant knows where they stand.
+      await this.assertNoBlockingApplication(data.email);
       throw new ApiError(401, 'بيانات الدخول غير صحيحة', ErrorCodes.INVALID_CREDENTIALS);
     }
     if (user.status !== UserStatus.ACTIVE) {
@@ -726,10 +804,15 @@ export class AuthService {
       );
     }
 
-    // No matching user — this is a sign-up. Teacher provisioning via Google
-    // is closed (Phase 1 onboarding policy): teachers must come through the
-    // application flow at POST /api/teacher-applications. Students continue
-    // to be created here.
+    // No matching user. Phase 8 — before creating ANY new user (student or
+    // otherwise) for this email, check whether a teacher_application is on
+    // file. If so, refuse with a status-aware message instead of silently
+    // creating a student account for an in-progress teacher application.
+    await this.assertNoBlockingApplication(email);
+
+    // Teacher provisioning via Google is closed (Phase 1 onboarding policy):
+    // teachers must come through the application flow at
+    // POST /api/teacher-applications.
     if (userType === 'teacher') {
       throw new ApiError(
         403,

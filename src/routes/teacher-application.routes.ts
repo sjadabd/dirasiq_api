@@ -11,7 +11,12 @@ import multer from 'multer';
 import { TeacherApplicationController } from '../controllers/teacher-application.controller';
 import { requireUploadToken } from '../middleware/upload-token.middleware';
 import { validate } from '../middleware/validate.middleware';
-import { teacherApplicationCreateSchema } from '../schemas/teacher-application.schemas';
+import {
+  teacherApplicationCreateSchema,
+  teacherApplicationIdParamSchema,
+  teacherApplicationResendVerificationSchema,
+  teacherApplicationVerifyEmailSchema,
+} from '../schemas/teacher-application.schemas';
 import { ABSOLUTE_MAX_UPLOAD_BYTES } from '../services/teacher-application-file.service';
 import { ApiError, ErrorCodes } from '../utils/api-error';
 import { asyncHandler } from '../utils/async-handler';
@@ -44,6 +49,35 @@ router.post(
   submitLimiter,
   validate({ body: teacherApplicationCreateSchema }),
   asyncHandler(TeacherApplicationController.create)
+);
+
+// ---------------------------------------------------------------------------
+// Email verification — Phase 8
+// ---------------------------------------------------------------------------
+//
+// Both endpoints are public + rate-limited (the OTP itself is the secret).
+// Re-using the same submitLimiter (3/h per IP) is intentional: a real
+// applicant verifies once; an attacker brute-forcing the OTP gets locked
+// out alongside the OTP attempt counter on the row itself.
+
+router.post(
+  '/:id/verify-email',
+  submitLimiter,
+  validate({
+    params: teacherApplicationIdParamSchema,
+    body: teacherApplicationVerifyEmailSchema,
+  }),
+  asyncHandler(TeacherApplicationController.verifyEmail)
+);
+
+router.post(
+  '/:id/resend-verification',
+  submitLimiter,
+  validate({
+    params: teacherApplicationIdParamSchema,
+    body: teacherApplicationResendVerificationSchema,
+  }),
+  asyncHandler(TeacherApplicationController.resendVerification)
 );
 
 // ---------------------------------------------------------------------------
