@@ -415,6 +415,87 @@ describe('Teacher Applications — Phase 1', () => {
     });
   });
 
+  // ---------------------------------------------------------------------------
+  // Phase 8.12 — public catalog endpoints + status-check OTP
+  // ---------------------------------------------------------------------------
+
+  describe('Phase 8.12 — public catalog endpoints', () => {
+    it('GET /api/public/subjects returns a non-empty array of strings', async () => {
+      const res = await request(app).get('/api/public/subjects');
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(Array.isArray(res.body.data)).toBe(true);
+      expect((res.body.data as string[]).length).toBeGreaterThan(0);
+      // sanity: every item should be a non-empty Arabic string
+      for (const item of res.body.data as string[]) {
+        expect(typeof item).toBe('string');
+        expect(item.length).toBeGreaterThan(0);
+      }
+    });
+
+    it('GET /api/public/teaching-stages returns a non-empty array of strings', async () => {
+      const res = await request(app).get('/api/public/teaching-stages');
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(Array.isArray(res.body.data)).toBe(true);
+      expect((res.body.data as string[]).length).toBeGreaterThan(0);
+    });
+
+    it('catalog endpoints do not require auth', async () => {
+      const r1 = await request(app).get('/api/public/subjects');
+      const r2 = await request(app).get('/api/public/teaching-stages');
+      expect(r1.status).toBe(200);
+      expect(r2.status).toBe(200);
+    });
+  });
+
+  describe('Phase 8.12 — status-check OTP validation gates', () => {
+    it('POST /status/request rejects empty body with body.email', async () => {
+      const res = await request(app)
+        .post('/api/teacher-applications/status/request')
+        .send({});
+      expect(res.status).toBe(400);
+      const fields = (res.body.errors as { field: string }[]).map((e) => e.field);
+      expect(fields).toContain('body.email');
+    });
+
+    it('POST /status/request rejects malformed email', async () => {
+      const res = await request(app)
+        .post('/api/teacher-applications/status/request')
+        .send({ email: 'not-an-email' });
+      expect(res.status).toBe(400);
+      const fields = (res.body.errors as { field: string }[]).map((e) => e.field);
+      expect(fields).toContain('body.email');
+    });
+
+    it('POST /status/verify rejects empty body with both fields', async () => {
+      const res = await request(app)
+        .post('/api/teacher-applications/status/verify')
+        .send({});
+      expect(res.status).toBe(400);
+      const fields = (res.body.errors as { field: string }[]).map((e) => e.field);
+      expect(fields).toEqual(expect.arrayContaining(['body.email', 'body.code']));
+    });
+
+    it('POST /status/verify rejects a non-numeric code', async () => {
+      const res = await request(app)
+        .post('/api/teacher-applications/status/verify')
+        .send({ email: 'real@example.com', code: 'abcdef' });
+      expect(res.status).toBe(400);
+      const fields = (res.body.errors as { field: string }[]).map((e) => e.field);
+      expect(fields).toContain('body.code');
+    });
+
+    it('POST /status/verify rejects a code that is not 6 digits', async () => {
+      const res = await request(app)
+        .post('/api/teacher-applications/status/verify')
+        .send({ email: 'real@example.com', code: '12345' });
+      expect(res.status).toBe(400);
+      const fields = (res.body.errors as { field: string }[]).map((e) => e.field);
+      expect(fields).toContain('body.code');
+    });
+  });
+
   describe('Phase 3 — file-signature util (magic-byte detection)', () => {
     // Direct unit tests on the detection helper — proves a renamed
     // executable cannot ride through as image/jpeg.

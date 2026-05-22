@@ -75,6 +75,44 @@ export function applicationEmailVerificationCodeEmail(args: {
 }
 
 // ---------------------------------------------------------------------------
+// 0a. STATUS-CHECK OTP — Phase 8.12. Sent when an applicant requests the
+//     current status of their existing application via /status/request.
+//     Independent from the initial-verification OTP (different lifecycle).
+// ---------------------------------------------------------------------------
+export function applicationStatusCheckCodeEmail(args: {
+  fullName: string;
+  code: string;
+  expiresInMinutes: number;
+}): BuiltEmail {
+  const subject = `رمز عرض حالة طلب الانضمام إلى ${BRAND}`;
+  const lead = `مرحباً ${args.fullName}،`;
+
+  const html = `<p style="font-size: 16px; font-weight: 600;">${lead}</p>
+<p>تم استلام طلبك بالاستعلام عن حالة طلب الانضمام إلى منصة ${BRAND}.</p>
+<p>أدخل الرمز التالي داخل التطبيق لعرض الحالة الحالية لطلبك:</p>
+<div style="background: #f4f4f4; padding: 20px; text-align: center; margin: 20px 0; border-radius: 8px;">
+  <h1 style="color: ${BRAND_PRIMARY}; font-size: 32px; margin: 0; letter-spacing: 4px;">${args.code}</h1>
+</div>
+<p>هذا الرمز صالح لمدة ${args.expiresInMinutes} دقيقة فقط.</p>
+<p style="color: #6b7280; font-size: 13px;">إذا لم تطلب الرمز، يمكنك تجاهل هذه الرسالة بأمان.</p>`;
+
+  const text = [
+    lead,
+    '',
+    `تم استلام طلبك بالاستعلام عن حالة طلب الانضمام إلى منصة ${BRAND}.`,
+    'أدخل الرمز التالي داخل التطبيق لعرض الحالة الحالية لطلبك:',
+    '',
+    `  ${args.code}`,
+    '',
+    `هذا الرمز صالح لمدة ${args.expiresInMinutes} دقيقة فقط.`,
+    'إذا لم تطلب الرمز، يمكنك تجاهل هذه الرسالة بأمان.',
+  ].join('\n');
+
+  const shelled = shell(html, text, BRAND_ACCENT_INFO);
+  return { subject, html: shelled.html, text: shelled.text };
+}
+
+// ---------------------------------------------------------------------------
 // 0b. SUPER-ADMIN NOTIFICATION — Phase 8. Sent when a new (verified)
 //     application arrives.
 // ---------------------------------------------------------------------------

@@ -170,6 +170,25 @@ export const teacherApplicationResendVerificationSchema = z
   .object({})
   .optional();
 
+// Phase 8.12 — status-check OTP endpoints (public, pre-auth).
+export const teacherApplicationStatusRequestSchema = z.object({
+  email: emailSchema,
+});
+export type TeacherApplicationStatusRequestInput = z.infer<
+  typeof teacherApplicationStatusRequestSchema
+>;
+
+export const teacherApplicationStatusVerifySchema = z.object({
+  email: emailSchema,
+  code: z
+    .string()
+    .trim()
+    .regex(/^\d{6}$/u, 'رمز التحقق يجب أن يكون 6 أرقام'),
+});
+export type TeacherApplicationStatusVerifyInput = z.infer<
+  typeof teacherApplicationStatusVerifySchema
+>;
+
 // ---------------------------------------------------------------------------
 // Super-admin — list + detail
 // ---------------------------------------------------------------------------

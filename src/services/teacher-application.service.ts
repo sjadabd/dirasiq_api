@@ -27,7 +27,10 @@ import { signUploadToken } from '../utils/upload-token';
 import { GoogleAuthService } from './google-auth.service';
 import { QrService } from './qr.service';
 import { TeacherApplicationNotifyService } from './teacher-application-notify.service';
-import { applicationEmailVerificationCodeEmail } from './teacher-application-emails';
+import {
+  applicationEmailVerificationCodeEmail,
+  applicationStatusCheckCodeEmail,
+} from './teacher-application-emails';
 import transporter from '../config/email';
 import type {
   TeacherApplicationCreateInput,
@@ -68,6 +71,25 @@ async function sendVerificationCodeEmail(args: {
   code: string;
 }): Promise<void> {
   const mail = applicationEmailVerificationCodeEmail({
+    fullName: args.fullName,
+    code: args.code,
+    expiresInMinutes: EMAIL_OTP_EXPIRY_MINUTES,
+  });
+  await transporter.sendMail({
+    from: FROM_ADDRESS,
+    to: args.to,
+    subject: mail.subject,
+    html: mail.html,
+    text: mail.text,
+  });
+}
+
+async function sendStatusCheckCodeEmail(args: {
+  to: string;
+  fullName: string;
+  code: string;
+}): Promise<void> {
+  const mail = applicationStatusCheckCodeEmail({
     fullName: args.fullName,
     code: args.code,
     expiresInMinutes: EMAIL_OTP_EXPIRY_MINUTES,
@@ -574,6 +596,171 @@ export class TeacherApplicationService {
     );
 
     return { sent: true };
+  }
+
+  /**
+   * Phase 8.12 — status-check OTP request. Public, pre-auth.
+   *
+   * Always responds with `{ sent: true }` regardless of whether the email
+   * matches a real application — anti-enumeration. The email is only sent
+   * when a real row exists AND the per-row throttle (1 OTP / 60s) allows.
+   */
+  static async requestStatusCheck(email: string): Promise<{ sent: true }> {
+    const normalizedEmail = email.trim().toLowerCase();
+
+    const { rows } = await pool.query<{
+      id: string;
+      email: string;
+      full_name: string;
+      status_check_requested_at: string | null;
+    }>(
+      `SELECT id, email, full_name, status_check_requested_at
+         FROM teacher_applications
+        WHERE email = $1 AND deleted_at IS NULL
+        ORDER BY created_at DESC
+        LIMIT 1`,
+      [normalizedEmail]
+    );
+    const row = rows[0];
+    if (!row) {
+      // Anti-enumeration: behave identically to the happy path.
+      return { sent: true };
+    }
+
+    // Per-row throttle: 60s minimum between OTP issuances. Quiet no-op so an
+    // attacker that learned an email exists can't repeatedly flood it.
+    if (row.status_check_requested_at) {
+      const lastReqMs = new Date(row.status_check_requested_at).getTime();
+      if (Date.now() - lastReqMs < 60_000) {
+        return { sent: true };
+      }
+    }
+
+    const plaintextOtp = generateOtp();
+    const otpHash = await bcrypt.hash(plaintextOtp, BCRYPT_ROUNDS);
+    const otpExpiresAt = new Date(Date.now() + EMAIL_OTP_EXPIRY_MINUTES * 60_000);
+
+    await pool.query(
+      `UPDATE teacher_applications
+          SET status_check_code_hash    = $2,
+              status_check_expires_at   = $3,
+              status_check_attempts     = 0,
+              status_check_requested_at = NOW()
+        WHERE id = $1`,
+      [row.id, otpHash, otpExpiresAt]
+    );
+
+    fireNotify(
+      sendStatusCheckCodeEmail({ to: row.email, fullName: row.full_name, code: plaintextOtp }),
+      { applicationId: row.id, hook: 'sendStatusCheckCodeEmail' }
+    );
+
+    return { sent: true };
+  }
+
+  /**
+   * Phase 8.12 — verify the status-check OTP and return the current status.
+   *
+   * Returns a shape the public client can render: status + rejection reason
+   * (if rejected) + admin notes (if needs_more_info; these are intentionally
+   * surfaced because they're also emailed to the applicant via the
+   * onNeedsMoreInfo hook — the schema comment on admin_notes is misleading,
+   * the field is the applicant-facing instructions in that branch).
+   *
+   * Anti-enumeration: "no row for this email" collapses into the same
+   * INVALID_CODE error as "wrong code". The attempt counter still increments
+   * to make a stand-alone brute force on a known-existing email expensive.
+   */
+  static async verifyStatusCheck(
+    email: string,
+    code: string
+  ): Promise<{
+    applicationId: string;
+    status: TeacherApplicationStatus;
+    rejectionReason: string | null;
+    adminNotes: string | null;
+    createdAt: string;
+    rejectedAt: string | null;
+    needsMoreInfoAt: string | null;
+  }> {
+    const normalizedEmail = email.trim().toLowerCase();
+
+    const { rows } = await pool.query<{
+      id: string;
+      application_status: TeacherApplicationStatus;
+      status_check_code_hash: string | null;
+      status_check_expires_at: string | null;
+      status_check_attempts: number;
+      rejection_reason: string | null;
+      admin_notes: string | null;
+      created_at: string;
+      rejected_at: string | null;
+      needs_more_info_at: string | null;
+    }>(
+      `SELECT id, application_status,
+              status_check_code_hash, status_check_expires_at, status_check_attempts,
+              rejection_reason, admin_notes,
+              created_at, rejected_at, needs_more_info_at
+         FROM teacher_applications
+        WHERE email = $1 AND deleted_at IS NULL
+        ORDER BY created_at DESC
+        LIMIT 1`,
+      [normalizedEmail]
+    );
+    const row = rows[0];
+
+    // Collapse "no row" + "no active code" into INVALID_CODE — same wire shape
+    // as a wrong-code attempt. Does not touch any counter (no row to update).
+    if (!row || !row.status_check_code_hash || !row.status_check_expires_at) {
+      throw new ApiError(400, 'رمز التحقق غير صحيح', ErrorCodes.INVALID_CODE);
+    }
+
+    if (row.status_check_attempts >= EMAIL_OTP_MAX_ATTEMPTS) {
+      throw new ApiError(
+        429,
+        'تجاوزت عدد المحاولات المسموح بها — يرجى طلب رمز جديد',
+        ErrorCodes.CODE_LOCKED
+      );
+    }
+
+    if (new Date(row.status_check_expires_at).getTime() < Date.now()) {
+      throw new ApiError(
+        400,
+        'انتهت صلاحية رمز التحقق — يرجى طلب رمز جديد',
+        ErrorCodes.CODE_EXPIRED
+      );
+    }
+
+    const codeOk = await bcrypt.compare(code, row.status_check_code_hash);
+    if (!codeOk) {
+      await pool.query(
+        `UPDATE teacher_applications
+            SET status_check_attempts = status_check_attempts + 1
+          WHERE id = $1`,
+        [row.id]
+      );
+      throw new ApiError(400, 'رمز التحقق غير صحيح', ErrorCodes.INVALID_CODE);
+    }
+
+    // Single-use — wipe the code so it can't be replayed.
+    await pool.query(
+      `UPDATE teacher_applications
+          SET status_check_code_hash  = NULL,
+              status_check_expires_at = NULL,
+              status_check_attempts   = 0
+        WHERE id = $1`,
+      [row.id]
+    );
+
+    return {
+      applicationId: row.id,
+      status: row.application_status,
+      rejectionReason: row.rejection_reason,
+      adminNotes: row.admin_notes,
+      createdAt: row.created_at,
+      rejectedAt: row.rejected_at,
+      needsMoreInfoAt: row.needs_more_info_at,
+    };
   }
 
   /**

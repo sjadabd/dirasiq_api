@@ -11,6 +11,8 @@ import { TeacherApplicationFileService } from '../services/teacher-application-f
 import { TeacherApplicationService } from '../services/teacher-application.service';
 import type {
   TeacherApplicationCreateInput,
+  TeacherApplicationStatusRequestInput,
+  TeacherApplicationStatusVerifyInput,
   TeacherApplicationVerifyEmailInput,
 } from '../schemas/teacher-application.schemas';
 import {
@@ -69,6 +71,28 @@ export class TeacherApplicationController {
     const id = req.params['id'] as string;
     const result = await TeacherApplicationService.resendVerification(id);
     res.status(200).json(ok(result, 'تم إرسال رمز التحقق مجدداً'));
+  }
+
+  // POST /api/teacher-applications/status/request
+  // Public, pre-auth. Always responds 200 — the service layer enforces the
+  // anti-enumeration guarantee (the email is only sent if a row exists).
+  static async requestStatusCheck(req: Request, res: Response): Promise<void> {
+    const { email } = req.body as TeacherApplicationStatusRequestInput;
+    const result = await TeacherApplicationService.requestStatusCheck(email);
+    res
+      .status(200)
+      .json(ok(result, 'إذا كان البريد الإلكتروني مرتبطاً بطلب، فقد تم إرسال رمز التحقق'));
+  }
+
+  // POST /api/teacher-applications/status/verify
+  // Public, pre-auth. On a valid (email, code) pair returns the application
+  // status + the applicant-facing notes (rejection reason or admin
+  // instructions for needs_more_info). On any failure throws INVALID_CODE /
+  // CODE_EXPIRED / CODE_LOCKED — never 404, to prevent enumeration.
+  static async verifyStatusCheck(req: Request, res: Response): Promise<void> {
+    const { email, code } = req.body as TeacherApplicationStatusVerifyInput;
+    const result = await TeacherApplicationService.verifyStatusCheck(email, code);
+    res.status(200).json(ok(result, 'حالة طلب الانضمام'));
   }
 
   // POST /api/teacher-applications/:id/files

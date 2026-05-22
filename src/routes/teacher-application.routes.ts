@@ -15,6 +15,8 @@ import {
   teacherApplicationCreateSchema,
   teacherApplicationIdParamSchema,
   teacherApplicationResendVerificationSchema,
+  teacherApplicationStatusRequestSchema,
+  teacherApplicationStatusVerifySchema,
   teacherApplicationVerifyEmailSchema,
 } from '../schemas/teacher-application.schemas';
 import { ABSOLUTE_MAX_UPLOAD_BYTES } from '../services/teacher-application-file.service';
@@ -78,6 +80,47 @@ router.post(
     body: teacherApplicationResendVerificationSchema,
   }),
   asyncHandler(TeacherApplicationController.resendVerification)
+);
+
+// ---------------------------------------------------------------------------
+// Status-check (post-submit "where is my application?") — Phase 8.12
+// ---------------------------------------------------------------------------
+//
+// Separate limiter (10/h per IP) from the submitLimiter so a teacher who has
+// already used their submit/verify budget can still look up the status.
+// Read-only on success, so the bucket can be more generous than the submit
+// limiter — but still strict enough to discourage brute force on a known
+// email-OTP pair (the per-row attempts counter is the primary brute-force
+// gate; this is defence in depth).
+
+const statusCheckLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: { xForwardedForHeader: false },
+  skip: () => process.env['NODE_ENV'] === 'test',
+  handler: () => {
+    throw new ApiError(
+      429,
+      'تم تجاوز عدد محاولات الاستعلام المسموح بها. حاول لاحقاً.',
+      ErrorCodes.RATE_LIMITED
+    );
+  },
+});
+
+router.post(
+  '/status/request',
+  statusCheckLimiter,
+  validate({ body: teacherApplicationStatusRequestSchema }),
+  asyncHandler(TeacherApplicationController.requestStatusCheck)
+);
+
+router.post(
+  '/status/verify',
+  statusCheckLimiter,
+  validate({ body: teacherApplicationStatusVerifySchema }),
+  asyncHandler(TeacherApplicationController.verifyStatusCheck)
 );
 
 // ---------------------------------------------------------------------------
