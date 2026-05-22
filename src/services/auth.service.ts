@@ -761,15 +761,13 @@ export class AuthService {
           ErrorCodes.PROVIDER_MISMATCH
         );
       }
-      const expected =
-        userType === 'teacher' ? UserType.TEACHER : UserType.STUDENT;
-      if (existingUser.userType !== expected) {
-        throw new ApiError(
-          409,
-          'نوع المستخدم لا يتطابق مع الحساب الموجود',
-          ErrorCodes.USER_TYPE_MISMATCH
-        );
-      }
+      // For an existing user, the stored userType is the source of truth.
+      // We intentionally ignore the client-supplied userType so the same
+      // /auth/google-auth endpoint can serve as "login" for either role
+      // without the client needing to know the user's type in advance
+      // (the Flutter app hard-codes 'student' on its login button).
+      // Account *creation* still honours the supplied userType below — that
+      // path is reached only when no user exists yet.
 
       try {
         if (existingUser.userType === UserType.TEACHER) {
