@@ -160,35 +160,19 @@ export class TeacherDashboardController {
   }
 
   // GET /api/teacher/dashboard/referrals
+  // (Phase 7) The bonus-seat sub-queries against the dropped
+  // teacher_subscription_bonuses + teacher_subscriptions tables are
+  // gone. Referral counts are still useful and stay; bonus reporting will
+  // be re-modelled around wallet credits in a later phase.
   static async getReferralStats(req: Request, res: Response): Promise<void> {
     const teacherId = req.user.id as string;
-    const [referralsByStatusR, referralBonusesR, activeBonusesR] = await Promise.all([
-      pool.query(
-        `SELECT status, COUNT(*)::int AS count
-           FROM teacher_referrals
-          WHERE referrer_teacher_id = $1
-          GROUP BY status`,
-        [teacherId]
-      ),
-      pool.query(
-        `SELECT COALESCE(SUM(b.bonus_value), 0)::int AS total_bonus
-           FROM teacher_subscription_bonuses b
-           JOIN teacher_subscriptions ts ON ts.id = b.teacher_subscription_id
-          WHERE ts.teacher_id = $1
-            AND b.bonus_type = 'referral_referrer'`,
-        [teacherId]
-      ),
-      pool.query(
-        `SELECT b.id, b.bonus_type, b.bonus_value, b.expires_at,
-                ts.id AS subscription_id, ts.end_date
-           FROM teacher_subscription_bonuses b
-           JOIN teacher_subscriptions ts ON ts.id = b.teacher_subscription_id
-          WHERE ts.teacher_id = $1
-            AND (b.expires_at IS NULL OR b.expires_at > NOW())
-          ORDER BY b.created_at DESC`,
-        [teacherId]
-      ),
-    ]);
+    const referralsByStatusR = await pool.query(
+      `SELECT status, COUNT(*)::int AS count
+         FROM teacher_referrals
+        WHERE referrer_teacher_id = $1
+        GROUP BY status`,
+      [teacherId]
+    );
 
     let pending = 0;
     let completed = 0;
@@ -199,16 +183,6 @@ export class TeacherDashboardController {
       else if (row.status === 'rejected') rejected = row.count;
     }
     const total = pending + completed + rejected;
-    const totalBonusSeats = referralBonusesR.rows[0]?.total_bonus ?? 0;
-
-    const activeBonuses = activeBonusesR.rows.map((row: any) => ({
-      id: row.id,
-      bonusType: row.bonus_type,
-      bonusValue: row.bonus_value,
-      expiresAt: row.expires_at,
-      subscriptionId: row.subscription_id,
-      subscriptionEndDate: row.end_date,
-    }));
 
     const referralCode = teacherId;
     const frontendBase = process.env['FRONTEND_BASE_URL'] || '';
@@ -222,7 +196,7 @@ export class TeacherDashboardController {
           referralCode,
           referralLink,
           referrals: { pending, completed, rejected, total },
-          bonuses: { totalBonusSeats, activeBonuses },
+          bonuses: { totalBonusSeats: 0, activeBonuses: [] },
         },
         'إحصائيات نظام الإحالات للمعلم'
       )

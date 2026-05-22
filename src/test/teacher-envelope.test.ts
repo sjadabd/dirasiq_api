@@ -33,9 +33,6 @@ describe('Teacher API envelope (Phase 1.B-1)', () => {
     });
 
     it('returns 401 for every teacher sub-route without a token', async () => {
-      // Note: /subscription-packages/active and /subscription-packages/:id
-      // are deliberately PUBLIC (used by the marketing / pricing page for
-      // guests). They are tested separately below.
       const subRoutes = [
         '/api/teacher/courses',
         '/api/teacher/subjects',
@@ -64,40 +61,8 @@ describe('Teacher API envelope (Phase 1.B-1)', () => {
     });
   });
 
-  describe('Public subscription-package reads (mixed-auth sub-router)', () => {
-    // GET /active and GET /:id under /api/teacher/subscription-packages/* are
-    // mounted BEFORE the parent requireRole(TEACHER) gate so the marketing
-    // page can list plans for un-authenticated visitors. The mutation
-    // (POST /:id/activate) stays teacher-only — that's covered below.
-
-    it('GET /api/teacher/subscription-packages/active returns 200 without a token', async () => {
-      const res = await request(app).get('/api/teacher/subscription-packages/active');
-      expect(res.status).toBe(200);
-      expect(res.body.success).toBe(true);
-      expect(Array.isArray(res.body.data)).toBe(true);
-    });
-
-    it('GET /api/teacher/subscription-packages/:id returns canonical envelope without a token', async () => {
-      // Unknown UUID → 404 NOT_FOUND (proves the controller ran, no auth gate
-      // intercepted it).
-      const res = await request(app).get(
-        '/api/teacher/subscription-packages/00000000-0000-0000-0000-000000000000'
-      );
-      expect([200, 404]).toContain(res.status);
-      expect(res.body.success !== undefined).toBe(true);
-    });
-
-    it('POST /api/teacher/subscription-packages/:id/activate without a token returns 401', async () => {
-      const res = await request(app).post(
-        '/api/teacher/subscription-packages/00000000-0000-0000-0000-000000000000/activate'
-      );
-      expect(res.status).toBe(401);
-      expect(res.body).toMatchObject({
-        success: false,
-        errors: [{ code: 'UNAUTHORIZED' }],
-      });
-    });
-  });
+  // (Phase 7) The mixed-auth /api/teacher/subscription-packages/* sub-router
+  // was removed alongside the subscription model. Tests removed.
 
   describe('Canonical 404 (outside the teacher router)', () => {
     it('returns canonical fail() shape on unknown top-level route', async () => {

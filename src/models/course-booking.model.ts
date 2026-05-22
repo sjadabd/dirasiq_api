@@ -8,8 +8,8 @@ import {
   CreateCourseBookingRequest,
   UpdateCourseBookingRequest,
 } from '../types';
-import { BookingUsageLogModel } from './booking-usage-log.model';
-import { TeacherSubscriptionModel } from './teacher-subscription.model';
+// (Phase 7) BookingUsageLogModel + TeacherSubscriptionModel removed
+// alongside the legacy subscription/capacity stack.
 
 export class CourseBookingModel {
   // Create new course booking
@@ -281,7 +281,7 @@ export class CourseBookingModel {
         }
         // التحقق من السعة قبل التأكيد
         const capacityCheck =
-          await TeacherSubscriptionModel.canAddStudent(teacherId);
+          { canAdd: true as const, message: null as string | null, currentStudents: 0, maxStudents: null as number | null };
         if (!capacityCheck.canAdd) {
           throw new Error(capacityCheck.message || 'لا يمكن تأكيد الحجز');
         }
@@ -388,13 +388,10 @@ export class CourseBookingModel {
 
         // تأكيد حجز جديد - زيادة العدد
         const capacityCheck =
-          await TeacherSubscriptionModel.canAddStudent(teacherId);
-        await TeacherSubscriptionModel.incrementCurrentStudents(
-          teacherId,
-          client
-        );
+          { canAdd: true as const, message: null as string | null, currentStudents: 0, maxStudents: null as number | null };
+        // (Phase 7) capacity bookkeeping removed alongside subscriptions.
 
-        // تسجيل الاستخدام
+        //تسجيل الاستخدام
         await this.logBookingUsage(
           id,
           teacherId,
@@ -413,13 +410,10 @@ export class CourseBookingModel {
       ) {
         // رفض حجز كان مؤكداً - تقليل العدد
         const capacityCheck =
-          await TeacherSubscriptionModel.canAddStudent(teacherId);
-        await TeacherSubscriptionModel.decrementCurrentStudents(
-          teacherId,
-          client
-        );
+          { canAdd: true as const, message: null as string | null, currentStudents: 0, maxStudents: null as number | null };
+        // (Phase 7) capacity bookkeeping removed alongside subscriptions.
 
-        // تسجيل الاستخدام
+        //تسجيل الاستخدام
         await this.logBookingUsage(
           id,
           teacherId,
@@ -438,13 +432,10 @@ export class CourseBookingModel {
       ) {
         // إلغاء حجز كان مؤكداً - تقليل العدد
         const capacityCheck =
-          await TeacherSubscriptionModel.canAddStudent(teacherId);
-        await TeacherSubscriptionModel.decrementCurrentStudents(
-          teacherId,
-          client
-        );
+          { canAdd: true as const, message: null as string | null, currentStudents: 0, maxStudents: null as number | null };
+        // (Phase 7) capacity bookkeeping removed alongside subscriptions.
 
-        // تسجيل الاستخدام
+        //تسجيل الاستخدام
         await this.logBookingUsage(
           id,
           teacherId,
@@ -463,7 +454,7 @@ export class CourseBookingModel {
       ) {
         // رفض حجز جديد (لم يكن معتمدًا)
         const capacityCheck =
-          await TeacherSubscriptionModel.canAddStudent(teacherId);
+          { canAdd: true as const, message: null as string | null, currentStudents: 0, maxStudents: null as number | null };
 
         // تسجيل الاستخدام
         await this.logBookingUsage(
@@ -569,8 +560,8 @@ export class CourseBookingModel {
       // تحديث عدد الطلاب الحاليين إذا كان الحجز مؤكداً وتسجيل الاستخدام
       if (currentStatus === BookingStatus.CONFIRMED) {
         const capacityCheck =
-          await TeacherSubscriptionModel.canAddStudent(teacherId);
-        await TeacherSubscriptionModel.decrementCurrentStudents(teacherId);
+          { canAdd: true as const, message: null as string | null, currentStudents: 0, maxStudents: null as number | null };
+        // (Phase 7) capacity bookkeeping removed alongside subscriptions.
 
         // تسجيل الاستخدام
         await this.logBookingUsage(
@@ -642,8 +633,8 @@ export class CourseBookingModel {
       // تحديث عدد الطلاب الحاليين إذا كان الحجز مؤكداً وتسجيل الاستخدام
       if (currentStatus === BookingStatus.CONFIRMED) {
         const capacityCheck =
-          await TeacherSubscriptionModel.canAddStudent(teacherId);
-        await TeacherSubscriptionModel.decrementCurrentStudents(teacherId);
+          { canAdd: true as const, message: null as string | null, currentStudents: 0, maxStudents: null as number | null };
+        // (Phase 7) capacity bookkeeping removed alongside subscriptions.
 
         // تسجيل الاستخدام
         await this.logBookingUsage(
@@ -887,51 +878,24 @@ export class CourseBookingModel {
     };
   }
 
-  // دالة مساعدة لتسجيل استخدام الحجز
+  // (Phase 7) booking-usage logging was tied to the now-dropped
+  // teacher_subscriptions + booking_usage_logs tables. Method kept as a
+  // no-op so the 6 internal call sites don't need a wholesale rewrite —
+  // they'll be cleaned up when the bookings flow is fully refactored
+  // around the new commission model in a later phase.
   private static async logBookingUsage(
-    bookingId: string,
-    teacherId: string,
-    studentId: string,
-    studentsBefore: number,
-    studentsAfter: number,
-    actionType: 'approved' | 'rejected' | 'cancelled' | 'reactivated',
-    previousStatus: string,
-    newStatus: string,
-    performedBy: 'teacher' | 'student' | 'system',
-    reason?: string
+    _bookingId: string,
+    _teacherId: string,
+    _studentId: string,
+    _studentsBefore: number,
+    _studentsAfter: number,
+    _actionType: 'approved' | 'rejected' | 'cancelled' | 'reactivated',
+    _previousStatus: string,
+    _newStatus: string,
+    _performedBy: 'teacher' | 'student' | 'system',
+    _reason?: string
   ): Promise<void> {
-    try {
-      // جلب teacher_subscription_id
-      const subscriptionQuery = `
-        SELECT id FROM teacher_subscriptions
-        WHERE teacher_id = $1 AND is_active = true AND deleted_at IS NULL
-        LIMIT 1
-      `;
-      const subscriptionResult = await pool.query(subscriptionQuery, [
-        teacherId,
-      ]);
-
-      if (subscriptionResult.rows.length > 0) {
-        const teacherSubscriptionId = subscriptionResult.rows[0].id;
-
-        await BookingUsageLogModel.create({
-          bookingId,
-          teacherId,
-          studentId,
-          teacherSubscriptionId,
-          actionType,
-          previousStatus,
-          newStatus,
-          studentsBefore,
-          studentsAfter,
-          reason: reason || undefined,
-          performedBy,
-        });
-      }
-    } catch (error) {
-      // لا نريد أن يفشل تسجيل الاستخدام العملية الرئيسية
-      console.error('Error logging booking usage:', error);
-    }
+    return;
   }
 
   // Get confirmed students for a course (by course_id)

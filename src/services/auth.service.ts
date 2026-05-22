@@ -4,9 +4,7 @@ import jwt from 'jsonwebtoken';
 import { sendPasswordResetEmail, sendVerificationEmail } from '../config/email';
 import { GradeModel } from '../models/grade.model';
 import { StudentGradeModel } from '../models/student-grade.model';
-import { SubscriptionPackageModel } from '../models/subscription-package.model';
 import { TeacherGradeModel } from '../models/teacher-grade.model';
-import { TeacherSubscriptionModel } from '../models/teacher-subscription.model';
 import { TokenModel } from '../models/token.model';
 import { UserModel } from '../models/user.model';
 import { GeocodingService } from '../services/geocoding.service';
@@ -231,28 +229,8 @@ export class AuthService {
       throw err;
     }
 
-    // Best-effort: auto-grant the free subscription tier. Failure here does
-    // not block registration; the teacher can subscribe later.
-    try {
-      const freePackage = await SubscriptionPackageModel.getFreePackage();
-      if (freePackage) {
-        const startDate = new Date();
-        const endDate = new Date(startDate);
-        endDate.setDate(
-          endDate.getDate() + Number(freePackage.durationDays || 30)
-        );
-        await TeacherSubscriptionModel.create({
-          teacherId: teacher.id,
-          subscriptionPackageId: freePackage.id,
-          startDate,
-          endDate,
-        });
-      } else {
-        logger.warn('No free subscription package found; skipping auto-subscription for teacher');
-      }
-    } catch (err) {
-      logger.warn({ err }, 'failed to auto-create free subscription for teacher');
-    }
+    // (Phase 7) Free-subscription auto-grant removed — the subscription
+    // model is replaced by commission + wallet.
 
     // Best-effort: create teacher↔grade relationships.
     if (data.gradeIds && data.gradeIds.length > 0 && data.studyYear) {

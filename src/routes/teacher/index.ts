@@ -1,14 +1,11 @@
 // Teacher router.
 //
-// Phase 1.B-1 invariant: most endpoints under /api/teacher/* require
-// authentication + the teacher role, applied at the router level so each
-// sub-route file no longer needs `authenticateToken, requireTeacher` per
-// handler.
+// Phase 1.B-1 invariant: every endpoint under /api/teacher/* requires
+// authentication + the teacher role, applied at the router level.
 //
-// Exceptions mounted BEFORE the parent role gate (per-route auth instead):
-//   - `/subscription-packages/*` — `GET /active` and `GET /:id` are public
-//     (used by the marketing / pricing page for guests); only the
-//     `POST /:id/activate` mutation is gated to TEACHER inside the sub-router.
+// (Phase 7) The legacy `/subscription-packages/*` mount with its
+// public-read exceptions is gone alongside the rest of the subscription
+// model.
 //
 // Other public surfaces live outside this router:
 //   - `/api/payments/wayl/*` (webhook is public),
@@ -32,7 +29,6 @@ import rosterRoutes from './roster.routes';
 import sessionRoutes from './session.routes';
 import studentEvaluationRoutes from './student-evaluation.routes';
 import subjectRoutes from './subject.routes';
-import subscriptionPackageRoutes from './subscription-package.routes';
 import walletRoutes from './wallet.routes';
 
 import { authenticateToken, requireRole } from '../../middleware/auth.middleware';
@@ -40,12 +36,7 @@ import { UserType } from '../../types';
 
 const router = Router();
 
-// Mixed-auth sub-router — declares its own per-route middleware.
-// MUST be mounted BEFORE the parent `requireRole(TEACHER)` line below,
-// otherwise the public reads inside it would inherit the teacher gate.
-router.use('/subscription-packages', subscriptionPackageRoutes);
-
-// Everything mounted after this line requires a valid teacher session.
+// Everything mounted under this router requires a valid teacher session.
 router.use(authenticateToken, requireRole(UserType.TEACHER));
 
 router.use('/courses', courseRoutes);

@@ -1,15 +1,12 @@
 import { Router } from 'express';
 
 import { TeacherPaymentController } from '../../controllers/teacher/payment.controller';
-import { TeacherWaylPaymentController } from '../../controllers/teacher/wayl-payment.controller';
 import { validate } from '../../middleware/validate.middleware';
 import { asyncHandler } from '../../utils/async-handler';
 import { bookingIdParamSchema } from '../../schemas/common.schemas';
 import {
   reservationListQuerySchema,
   reservationReportQuerySchema,
-  waylSubscriptionLinkSchema,
-  waylWalletTopupLinkSchema,
 } from '../../schemas/teacher.schemas';
 
 const router = Router();
@@ -42,18 +39,8 @@ router.patch(
   asyncHandler(TeacherPaymentController.markReservationPaid)
 );
 
-// POST /teacher/payments/wayl/subscription-link
-router.post(
-  '/wayl/subscription-link',
-  validate({ body: waylSubscriptionLinkSchema }),
-  asyncHandler(TeacherWaylPaymentController.createSubscriptionLink)
-);
-
-// POST /teacher/payments/wayl/wallet-topup-link
-router.post(
-  '/wayl/wallet-topup-link',
-  validate({ body: waylWalletTopupLinkSchema }),
-  asyncHandler(TeacherWaylPaymentController.createWalletTopupLink)
-);
+// (Phase 7) Removed: /wayl/subscription-link + /wayl/wallet-topup-link.
+// Subscription model is gone; the new commission + wallet flow credits
+// teachers automatically from student course purchases (see Phase 9+).
 
 export default router;

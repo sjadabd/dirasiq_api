@@ -58,8 +58,8 @@ describe('Phase 1.B-3 envelope (super-admin / notifications / payments / public 
         '/api/grades',
         '/api/grades/all',
         '/api/grades/my-grades',
-        '/api/subscription-packages',
-        '/api/subscription-packages/active',
+        // (Phase 7) /api/subscription-packages/* routes removed alongside
+        // the subscription model.
         '/api/notifications',
         '/api/notifications/statistics',
         '/api/notifications/user/my-notifications',

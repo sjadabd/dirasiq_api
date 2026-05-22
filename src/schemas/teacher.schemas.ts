@@ -591,10 +591,5 @@ export const reservationReportQuerySchema = z.object({
   studyYear: studyYearSchema,
 });
 
-export const waylSubscriptionLinkSchema = z.object({
-  packageId: uuidSchema,
-});
-
-export const waylWalletTopupLinkSchema = z.object({
-  amount: positiveMoneySchema.min(1000, 'الحد الأدنى للدفع عبر Wayl هو 1000 دينار'),
-});
+// (Phase 7) waylSubscriptionLinkSchema + waylWalletTopupLinkSchema removed
+// alongside the legacy subscription / wallet-topup flow.

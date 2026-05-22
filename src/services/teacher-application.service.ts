@@ -514,39 +514,10 @@ export class TeacherApplicationService {
         [newUserId]
       );
 
-      // 7. Free subscription — best-effort. We INSERT directly (no model
-      //    call) so it stays inside the transaction.
-      const freePkgRes = await client.query<{
-        id: string;
-        duration_days: number;
-      }>(
-        `SELECT id, duration_days
-           FROM subscription_packages
-          WHERE is_free = true
-            AND is_active = true
-            AND deleted_at IS NULL
-          ORDER BY created_at DESC
-          LIMIT 1`
-      );
-      if (freePkgRes.rows.length > 0) {
-        const pkg = freePkgRes.rows[0]!;
-        const startDate = new Date();
-        const endDate = new Date(startDate);
-        endDate.setDate(
-          endDate.getDate() + Number(pkg.duration_days || 30)
-        );
-        await client.query(
-          `INSERT INTO teacher_subscriptions
-             (teacher_id, subscription_package_id, start_date, end_date)
-           VALUES ($1, $2, $3, $4)`,
-          [newUserId, pkg.id, startDate, endDate]
-        );
-      } else {
-        logger.info(
-          { applicationId },
-          'approve: no active free subscription package configured — skipping'
-        );
-      }
+      // 7. (Phase 7) Free-subscription provisioning removed — the
+      //    subscription model is gone; commission + wallet take its place.
+      //    The wallet row was already created above; no further setup
+      //    needed here.
 
       // 8. Finalise the application — set status, audit, and NULL the
       //    hash now that it lives on users.password (Decision 4).

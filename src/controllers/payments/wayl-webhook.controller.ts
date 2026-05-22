@@ -353,31 +353,17 @@ export class WaylWebhookController {
           referenceId: referenceId,
           client,
         });
-      } else if (link.purpose === 'subscription') {
-        const pkgId = link.subscription_package_id;
-        if (!pkgId) throw new Error('Missing subscription_package_id');
-
-        const pkgR = await client.query(
-          `SELECT id, duration_days, is_active
-           FROM subscription_packages
-           WHERE id = $1 AND deleted_at IS NULL`,
-          [pkgId],
-        );
-        const pkg = pkgR.rows[0];
-        if (!pkg || !pkg.is_active) {
-          throw new Error('الباقة غير موجودة أو غير مفعلة');
-        }
-
-        const startDate = new Date();
-        const endDate = new Date(startDate);
-        endDate.setDate(endDate.getDate() + Number(pkg.duration_days || 30));
-
-        await client.query(
-          `INSERT INTO teacher_subscriptions (
-             teacher_id, subscription_package_id, start_date, end_date, is_active
-           ) VALUES ($1,$2,$3,$4,true)`,
-          [link.teacher_id, pkgId, startDate, endDate],
-        );
+      } else {
+        // (Phase 7) The 'subscription' purpose was removed alongside the
+        // legacy subscription system. Course-purchase ('enrollment')
+        // handling will be wired here in Phase 14 once the new
+        // video-course flow lands. Any unrecognised purpose is logged
+        // server-side and the webhook is acked as ignored (so Wayl does
+        // not retry forever).
+        console.warn('Wayl webhook: ignored unknown purpose', {
+          referenceId,
+          purpose: link.purpose,
+        });
       }
 
       await client.query('COMMIT');

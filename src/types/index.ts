@@ -233,39 +233,9 @@ export interface UpdateStudentGradeRequest {
   isActive?: boolean;
 }
 
-// Subscription Package types
-export interface SubscriptionPackage {
-  id: string;
-  name: string;
-  description?: string;
-  maxStudents: number;
-  price: number;
-  durationDays: number;
-  isFree: boolean;
-  isActive: boolean;
-  current: boolean;
-  createdAt: Date;
-  updatedAt: Date;
-}
-
-export interface CreateSubscriptionPackageRequest {
-  name: string;
-  description?: string;
-  maxStudents: number;
-  price: number;
-  durationDays: number;
-  isFree?: boolean;
-}
-
-export interface UpdateSubscriptionPackageRequest {
-  name?: string;
-  description?: string;
-  maxStudents?: number;
-  price?: number;
-  durationDays?: number;
-  isFree?: boolean;
-  isActive?: boolean;
-}
+// (Legacy SubscriptionPackage / CreateSubscriptionPackageRequest /
+//  UpdateSubscriptionPackageRequest types removed in Phase 7 — the
+//  subscription model is gone; commission + wallet take its place.)
 
 // Teacher Grade types
 export interface TeacherGrade {
@@ -447,32 +417,90 @@ export interface UpdateCourseRequest {
   reservation_amount?: number | null;
 }
 
-export interface TeacherSubscription {
+// (Legacy TeacherSubscription / CreateTeacherSubscriptionRequest /
+//  UpdateTeacherSubscriptionRequest types removed in Phase 7.)
+
+// =====================================================
+// Phase 7 — Wallet ledger + commission engine
+// =====================================================
+
+export enum WalletLedgerEntryType {
+  ENROLLMENT_CREDIT          = 'enrollment_credit',
+  PLATFORM_COMMISSION        = 'platform_commission',
+  GATEWAY_FEE                = 'gateway_fee',
+  PENDING_TO_WITHDRAWABLE    = 'pending_to_withdrawable',
+  WITHDRAWAL_HOLD            = 'withdrawal_hold',
+  WITHDRAWAL_RELEASE         = 'withdrawal_release',
+  WITHDRAWAL_PAID            = 'withdrawal_paid',
+  REFUND_DEBIT               = 'refund_debit',
+  MANUAL_ADJUSTMENT_CREDIT   = 'manual_adjustment_credit',
+  MANUAL_ADJUSTMENT_DEBIT    = 'manual_adjustment_debit',
+}
+
+export interface WalletLedgerEntry {
   id: string;
   teacherId: string;
-  subscriptionPackageId: string;
-  startDate: Date;
-  endDate: Date;
+  entryType: WalletLedgerEntryType;
+  amount: number;                          // positive = credit, negative = debit
+  balancePendingAfter: number;
+  balanceWithdrawableAfter: number;
+  relatedEnrollmentId: string | null;
+  relatedWithdrawalId: string | null;
+  relatedWaylLinkId: string | null;
+  actorUserId: string | null;
+  idempotencyKey: string | null;
+  notes: string | null;
+  createdAt: string;
+}
+
+export interface PlatformCommissionTier {
+  id: string;
+  name: string;
+  minSalePriceIqd: number;
+  maxSalePriceIqd: number | null;
+  commissionPercent: number;
   isActive: boolean;
-  currentStudents: number;
-  createdAt: Date;
-  updatedAt: Date;
-  deletedAt?: Date;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
 }
 
-export interface CreateTeacherSubscriptionRequest {
+export interface TeacherCommissionOverride {
   teacherId: string;
-  subscriptionPackageId: string;
-  startDate: Date;
-  endDate: Date;
+  commissionPercent: number;
+  reason: string | null;
+  setBy: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
-export interface UpdateTeacherSubscriptionRequest {
-  subscriptionPackageId?: string;
-  startDate?: Date;
-  endDate?: Date;
-  isActive?: boolean;
-  deletedAt?: Date;
+export enum WithdrawalStatus {
+  PENDING  = 'pending',
+  APPROVED = 'approved',
+  REJECTED = 'rejected',
+  PAID     = 'paid',
+}
+
+export interface TeacherWithdrawalRequest {
+  id: string;
+  teacherId: string;
+  amountIqd: number;
+  status: WithdrawalStatus;
+  payoutMethod: string | null;
+  payoutReference: string | null;
+  payoutDestination: string | null;
+  requestedDestination: string | null;
+  requestedNotes: string | null;
+  rejectionReason: string | null;
+  adminNotes: string | null;
+  approvedBy: string | null;
+  approvedAt: string | null;
+  rejectedBy: string | null;
+  rejectedAt: string | null;
+  paidBy: string | null;
+  paidAt: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 // =====================================================

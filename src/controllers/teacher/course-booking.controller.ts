@@ -1,7 +1,6 @@
 import type { Request, Response } from 'express';
 
 import { CourseBookingModel } from '../../models/course-booking.model';
-import { TeacherSubscriptionModel } from '../../models/teacher-subscription.model';
 import { NotificationService } from '../../services/notification.service';
 import { CourseBookingService } from '../../services/teacher/course-booking.service';
 import { BookingStatus, type CourseBooking, type UpdateCourseBookingRequest } from '../../types';
@@ -42,32 +41,24 @@ export class TeacherCourseBookingController {
     restApiKey: process.env['ONESIGNAL_REST_API_KEY'] || '',
   });
 
-  static async getRemainingStudents(req: Request, res: Response): Promise<void> {
-    // Cache headers preserved from legacy behaviour — dashboards rely on
-    // always-fresh capacity numbers when activating a booking.
+  static async getRemainingStudents(_req: Request, res: Response): Promise<void> {
+    // (Phase 7) Subscription-based capacity removed — the new revenue
+    // model has no per-teacher student cap. Endpoint kept for dashboard
+    // compatibility; reports "unlimited" until Phase 14 retires it.
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     res.setHeader('Pragma', 'no-cache');
     res.setHeader('Expires', '0');
     res.removeHeader('ETag');
 
-    const teacherId = req.user.id as string;
-    const check = await TeacherSubscriptionModel.canAddStudent(teacherId);
-    const remaining = Math.max((check.maxStudents || 0) - (check.currentStudents || 0), 0);
-
-    const message =
-      !check.canAdd && check.maxStudents === 0
-        ? check.message || 'لا يوجد اشتراك فعال للمعلم'
-        : 'تم جلب سعة الاشتراك بنجاح';
-
     res.status(200).json(
       ok(
         {
-          currentStudents: check.currentStudents,
-          maxStudents: check.maxStudents,
-          remaining,
-          canAdd: !check.canAdd && check.maxStudents === 0 ? false : check.canAdd,
+          currentStudents: 0,
+          maxStudents: null,   // null = unlimited
+          remaining: null,
+          canAdd: true,
         },
-        message
+        'لا يوجد حد أقصى للطلاب'
       )
     );
   }
