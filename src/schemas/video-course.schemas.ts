@@ -67,6 +67,63 @@ export type VideoCourseTeacherListQuery = z.infer<typeof videoCourseTeacherListQ
 export type VideoCourseAdminListQuery = z.infer<typeof videoCourseAdminListQuerySchema>;
 
 // ----------------------------------------------------------------------------
+// Teacher write bodies — Phase 10.1.B
+// ----------------------------------------------------------------------------
+
+// `course_type` style fields — kept lenient on length; the DB CHECK is the
+// last line of defence. Visibility defaults to `private` so a newly-created
+// course is invisible until the teacher explicitly publishes (and the
+// admin approves).
+const courseTitleSchema = z.string().trim().min(1, 'العنوان مطلوب').max(200, 'العنوان طويل جداً');
+const courseDescriptionSchema = z.string().trim().max(10_000, 'الوصف طويل جداً');
+const courseSubjectSchema = z.string().trim().min(1, 'المادة مطلوبة').max(100, 'المادة طويلة جداً');
+const courseStageSchema = z.string().trim().min(1, 'المرحلة مطلوبة').max(100, 'المرحلة طويلة جداً');
+
+// hasPhysicalCourses-style boolean coercion — Flutter sometimes serialises
+// booleans to strings in multipart bodies.
+const coerceBool = z.preprocess((v) => {
+  if (typeof v === 'boolean') return v;
+  if (v === 'true' || v === '1') return true;
+  if (v === 'false' || v === '0') return false;
+  return v;
+}, z.boolean());
+
+// price expressed as a non-negative number coerced from string-or-number
+// because multipart bodies pass it as a string.
+const priceSchema = z.coerce.number().nonnegative('السعر يجب أن يكون 0 أو أكثر').max(1_000_000);
+
+export const videoCourseCreateSchema = z.object({
+  title: courseTitleSchema,
+  description: courseDescriptionSchema.optional(),
+  subject: courseSubjectSchema,
+  teachingStage: courseStageSchema,
+  gradeId: uuidSchema.optional(),
+  isFree: coerceBool.optional(),
+  price: priceSchema.optional(),
+  visibility: videoCourseVisibilityEnum.optional(),
+});
+export type VideoCourseCreateInput = z.infer<typeof videoCourseCreateSchema>;
+
+// Update: same fields, all optional, but the body must have at least one
+// recognised key. Status fields are intentionally NOT here — they are
+// super-admin owned.
+export const videoCourseUpdateSchema = z
+  .object({
+    title: courseTitleSchema.optional(),
+    description: courseDescriptionSchema.optional(),
+    subject: courseSubjectSchema.optional(),
+    teachingStage: courseStageSchema.optional(),
+    gradeId: uuidSchema.optional(),
+    isFree: coerceBool.optional(),
+    price: priceSchema.optional(),
+    visibility: videoCourseVisibilityEnum.optional(),
+  })
+  .refine((obj) => Object.values(obj).some((v) => v !== undefined), {
+    message: 'يجب تمرير حقل واحد على الأقل للتحديث',
+  });
+export type VideoCourseUpdateInput = z.infer<typeof videoCourseUpdateSchema>;
+
+// ----------------------------------------------------------------------------
 // Admin moderation bodies
 // ----------------------------------------------------------------------------
 

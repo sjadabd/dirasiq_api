@@ -87,6 +87,32 @@ describe('Video Courses — Phase 10.1.A', () => {
       );
       expect(res.status).toBe(401);
     });
+
+    it('POST /api/teacher/video-courses without token → 401', async () => {
+      const res = await request(app).post('/api/teacher/video-courses').send({});
+      expect(res.status).toBe(401);
+    });
+
+    it('PATCH /api/teacher/video-courses/<uuid> without token → 401', async () => {
+      const res = await request(app)
+        .patch('/api/teacher/video-courses/00000000-0000-0000-0000-000000000000')
+        .send({});
+      expect(res.status).toBe(401);
+    });
+
+    it('DELETE /api/teacher/video-courses/<uuid> without token → 401', async () => {
+      const res = await request(app).delete(
+        '/api/teacher/video-courses/00000000-0000-0000-0000-000000000000'
+      );
+      expect(res.status).toBe(401);
+    });
+
+    it('POST /api/teacher/video-courses/<uuid>/cover-image without token → 401', async () => {
+      const res = await request(app)
+        .post('/api/teacher/video-courses/00000000-0000-0000-0000-000000000000/cover-image')
+        .attach('file', Buffer.from([0xff, 0xd8, 0xff]), 'cover.jpg');
+      expect(res.status).toBe(401);
+    });
   });
 
   // -------------------------------------------------------------------------

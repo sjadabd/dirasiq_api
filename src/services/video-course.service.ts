@@ -131,6 +131,82 @@ export class VideoCourseService {
     return VideoLessonModel.findByCourse(courseId);
   }
 
+  // ---- TEACHER writes — Phase 10.1.B --------------------------------------
+
+  /**
+   * Create a new (pending_review) course owned by `teacherId`. Visibility
+   * defaults to `private` so a freshly-created course is invisible to
+   * students until the teacher publishes + the admin approves.
+   */
+  static async createForTeacher(args: {
+    teacherId: string;
+    title: string;
+    description?: string;
+    subject: string;
+    teachingStage: string;
+    gradeId?: string;
+    isFree?: boolean;
+    price?: number;
+    visibility?: VideoCourseVisibility;
+  }): Promise<VideoCourse> {
+    return VideoCourseModel.insert({
+      teacherId: args.teacherId,
+      title: args.title,
+      description: args.description ?? null,
+      subject: args.subject,
+      teachingStage: args.teachingStage,
+      gradeId: args.gradeId ?? null,
+      isFree: args.isFree ?? true,
+      price: args.price ?? 0,
+      visibility: args.visibility ?? VideoCourseVisibility.PRIVATE,
+    });
+  }
+
+  /**
+   * Partial update + reset moderation state. Throws 404 if the row doesn't
+   * exist OR if it's owned by another teacher (anti-enumeration: same wire
+   * shape as "no such id").
+   */
+  static async updateForTeacher(args: {
+    id: string;
+    teacherId: string;
+    updates: Parameters<typeof VideoCourseModel.updateForTeacher>[0]['updates'];
+  }): Promise<VideoCourse> {
+    const updated = await VideoCourseModel.updateForTeacher({
+      id: args.id,
+      teacherId: args.teacherId,
+      updates: args.updates,
+    });
+    if (!updated) {
+      throw new ApiError(404, 'الدورة غير موجودة', ErrorCodes.NOT_FOUND);
+    }
+    return updated;
+  }
+
+  /** Teacher-side soft delete. 404 on unknown / not-owned. */
+  static async deleteForTeacher(args: {
+    id: string;
+    teacherId: string;
+  }): Promise<void> {
+    const ok = await VideoCourseModel.softDeleteForTeacher(args);
+    if (!ok) {
+      throw new ApiError(404, 'الدورة غير موجودة', ErrorCodes.NOT_FOUND);
+    }
+  }
+
+  /** Replace the cover image. 404 on unknown / not-owned. */
+  static async setCoverImageForTeacher(args: {
+    id: string;
+    teacherId: string;
+    coverImage: string;
+  }): Promise<VideoCourse> {
+    const updated = await VideoCourseModel.setCoverImage(args);
+    if (!updated) {
+      throw new ApiError(404, 'الدورة غير موجودة', ErrorCodes.NOT_FOUND);
+    }
+    return updated;
+  }
+
   // ---- ADMIN moderation ---------------------------------------------------
 
   static async approve(args: {

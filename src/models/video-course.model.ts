@@ -233,6 +233,137 @@ export class VideoCourseModel {
     return { rows, total };
   }
 
+  // ---- TEACHER WRITES (Phase 10.1.B) ---------------------------------------
+
+  static async insert(args: {
+    teacherId: string;
+    title: string;
+    description: string | null;
+    subject: string;
+    teachingStage: string;
+    gradeId: string | null;
+    isFree: boolean;
+    price: number;
+    visibility: VideoCourseVisibility;
+  }): Promise<VideoCourse> {
+    const { rows } = await pool.query<VideoCourse>(
+      `INSERT INTO video_courses
+         (teacher_id, title, description, subject, teaching_stage, grade_id,
+          is_free, price, visibility, status)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'pending_review')
+       RETURNING ${VIDEO_COURSE_COLUMNS}`,
+      [
+        args.teacherId,
+        args.title,
+        args.description,
+        args.subject,
+        args.teachingStage,
+        args.gradeId,
+        args.isFree,
+        args.price,
+        args.visibility,
+      ]
+    );
+    return rows[0]!;
+  }
+
+  /**
+   * Whitelisted partial update. Builds SET clauses only for keys actually
+   * present in `updates` to avoid clobbering unrelated columns.
+   *
+   * Side-effect: any teacher-side edit forces the row back to pending_review
+   * so the super-admin re-reviews the changes. The caller's contract is
+   * "this is a teacher edit; please re-review" — so this is intentional.
+   */
+  static async updateForTeacher(args: {
+    id: string;
+    teacherId: string;
+    updates: Partial<{
+      title: string;
+      description: string | null;
+      subject: string;
+      teachingStage: string;
+      gradeId: string | null;
+      isFree: boolean;
+      price: number;
+      visibility: VideoCourseVisibility;
+    }>;
+  }): Promise<VideoCourse | null> {
+    const setClauses: string[] = [];
+    const params: unknown[] = [args.id, args.teacherId];
+
+    const map: Record<string, string> = {
+      title: 'title',
+      description: 'description',
+      subject: 'subject',
+      teachingStage: 'teaching_stage',
+      gradeId: 'grade_id',
+      isFree: 'is_free',
+      price: 'price',
+      visibility: 'visibility',
+    };
+    for (const [k, col] of Object.entries(map)) {
+      const v = (args.updates as Record<string, unknown>)[k];
+      if (v === undefined) continue;
+      params.push(v);
+      setClauses.push(`${col} = $${params.length}`);
+    }
+
+    // Always reset moderation state on a teacher edit — see method doc.
+    setClauses.push(`status = 'pending_review'`);
+    setClauses.push(`reviewed_by = NULL`);
+    setClauses.push(`reviewed_at = NULL`);
+    setClauses.push(`review_notes = NULL`);
+
+    if (setClauses.length === 4) {
+      // Only the moderation-reset clauses, no real changes — shouldn't
+      // happen because the Zod refine() rejects empty updates, but bail.
+      return this.findById(args.id);
+    }
+
+    const { rows } = await pool.query<VideoCourse>(
+      `UPDATE video_courses
+          SET ${setClauses.join(', ')}
+        WHERE id = $1 AND teacher_id = $2 AND deleted_at IS NULL
+        RETURNING ${VIDEO_COURSE_COLUMNS}`,
+      params
+    );
+    return rows[0] ?? null;
+  }
+
+  /**
+   * Teacher-side soft delete. Same WHERE clause as updateForTeacher — the
+   * ownership check is part of the SQL so a forged id from another teacher
+   * is silently a no-op (returns false → caller throws 404).
+   */
+  static async softDeleteForTeacher(args: {
+    id: string;
+    teacherId: string;
+  }): Promise<boolean> {
+    const { rowCount } = await pool.query(
+      `UPDATE video_courses SET deleted_at = NOW()
+        WHERE id = $1 AND teacher_id = $2 AND deleted_at IS NULL`,
+      [args.id, args.teacherId]
+    );
+    return (rowCount ?? 0) > 0;
+  }
+
+  /** Set cover_image (relative URL like /public/...). */
+  static async setCoverImage(args: {
+    id: string;
+    teacherId: string;
+    coverImage: string;
+  }): Promise<VideoCourse | null> {
+    const { rows } = await pool.query<VideoCourse>(
+      `UPDATE video_courses
+          SET cover_image = $3
+        WHERE id = $1 AND teacher_id = $2 AND deleted_at IS NULL
+        RETURNING ${VIDEO_COURSE_COLUMNS}`,
+      [args.id, args.teacherId, args.coverImage]
+    );
+    return rows[0] ?? null;
+  }
+
   // ---- ADMIN WRITES ---------------------------------------------------------
 
   /** Set status + record the reviewer + (optional) review notes atomically. */
