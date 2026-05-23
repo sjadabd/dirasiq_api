@@ -29,6 +29,7 @@ import rosterRoutes from './roster.routes';
 import sessionRoutes from './session.routes';
 import studentEvaluationRoutes from './student-evaluation.routes';
 import subjectRoutes from './subject.routes';
+import videoCourseRoutes from './video-course.routes';
 import walletRoutes from './wallet.routes';
 
 import { authenticateToken, requireRole } from '../../middleware/auth.middleware';
@@ -57,5 +58,6 @@ router.use('/expenses', expenseRoutes);
 router.use('/reports', reportRoutes);
 router.use('/profile', profileRoutes);
 router.use('/wallet', walletRoutes);
+router.use('/video-courses', videoCourseRoutes);
 
 export default router;

@@ -1133,3 +1133,68 @@ export interface TeacherApplicationFile {
   createdAt: string;
   deletedAt: string | null;
 }
+
+// ----------------------------------------------------------------------------
+// Phase 10.1 — Video learning (video_courses + video_lessons)
+// ----------------------------------------------------------------------------
+
+export enum VideoCourseStatus {
+  PENDING_REVIEW = 'pending_review',
+  APPROVED = 'approved',
+  HIDDEN = 'hidden',
+  REJECTED = 'rejected',
+}
+
+export enum VideoCourseVisibility {
+  PRIVATE = 'private',
+  PUBLIC = 'public',
+}
+
+export enum VideoLessonBunnyStatus {
+  PENDING = 'pending',
+  UPLOADED = 'uploaded',
+  PROCESSING = 'processing',
+  READY = 'ready',
+  FAILED = 'failed',
+}
+
+export interface VideoCourse {
+  id: string;
+  teacherId: string;
+  title: string;
+  description: string | null;
+  subject: string;
+  teachingStage: string;
+  gradeId: string | null;
+  coverImage: string | null;
+  price: string; // pg DECIMAL → string in the driver
+  isFree: boolean;
+  visibility: VideoCourseVisibility;
+  status: VideoCourseStatus;
+  reviewedBy: string | null;
+  reviewedAt: string | null;
+  reviewNotes: string | null;
+  createdAt: string;
+  updatedAt: string;
+  deletedAt: string | null;
+}
+
+export interface VideoLesson {
+  id: string;
+  courseId: string;
+  title: string;
+  description: string | null;
+  displayOrder: number;
+  durationSeconds: number | null;
+  bunnyLibraryId: string | null;
+  bunnyVideoId: string | null;
+  bunnyThumbnailUrl: string | null;
+  // Raw HLS manifest URL — never returned directly to a client. Always sign
+  // via BunnyStreamService.getSignedPlaybackUrl before exposure.
+  bunnyPlaybackUrl: string | null;
+  bunnyStatus: VideoLessonBunnyStatus;
+  bunnyLastSyncedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  deletedAt: string | null;
+}

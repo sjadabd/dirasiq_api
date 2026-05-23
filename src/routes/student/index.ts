@@ -18,6 +18,7 @@ import invoiceRoutes from './invoice.routes';
 import searchRoutes from './search.routes';
 import studentEvaluationRoutes from './student-evaluation.routes';
 import teacherRoutes from './teacher.routes';
+import videoCourseRoutes from './video-course.routes';
 
 import { authenticateToken, requireRole } from '../../middleware/auth.middleware';
 import { UserType } from '../../types';
@@ -43,6 +44,7 @@ router.use('/invoices', invoiceRoutes);
 router.use('/teachers', teacherRoutes);
 router.use('/dashboard', dashboardRoutes);
 router.use('/search', searchRoutes);
+router.use('/video-courses', videoCourseRoutes);
 
 // Self-service account deletion (student only — enforced by the router-level
 // requireRole above). The legacy inline handler used to live here; migrated to
