@@ -54,22 +54,24 @@ export class BunnyWebhookController {
     }
 
     const body = req.body as BunnyWebhookInput;
-    const updated = await VideoCourseService.applyBunnyWebhook({
+    const result = await VideoCourseService.applyBunnyWebhook({
       videoGuid: body.VideoGuid,
       statusCode: body.Status,
     });
 
-    res
-      .status(200)
-      .json(
-        ok(
-          {
-            received: true,
-            matched: Boolean(updated),
-            ...(updated ? { lessonId: updated.id, status: updated.bunnyStatus } : {}),
-          },
-          'webhook received'
-        )
-      );
+    // Bunny doesn't care about the shape — we always return 200 + a small
+    // diagnostic JSON so curl tests can see what matched.
+    const responseBody: Record<string, unknown> = {
+      received: true,
+      matched: result.matched !== 'none',
+      kind: result.matched,
+    };
+    if (result.matched === 'lesson') {
+      responseBody['lessonId'] = result.lesson.id;
+      responseBody['status'] = result.lesson.bunnyStatus;
+    } else if (result.matched === 'intro-video') {
+      responseBody['userId'] = result.userId;
+    }
+    res.status(200).json(ok(responseBody, 'webhook received'));
   }
 }

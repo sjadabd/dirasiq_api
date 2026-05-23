@@ -33,4 +33,12 @@ router.post(
 );
 router.get('/intro-video', asyncHandler(TeacherProfileController.getMyIntroVideo));
 
+// Phase 10.1.B.2 — Bunny Stream upload contract for the teacher's intro
+// video. Body-less POST; the response carries everything the client needs
+// to PUT the bytes directly to Bunny.
+router.post(
+  '/intro-video/bunny',
+  asyncHandler(TeacherProfileController.startBunnyIntroVideoUpload)
+);
+
 export default router;

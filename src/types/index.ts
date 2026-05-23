@@ -53,11 +53,22 @@ export interface BaseUser {
   suburb?: string;
   locationConfidence?: number;
   profileImagePath?: string;
-  introVideoStatus?: 'none' | 'processing' | 'ready' | 'failed';
+  // Phase 10.1.B.2 extends the status enum: pending + uploaded join the
+  // legacy {none, processing, ready, failed} set so the same column drives
+  // the full Bunny pipeline.
+  introVideoStatus?: 'none' | 'pending' | 'uploaded' | 'processing' | 'ready' | 'failed';
   introVideoManifestPath?: string;
   introVideoStorageDir?: string;
   introVideoThumbnailPath?: string;
   introVideoDurationSeconds?: number;
+  // Phase 10.1.B.2 — Bunny Stream intro video metadata. NULL on rows that
+  // still use the legacy local HLS manifest; the read path falls back to
+  // introVideoManifestPath when bunnyVideoId is NULL.
+  introVideoBunnyLibraryId?: string;
+  introVideoBunnyVideoId?: string;
+  introVideoBunnyPlaybackUrl?: string;
+  introVideoBunnyThumbnailUrl?: string;
+  introVideoBunnyLastSyncedAt?: string;
   createdAt: Date;
   updatedAt: Date;
 }

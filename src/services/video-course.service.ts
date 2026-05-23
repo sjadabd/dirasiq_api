@@ -16,6 +16,7 @@ import {
   VideoCourseModel,
   VideoLessonModel,
 } from '../models/video-course.model';
+import { UserModel } from '../models/user.model';
 import {
   BunnyStreamService,
   mapBunnyStatusToInternal,
@@ -528,17 +529,25 @@ export class VideoCourseService {
   // ---- WEBHOOK reconcile --------------------------------------------------
 
   /**
-   * Apply a Bunny webhook payload to the matching lesson row. Called from
-   * the webhook controller AFTER signature verification has passed.
+   * Apply a Bunny webhook payload to whichever row owns the videoGuid.
+   * Called from the webhook controller AFTER signature verification.
    *
-   * Returns the post-update lesson; logs (but does not throw) when the
-   * VideoGuid doesn't match any lesson — out-of-band Bunny videos shouldn't
-   * 500 our webhook endpoint.
+   * Two homes a Bunny videoId can land in:
+   *   1. video_lessons.bunny_video_id (lessons in a video_course)
+   *   2. users.intro_video_bunny_video_id (teacher intro video)
+   *
+   * The handler tries (1) first because lessons are the more common case;
+   * if no match, it tries (2). A miss in both is logged as info — Bunny
+   * may have out-of-band videos we don't track.
    */
   static async applyBunnyWebhook(args: {
     videoGuid: string;
     statusCode: number;
-  }): Promise<VideoLesson | null> {
+  }): Promise<
+    | { matched: 'lesson'; lesson: VideoLesson }
+    | { matched: 'intro-video'; userId: string }
+    | { matched: 'none' }
+  > {
     const internalStatus = mapBunnyStatusToInternal(args.statusCode);
     let thumbnailUrl: string | null = null;
     let playbackUrl: string | null = null;
@@ -564,20 +573,34 @@ export class VideoCourseService {
       }
     }
 
-    const updated = await VideoLessonModel.applyBunnyState({
+    // 1. lessons
+    const lesson = await VideoLessonModel.applyBunnyState({
       bunnyVideoId: args.videoGuid,
       status: internalStatus,
       thumbnailUrl,
       playbackUrl,
       durationSeconds,
     });
-
-    if (!updated) {
-      logger.info(
-        { videoGuid: args.videoGuid, statusCode: args.statusCode },
-        'bunny webhook: no matching lesson row (out-of-band video?)'
-      );
+    if (lesson) {
+      return { matched: 'lesson', lesson };
     }
-    return updated;
+
+    // 2. teacher intro video
+    const introHit = await UserModel.applyIntroVideoBunnyState({
+      bunnyVideoId: args.videoGuid,
+      status: internalStatus,
+      thumbnailUrl,
+      playbackUrl,
+      durationSeconds,
+    });
+    if (introHit) {
+      return { matched: 'intro-video', userId: introHit.userId };
+    }
+
+    logger.info(
+      { videoGuid: args.videoGuid, statusCode: args.statusCode },
+      'bunny webhook: no matching row (lesson or intro video) — out-of-band video?'
+    );
+    return { matched: 'none' };
   }
 }

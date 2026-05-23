@@ -157,6 +157,29 @@ describe('Video Courses — Phase 10.1.A', () => {
   });
 
   // -------------------------------------------------------------------------
+  // Phase 10.1.B.2 — intro-video Bunny endpoints
+  // -------------------------------------------------------------------------
+
+  describe('Phase 10.1.B.2 — intro-video Bunny endpoints', () => {
+    it('POST /api/teacher/profile/intro-video/bunny without token → 401', async () => {
+      const res = await request(app).post('/api/teacher/profile/intro-video/bunny');
+      expect(res.status).toBe(401);
+    });
+
+    it('GET /api/teacher/profile/intro-video without token → 401', async () => {
+      const res = await request(app).get('/api/teacher/profile/intro-video');
+      expect(res.status).toBe(401);
+    });
+
+    it('GET /api/student/teachers/<uuid>/intro-video without token → 401', async () => {
+      const res = await request(app).get(
+        '/api/student/teachers/00000000-0000-0000-0000-000000000000/intro-video'
+      );
+      expect(res.status).toBe(401);
+    });
+  });
+
+  // -------------------------------------------------------------------------
   // Lesson reorder schema
   // -------------------------------------------------------------------------
 

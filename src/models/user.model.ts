@@ -817,6 +817,12 @@ export class UserModel {
       introVideoStorageDir: dbUser.intro_video_storage_dir,
       introVideoThumbnailPath: dbUser.intro_video_thumbnail_path,
       introVideoDurationSeconds: dbUser.intro_video_duration_seconds,
+      // Phase 10.1.B.2 — Bunny intro video
+      introVideoBunnyLibraryId: dbUser.intro_video_bunny_library_id,
+      introVideoBunnyVideoId: dbUser.intro_video_bunny_video_id,
+      introVideoBunnyPlaybackUrl: dbUser.intro_video_bunny_playback_url,
+      introVideoBunnyThumbnailUrl: dbUser.intro_video_bunny_thumbnail_url,
+      introVideoBunnyLastSyncedAt: dbUser.intro_video_bunny_last_synced_at,
       createdAt: dbUser.created_at,
       updatedAt: dbUser.updated_at,
     };
@@ -851,5 +857,67 @@ export class UserModel {
     }
 
     return baseUser as User;
+  }
+
+  // ------------------------------------------------------------------------
+  // Phase 10.1.B.2 — intro-video Bunny columns
+  // ------------------------------------------------------------------------
+
+  /**
+   * Initialise the Bunny side of the intro video — called right after
+   * BunnyStreamService.createVideo() mints the videoId. Clears the legacy
+   * status (now 'pending') and stamps the Bunny ids. The legacy local-
+   * manifest columns are left UNTOUCHED so playback during transition
+   * keeps using whatever the user already had.
+   */
+  static async setIntroVideoBunnyIds(args: {
+    userId: string;
+    libraryId: string;
+    videoId: string;
+  }): Promise<void> {
+    await pool.query(
+      `UPDATE users
+          SET intro_video_status              = 'pending',
+              intro_video_bunny_library_id    = $2,
+              intro_video_bunny_video_id      = $3,
+              intro_video_bunny_playback_url  = NULL,
+              intro_video_bunny_thumbnail_url = NULL,
+              intro_video_bunny_last_synced_at = NULL
+        WHERE id = $1`,
+      [args.userId, args.libraryId, args.videoId]
+    );
+  }
+
+  /**
+   * Webhook + manual reconcile path for intro videos. Mirrors the lesson
+   * equivalent on VideoLessonModel.
+   */
+  static async applyIntroVideoBunnyState(args: {
+    bunnyVideoId: string;
+    status: 'pending' | 'uploaded' | 'processing' | 'ready' | 'failed';
+    thumbnailUrl?: string | null;
+    playbackUrl?: string | null;
+    durationSeconds?: number | null;
+  }): Promise<{ userId: string } | null> {
+    const { rows } = await pool.query<{ id: string }>(
+      `UPDATE users
+          SET intro_video_status              = $2,
+              intro_video_bunny_thumbnail_url = COALESCE($3, intro_video_bunny_thumbnail_url),
+              intro_video_bunny_playback_url  = COALESCE($4, intro_video_bunny_playback_url),
+              intro_video_duration_seconds    = COALESCE($5, intro_video_duration_seconds),
+              intro_video_bunny_last_synced_at = NOW()
+        WHERE intro_video_bunny_video_id = $1
+          AND deleted_at IS NULL
+        RETURNING id`,
+      [
+        args.bunnyVideoId,
+        args.status,
+        args.thumbnailUrl ?? null,
+        args.playbackUrl ?? null,
+        args.durationSeconds ?? null,
+      ]
+    );
+    if (!rows[0]) return null;
+    return { userId: rows[0].id };
   }
 }
