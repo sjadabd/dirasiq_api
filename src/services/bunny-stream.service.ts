@@ -71,6 +71,21 @@ export class BunnyStreamService {
       return null;
     }
 
+    // Defensive shape check — Bunny CDN hostnames are always the form
+    // "vz-<account-uuid>.b-cdn.net". A value missing the suffix silently
+    // produces broken thumbnail / playback URLs that ONLY surface as CSP
+    // errors on the client. Loudly log so operators can self-diagnose
+    // from container logs without combing through env files.
+    if (!/\.b-cdn\.net$/i.test(cdnHostname) && !/\.mediadelivery\.net$/i.test(cdnHostname)) {
+      logger.warn(
+        { cdnHostname },
+        'BunnyStreamService: BUNNY_STREAM_CDN_HOSTNAME looks malformed ' +
+        '(expected something like "vz-xxxxxxxx.b-cdn.net"). All Bunny ' +
+        'asset URLs will use this hostname verbatim — fix the env + ' +
+        'restart the container.'
+      );
+    }
+
     cached = {
       libraryId,
       apiKey,
