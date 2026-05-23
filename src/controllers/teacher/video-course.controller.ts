@@ -17,6 +17,9 @@ import type { VideoCourseStatus } from '../../types';
 import type {
   VideoCourseCreateInput,
   VideoCourseUpdateInput,
+  VideoLessonCreateInput,
+  VideoLessonReorderInput,
+  VideoLessonUpdateInput,
 } from '../../schemas/video-course.schemas';
 
 // Cover image — small static asset; 5 MB cap, JPG/PNG/WEBP only.
@@ -184,5 +187,77 @@ export class TeacherVideoCourseController {
     });
 
     res.status(201).json(ok({ course: updated, coverImage: meta }, 'تم رفع صورة الغلاف'));
+  }
+
+  // ----- Lessons (Phase 10.1.B.1.c) ----------------------------------------
+
+  // POST /api/teacher/video-courses/:id/lessons
+  // Mints a Bunny videoId + inserts the lesson + returns the upload contract
+  // the client uses to PUT the bytes directly to Bunny.
+  static async createLesson(req: Request, res: Response): Promise<void> {
+    const id = req.params['id'] as string;
+    const body = req.body as VideoLessonCreateInput;
+    const result = await VideoCourseService.createLessonForTeacher({
+      teacherId: req.user.id,
+      courseId: id,
+      title: body.title,
+      ...(body.description !== undefined ? { description: body.description } : {}),
+      ...(body.displayOrder !== undefined ? { displayOrder: body.displayOrder } : {}),
+    });
+    res.status(201).json(ok(result, 'تم إنشاء الدرس — قم برفع الفيديو إلى Bunny'));
+  }
+
+  // PATCH /api/teacher/video-courses/:id/lessons/:lessonId
+  static async updateLesson(req: Request, res: Response): Promise<void> {
+    const id = req.params['id'] as string;
+    const lessonId = req.params['lessonId'] as string;
+    const body = req.body as VideoLessonUpdateInput;
+    const updates: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(body)) {
+      if (v !== undefined) updates[k] = v;
+    }
+    const lesson = await VideoCourseService.updateLessonForTeacher({
+      teacherId: req.user.id,
+      courseId: id,
+      lessonId,
+      updates: updates as Parameters<typeof VideoCourseService.updateLessonForTeacher>[0]['updates'],
+    });
+    res.status(200).json(ok({ lesson }, 'تم تحديث الدرس'));
+  }
+
+  // DELETE /api/teacher/video-courses/:id/lessons/:lessonId
+  static async removeLesson(req: Request, res: Response): Promise<void> {
+    const id = req.params['id'] as string;
+    const lessonId = req.params['lessonId'] as string;
+    await VideoCourseService.deleteLessonForTeacher({
+      teacherId: req.user.id,
+      courseId: id,
+      lessonId,
+    });
+    res.status(200).json(ok(null, 'تم حذف الدرس'));
+  }
+
+  // POST /api/teacher/video-courses/:id/lessons/reorder
+  static async reorderLessons(req: Request, res: Response): Promise<void> {
+    const id = req.params['id'] as string;
+    const body = req.body as VideoLessonReorderInput;
+    const result = await VideoCourseService.reorderLessonsForTeacher({
+      teacherId: req.user.id,
+      courseId: id,
+      lessonIds: body.lessonIds,
+    });
+    res.status(200).json(ok(result, 'تم إعادة ترتيب الدروس'));
+  }
+
+  // POST /api/teacher/video-courses/:id/lessons/:lessonId/sync
+  static async syncLesson(req: Request, res: Response): Promise<void> {
+    const id = req.params['id'] as string;
+    const lessonId = req.params['lessonId'] as string;
+    const lesson = await VideoCourseService.syncLessonForTeacher({
+      teacherId: req.user.id,
+      courseId: id,
+      lessonId,
+    });
+    res.status(200).json(ok({ lesson }, 'تم تحديث حالة الدرس من Bunny'));
   }
 }

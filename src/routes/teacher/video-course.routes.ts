@@ -16,8 +16,12 @@ import { ApiError, ErrorCodes } from '../../utils/api-error';
 import {
   videoCourseCreateSchema,
   videoCourseIdParamSchema,
+  videoCourseLessonIdParamSchema,
   videoCourseTeacherListQuerySchema,
   videoCourseUpdateSchema,
+  videoLessonCreateSchema,
+  videoLessonReorderSchema,
+  videoLessonUpdateSchema,
 } from '../../schemas/video-course.schemas';
 
 const router = Router();
@@ -106,6 +110,43 @@ router.post(
   validate({ params: videoCourseIdParamSchema }),
   coverImageUpload.single('file'),
   asyncHandler(TeacherVideoCourseController.uploadCoverImage)
+);
+
+// ----- Lessons (10.1.B.1.c) -----------------------------------------------
+//
+// Reorder is declared BEFORE /:lessonId so Express doesn't try to match
+// "reorder" as a lessonId UUID (it would fail validation but the order
+// keeps the intent crystal-clear).
+
+router.post(
+  '/:id/lessons',
+  uploadLimiter,
+  validate({ params: videoCourseIdParamSchema, body: videoLessonCreateSchema }),
+  asyncHandler(TeacherVideoCourseController.createLesson)
+);
+
+router.post(
+  '/:id/lessons/reorder',
+  validate({ params: videoCourseIdParamSchema, body: videoLessonReorderSchema }),
+  asyncHandler(TeacherVideoCourseController.reorderLessons)
+);
+
+router.patch(
+  '/:id/lessons/:lessonId',
+  validate({ params: videoCourseLessonIdParamSchema, body: videoLessonUpdateSchema }),
+  asyncHandler(TeacherVideoCourseController.updateLesson)
+);
+
+router.delete(
+  '/:id/lessons/:lessonId',
+  validate({ params: videoCourseLessonIdParamSchema }),
+  asyncHandler(TeacherVideoCourseController.removeLesson)
+);
+
+router.post(
+  '/:id/lessons/:lessonId/sync',
+  validate({ params: videoCourseLessonIdParamSchema }),
+  asyncHandler(TeacherVideoCourseController.syncLesson)
 );
 
 export default router;

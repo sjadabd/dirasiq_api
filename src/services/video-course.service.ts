@@ -207,6 +207,193 @@ export class VideoCourseService {
     return updated;
   }
 
+  // ---- LESSON writes (Phase 10.1.B.1.c) -----------------------------------
+
+  /**
+   * Create a lesson with a Bunny video placeholder.
+   *
+   * Pipeline:
+   *   1. Verify the parent course is owned by `teacherId` (throws 404 if not).
+   *   2. Mint a Bunny videoId via BunnyStreamService.createVideo() — the
+   *      title sent to Bunny is for their dashboard only.
+   *   3. Insert the lesson row with bunny_status='pending'.
+   *   4. Return the lesson + the upload contract the client uses to PUT the
+   *      bytes directly to Bunny.
+   *
+   * If step 2 fails (Bunny down / mis-configured) we throw before any DB
+   * write so the teacher can retry without leaving an orphan row.
+   *
+   * SECURITY NOTE: the upload contract returned here contains the per-
+   * library Bunny `AccessKey`. A compromised teacher browser could use it
+   * to call other Bunny library APIs (delete / list / rename other videos
+   * in the same library). This is the trade-off we accepted in the 10.1.B
+   * design questions (Direct PUT > TUS for ship-speed). When the library
+   * grows, swap to the TUS upload scheme which uses a per-video scoped
+   * `AuthorizationSignature` header instead.
+   */
+  static async createLessonForTeacher(args: {
+    teacherId: string;
+    courseId: string;
+    title: string;
+    description?: string;
+    displayOrder?: number;
+  }): Promise<{
+    lesson: VideoLesson;
+    upload: {
+      kind: 'bunny-direct-put';
+      url: string;
+      method: 'PUT';
+      headers: Record<string, string>;
+      note: string;
+    };
+  }> {
+    await this.getForTeacherOrThrow({ id: args.courseId, teacherId: args.teacherId });
+
+    const cfg = BunnyStreamService.config();
+    if (!cfg) {
+      throw new ApiError(
+        503,
+        'تشغيل الفيديو غير مهيأ — اتصل بالدعم',
+        ErrorCodes.SERVICE_UNAVAILABLE
+      );
+    }
+
+    const { videoId } = await BunnyStreamService.createVideo({ title: args.title });
+
+    const lesson = await VideoLessonModel.insert({
+      courseId: args.courseId,
+      title: args.title,
+      description: args.description ?? null,
+      displayOrder: args.displayOrder ?? 0,
+      bunnyLibraryId: cfg.libraryId,
+      bunnyVideoId: videoId,
+    });
+
+    return {
+      lesson,
+      upload: {
+        kind: 'bunny-direct-put',
+        url: `${cfg.apiBaseUrl}/library/${cfg.libraryId}/videos/${videoId}`,
+        method: 'PUT',
+        headers: {
+          AccessKey: cfg.apiKey,
+          'Content-Type': 'application/octet-stream',
+        },
+        note:
+          'Stream the video bytes as the PUT body. Bunny replies 200 on success ' +
+          'and the API webhook will move the lesson to processing → ready.',
+      },
+    };
+  }
+
+  static async updateLessonForTeacher(args: {
+    teacherId: string;
+    courseId: string;
+    lessonId: string;
+    updates: Parameters<typeof VideoLessonModel.updateForOwner>[0]['updates'];
+  }): Promise<VideoLesson> {
+    await this.getForTeacherOrThrow({ id: args.courseId, teacherId: args.teacherId });
+    const updated = await VideoLessonModel.updateForOwner({
+      id: args.lessonId,
+      courseId: args.courseId,
+      updates: args.updates,
+    });
+    if (!updated) {
+      throw new ApiError(404, 'الدرس غير موجود', ErrorCodes.NOT_FOUND);
+    }
+    return updated;
+  }
+
+  /**
+   * Soft-delete the lesson AND delete the Bunny video (best-effort).
+   * If Bunny is unreachable we still soft-delete locally — the next garbage
+   * collection (future cron) can pick up orphans by querying Bunny vs DB.
+   */
+  static async deleteLessonForTeacher(args: {
+    teacherId: string;
+    courseId: string;
+    lessonId: string;
+  }): Promise<void> {
+    await this.getForTeacherOrThrow({ id: args.courseId, teacherId: args.teacherId });
+    const lesson = await VideoLessonModel.findById(args.lessonId);
+    if (!lesson || lesson.courseId !== args.courseId) {
+      throw new ApiError(404, 'الدرس غير موجود', ErrorCodes.NOT_FOUND);
+    }
+
+    const ok = await VideoLessonModel.softDelete({
+      id: args.lessonId,
+      courseId: args.courseId,
+    });
+    if (!ok) {
+      throw new ApiError(404, 'الدرس غير موجود', ErrorCodes.NOT_FOUND);
+    }
+
+    if (lesson.bunnyVideoId) {
+      // Best-effort — never block the local delete on a Bunny outage.
+      BunnyStreamService.deleteVideo(lesson.bunnyVideoId).catch((err: unknown) => {
+        logger.warn(
+          { err, lessonId: args.lessonId, bunnyVideoId: lesson.bunnyVideoId },
+          'deleteLessonForTeacher: Bunny delete failed (will retry via GC)'
+        );
+      });
+    }
+  }
+
+  /**
+   * Bulk reorder. The lessonIds array's index becomes the new display_order.
+   * Lessons not in the array keep their current display_order — clients
+   * should send the COMPLETE sequence to avoid gaps.
+   */
+  static async reorderLessonsForTeacher(args: {
+    teacherId: string;
+    courseId: string;
+    lessonIds: string[];
+  }): Promise<{ updated: number }> {
+    await this.getForTeacherOrThrow({ id: args.courseId, teacherId: args.teacherId });
+    const updated = await VideoLessonModel.reorder({
+      courseId: args.courseId,
+      lessonIds: args.lessonIds,
+    });
+    return { updated };
+  }
+
+  /**
+   * Force-reconcile a lesson against Bunny. Used by the "sync" button on the
+   * teacher dashboard when a webhook gets lost. Pulls the authoritative
+   * state from Bunny + applies it locally.
+   */
+  static async syncLessonForTeacher(args: {
+    teacherId: string;
+    courseId: string;
+    lessonId: string;
+  }): Promise<VideoLesson> {
+    await this.getForTeacherOrThrow({ id: args.courseId, teacherId: args.teacherId });
+    const lesson = await VideoLessonModel.findById(args.lessonId);
+    if (!lesson || lesson.courseId !== args.courseId) {
+      throw new ApiError(404, 'الدرس غير موجود', ErrorCodes.NOT_FOUND);
+    }
+    if (!lesson.bunnyVideoId) {
+      throw new ApiError(
+        400,
+        'الدرس لا يحمل معرف Bunny',
+        ErrorCodes.BUSINESS_RULE
+      );
+    }
+
+    const details = await BunnyStreamService.getVideo(lesson.bunnyVideoId);
+    const updated = await VideoLessonModel.applyBunnyState({
+      bunnyVideoId: lesson.bunnyVideoId,
+      status: details.status,
+      thumbnailUrl: details.thumbnailUrl,
+      playbackUrl: details.playbackUrl,
+      durationSeconds: details.durationSeconds,
+    });
+    if (!updated) {
+      throw new ApiError(404, 'الدرس غير موجود', ErrorCodes.NOT_FOUND);
+    }
+    return updated;
+  }
+
   // ---- ADMIN moderation ---------------------------------------------------
 
   static async approve(args: {

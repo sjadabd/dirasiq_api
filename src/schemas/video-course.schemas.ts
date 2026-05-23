@@ -124,6 +124,40 @@ export const videoCourseUpdateSchema = z
 export type VideoCourseUpdateInput = z.infer<typeof videoCourseUpdateSchema>;
 
 // ----------------------------------------------------------------------------
+// Lesson write bodies — Phase 10.1.B.1.c
+// ----------------------------------------------------------------------------
+
+const lessonTitleSchema = z.string().trim().min(1, 'عنوان الدرس مطلوب').max(200);
+const lessonDescriptionSchema = z.string().trim().max(10_000);
+const displayOrderSchema = z.coerce.number().int().nonnegative().max(10_000);
+
+export const videoLessonCreateSchema = z.object({
+  title: lessonTitleSchema,
+  description: lessonDescriptionSchema.optional(),
+  displayOrder: displayOrderSchema.optional(),
+});
+export type VideoLessonCreateInput = z.infer<typeof videoLessonCreateSchema>;
+
+export const videoLessonUpdateSchema = z
+  .object({
+    title: lessonTitleSchema.optional(),
+    description: lessonDescriptionSchema.optional(),
+    displayOrder: displayOrderSchema.optional(),
+  })
+  .refine((obj) => Object.values(obj).some((v) => v !== undefined), {
+    message: 'يجب تمرير حقل واحد على الأقل للتحديث',
+  });
+export type VideoLessonUpdateInput = z.infer<typeof videoLessonUpdateSchema>;
+
+export const videoLessonReorderSchema = z.object({
+  lessonIds: z
+    .array(uuidSchema)
+    .min(1, 'قائمة الدروس فارغة')
+    .max(500, 'قائمة الدروس طويلة جداً'),
+});
+export type VideoLessonReorderInput = z.infer<typeof videoLessonReorderSchema>;
+
+// ----------------------------------------------------------------------------
 // Admin moderation bodies
 // ----------------------------------------------------------------------------
 

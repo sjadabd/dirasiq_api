@@ -113,6 +113,78 @@ describe('Video Courses — Phase 10.1.A', () => {
         .attach('file', Buffer.from([0xff, 0xd8, 0xff]), 'cover.jpg');
       expect(res.status).toBe(401);
     });
+
+    // ----- Phase 10.1.B.1.c — lesson endpoints --------------------------
+
+    it('POST /api/teacher/video-courses/<uuid>/lessons without token → 401', async () => {
+      const res = await request(app)
+        .post('/api/teacher/video-courses/00000000-0000-0000-0000-000000000000/lessons')
+        .send({ title: 'lesson 1' });
+      expect(res.status).toBe(401);
+    });
+
+    it('POST /api/teacher/video-courses/<uuid>/lessons/reorder without token → 401', async () => {
+      const res = await request(app)
+        .post(
+          '/api/teacher/video-courses/00000000-0000-0000-0000-000000000000/lessons/reorder'
+        )
+        .send({ lessonIds: ['11111111-1111-1111-1111-111111111111'] });
+      expect(res.status).toBe(401);
+    });
+
+    it('PATCH /api/teacher/video-courses/:id/lessons/:lessonId without token → 401', async () => {
+      const res = await request(app)
+        .patch(
+          '/api/teacher/video-courses/00000000-0000-0000-0000-000000000000/lessons/11111111-1111-1111-1111-111111111111'
+        )
+        .send({ title: 'renamed' });
+      expect(res.status).toBe(401);
+    });
+
+    it('DELETE /api/teacher/video-courses/:id/lessons/:lessonId without token → 401', async () => {
+      const res = await request(app).delete(
+        '/api/teacher/video-courses/00000000-0000-0000-0000-000000000000/lessons/11111111-1111-1111-1111-111111111111'
+      );
+      expect(res.status).toBe(401);
+    });
+
+    it('POST /api/teacher/video-courses/:id/lessons/:lessonId/sync without token → 401', async () => {
+      const res = await request(app).post(
+        '/api/teacher/video-courses/00000000-0000-0000-0000-000000000000/lessons/11111111-1111-1111-1111-111111111111/sync'
+      );
+      expect(res.status).toBe(401);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Lesson reorder schema
+  // -------------------------------------------------------------------------
+
+  describe('Lesson reorder schema (10.1.B.1.c)', () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { videoLessonReorderSchema } = require('../schemas/video-course.schemas') as typeof import('../schemas/video-course.schemas');
+
+    it('accepts a valid array of UUIDs', () => {
+      const r = videoLessonReorderSchema.safeParse({
+        lessonIds: [
+          // RFC 4122 variant bit (17th nibble) must be 8/9/a/b — using
+          // proper crypto.randomUUID()-shaped values for safe-parse.
+          '550e8400-e29b-41d4-a716-446655440000',
+          '6ba7b810-9dad-11d1-80b4-00c04fd430c8',
+        ],
+      });
+      expect(r.success).toBe(true);
+    });
+
+    it('rejects an empty array', () => {
+      const r = videoLessonReorderSchema.safeParse({ lessonIds: [] });
+      expect(r.success).toBe(false);
+    });
+
+    it('rejects non-UUID entries', () => {
+      const r = videoLessonReorderSchema.safeParse({ lessonIds: ['not-a-uuid'] });
+      expect(r.success).toBe(false);
+    });
   });
 
   // -------------------------------------------------------------------------

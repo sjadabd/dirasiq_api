@@ -435,6 +435,119 @@ export class VideoLessonModel {
     return rows[0] ?? null;
   }
 
+  // ---- TEACHER WRITES (Phase 10.1.B.1.c) -----------------------------------
+
+  /**
+   * Insert a new lesson. Bunny fields are pre-populated by the caller after
+   * BunnyStreamService.createVideo() mints the videoId — they're persisted
+   * up front so the webhook reconcile path can match them.
+   */
+  static async insert(args: {
+    courseId: string;
+    title: string;
+    description: string | null;
+    displayOrder: number;
+    bunnyLibraryId: string | null;
+    bunnyVideoId: string | null;
+  }): Promise<VideoLesson> {
+    const { rows } = await pool.query<VideoLesson>(
+      `INSERT INTO video_lessons
+         (course_id, title, description, display_order,
+          bunny_library_id, bunny_video_id, bunny_status)
+       VALUES ($1, $2, $3, $4, $5, $6, 'pending')
+       RETURNING ${VIDEO_LESSON_COLUMNS}`,
+      [
+        args.courseId,
+        args.title,
+        args.description,
+        args.displayOrder,
+        args.bunnyLibraryId,
+        args.bunnyVideoId,
+      ]
+    );
+    return rows[0]!;
+  }
+
+  /**
+   * Whitelisted partial update of teacher-editable fields. Bunny fields
+   * are NEVER touched here — the webhook/sync path owns them.
+   */
+  static async updateForOwner(args: {
+    id: string;
+    courseId: string;
+    updates: Partial<{ title: string; description: string | null; displayOrder: number }>;
+  }): Promise<VideoLesson | null> {
+    const setClauses: string[] = [];
+    const params: unknown[] = [args.id, args.courseId];
+    const map: Record<string, string> = {
+      title: 'title',
+      description: 'description',
+      displayOrder: 'display_order',
+    };
+    for (const [k, col] of Object.entries(map)) {
+      const v = (args.updates as Record<string, unknown>)[k];
+      if (v === undefined) continue;
+      params.push(v);
+      setClauses.push(`${col} = $${params.length}`);
+    }
+    if (setClauses.length === 0) return this.findById(args.id);
+
+    const { rows } = await pool.query<VideoLesson>(
+      `UPDATE video_lessons
+          SET ${setClauses.join(', ')}
+        WHERE id = $1 AND course_id = $2 AND deleted_at IS NULL
+        RETURNING ${VIDEO_LESSON_COLUMNS}`,
+      params
+    );
+    return rows[0] ?? null;
+  }
+
+  /** Soft-delete by id within a known course. */
+  static async softDelete(args: {
+    id: string;
+    courseId: string;
+  }): Promise<boolean> {
+    const { rowCount } = await pool.query(
+      `UPDATE video_lessons SET deleted_at = NOW()
+        WHERE id = $1 AND course_id = $2 AND deleted_at IS NULL`,
+      [args.id, args.courseId]
+    );
+    return (rowCount ?? 0) > 0;
+  }
+
+  /**
+   * Bulk reorder. Caller supplies the new sequence of lessonIds — index in
+   * the array becomes the new display_order. Wrapped in a single statement
+   * via `UPDATE ... FROM (VALUES ...)` so the whole reorder is atomic.
+   *
+   * Defensive: only touches lessons that belong to `courseId`, so a stray
+   * id from another course in the payload is a no-op.
+   */
+  static async reorder(args: {
+    courseId: string;
+    lessonIds: string[];
+  }): Promise<number> {
+    if (args.lessonIds.length === 0) return 0;
+
+    // Build VALUES list as ($1::uuid, 0), ($2::uuid, 1), …
+    const valuesSql = args.lessonIds
+      .map((_, i) => `($${i + 2}::uuid, ${i})`)
+      .join(', ');
+
+    const params: unknown[] = [args.courseId, ...args.lessonIds];
+
+    const { rowCount } = await pool.query(
+      `UPDATE video_lessons
+          SET display_order = src.idx
+         FROM (VALUES ${valuesSql}) AS src(id, idx)
+        WHERE video_lessons.id = src.id
+          AND video_lessons.course_id = $1
+          AND video_lessons.deleted_at IS NULL`,
+      params
+    );
+    return rowCount ?? 0;
+  }
+
   /**
    * Webhook + manual reconcile path. Updates the Bunny-derived fields
    * atomically and stamps bunny_last_synced_at.
