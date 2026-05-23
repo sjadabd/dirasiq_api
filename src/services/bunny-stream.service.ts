@@ -321,6 +321,42 @@ export interface BunnyVideoDetails {
 }
 
 /**
+ * Re-stamp a stored Bunny URL with the CURRENTLY-configured CDN hostname.
+ *
+ * Why this exists: a Bunny URL is composed at webhook-receipt time from
+ * `cdnHostname` + `videoGuid` + asset path. If `BUNNY_STREAM_CDN_HOSTNAME`
+ * was set incorrectly (e.g. missing the `.b-cdn.net` suffix) when the
+ * webhook fired, the persisted URL is permanently broken — even after
+ * the operator corrects the env var.
+ *
+ * This helper rebuilds the URL on every read using the path from the
+ * stored value (which Bunny owns + is correct) and the hostname from the
+ * current config (which the operator owns + may have just fixed). The
+ * result is a stable, environment-driven URL that self-heals when the
+ * operator corrects mis-configurations.
+ *
+ * Pass-through behaviour:
+ *   - null / empty             → null
+ *   - unparseable strings       → returned as-is (defence in depth)
+ *   - hostname already matches → returned unchanged
+ *   - missing Bunny config      → returned as-is (no host to substitute)
+ */
+export function hydrateBunnyUrl(
+  storedUrl: string | null | undefined,
+  cfg: BunnyStreamConfig | null = BunnyStreamService.config()
+): string | null {
+  if (!storedUrl) return null;
+  if (!cfg) return storedUrl;
+  try {
+    const u = new URL(storedUrl);
+    if (u.hostname === cfg.cdnHostname) return storedUrl;
+    return `https://${cfg.cdnHostname}${u.pathname}${u.search}`;
+  } catch {
+    return storedUrl;
+  }
+}
+
+/**
  * Maps Bunny's numeric status codes to our internal enum.
  *
  * Bunny status reference (from their webhook docs):

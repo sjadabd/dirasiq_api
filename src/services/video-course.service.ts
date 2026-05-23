@@ -19,6 +19,7 @@ import {
 import { UserModel } from '../models/user.model';
 import {
   BunnyStreamService,
+  hydrateBunnyUrl,
   mapBunnyStatusToInternal,
 } from './bunny-stream.service';
 import {
@@ -30,6 +31,23 @@ import {
 } from '../types';
 import { ApiError, ErrorCodes } from '../utils/api-error';
 import { logger } from '../utils/logger';
+
+/**
+ * Re-stamp the bunny_* URL fields on a lesson with the currently-configured
+ * Bunny CDN hostname. Used on every lesson read path so old rows persisted
+ * with a stale/typo'd hostname automatically render correctly once the
+ * operator fixes the env var. See hydrateBunnyUrl() for the full rationale.
+ */
+function hydrateLesson<T extends { bunnyThumbnailUrl: string | null; bunnyPlaybackUrl: string | null }>(
+  lesson: T
+): T {
+  const cfg = BunnyStreamService.config();
+  return {
+    ...lesson,
+    bunnyThumbnailUrl: hydrateBunnyUrl(lesson.bunnyThumbnailUrl, cfg),
+    bunnyPlaybackUrl: hydrateBunnyUrl(lesson.bunnyPlaybackUrl, cfg),
+  };
+}
 
 export class VideoCourseService {
   // ---- READ paths ---------------------------------------------------------
@@ -115,7 +133,9 @@ export class VideoCourseService {
   static async lessonsForPublic(courseId: string): Promise<VideoLesson[]> {
     await this.getForPublicOrThrow(courseId);
     const all = await VideoLessonModel.findByCourse(courseId);
-    return all.filter((l) => l.bunnyStatus === VideoLessonBunnyStatus.READY);
+    return all
+      .filter((l) => l.bunnyStatus === VideoLessonBunnyStatus.READY)
+      .map(hydrateLesson);
   }
 
   /** Teacher / admin see every lesson (including not-yet-ready). */
@@ -124,12 +144,14 @@ export class VideoCourseService {
     teacherId: string;
   }): Promise<VideoLesson[]> {
     await this.getForTeacherOrThrow({ id: args.courseId, teacherId: args.teacherId });
-    return VideoLessonModel.findByCourse(args.courseId);
+    const all = await VideoLessonModel.findByCourse(args.courseId);
+    return all.map(hydrateLesson);
   }
 
   static async lessonsForAdmin(courseId: string): Promise<VideoLesson[]> {
     await this.getForAdminOrThrow(courseId);
-    return VideoLessonModel.findByCourse(courseId);
+    const all = await VideoLessonModel.findByCourse(courseId);
+    return all.map(hydrateLesson);
   }
 
   // ---- TEACHER writes — Phase 10.1.B --------------------------------------
