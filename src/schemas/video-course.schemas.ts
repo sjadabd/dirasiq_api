@@ -195,17 +195,41 @@ export type VideoCourseApproveInput = z.infer<typeof videoCourseApproveSchema>;
 //             4=Finished, 5=Error, 6=UploadFailed, 7=JitSegmenting,
 //             8=JitPlaylistsCreated)
 //
-// We accept the raw Bunny shape (capitalised) and let the service translate
-// to our internal VideoLessonBunnyStatus enum. The schema is permissive on
-// purpose — Bunny adds fields over time and a strict schema would reject
-// otherwise-valid webhooks.
+// We accept Bunny's PascalCase keys AS WELL AS lowercase aliases — manual
+// curl tests + future Bunny doc revisions (some Bunny products switched
+// case conventions historically) both work. Internally we normalise to
+// `videoGuid` / `statusCode` so the controller + service code reads one
+// canonical shape regardless of how the payload arrived.
+//
+// `videoGuid` minimum length is 1 (not 36 / not 8) because:
+//   - the controller still has to look it up in the DB; a non-match returns
+//     200 + "no row matched" — that's the right place for "unknown GUID",
+//     not a 400 from the schema layer.
+//   - manual curl tests use short strings like "test" and we want them to
+//     reach the controller so we can verify the logging + match logic.
 
-export const bunnyWebhookSchema = z
-  .object({
-    VideoLibraryId: z.coerce.number().int().nonnegative().optional(),
-    VideoGuid: z.string().trim().min(8, 'VideoGuid is required'),
-    Status: z.coerce.number().int().min(0).max(20),
+export const bunnyWebhookSchema = z.preprocess(
+  (input) => {
+    if (input == null || typeof input !== 'object' || Array.isArray(input)) {
+      return input;
+    }
+    const o = input as Record<string, unknown>;
+    return {
+      // Aliases. The PascalCase form is what Bunny sends in prod; the
+      // lowercase form is accepted for manual / scripted tests.
+      videoGuid: o['videoGuid'] ?? o['VideoGuid'],
+      statusCode: o['statusCode'] ?? o['Status'] ?? o['status'],
+      // Preserve the rest as passthrough so future Bunny additions don't
+      // crash the schema. (Zod strips by default; we keep so the
+      // controller can log the original shape if needed.)
+      libraryId: o['libraryId'] ?? o['VideoLibraryId'],
+    };
+  },
+  z.object({
+    videoGuid: z.string().trim().min(1, 'videoGuid is required'),
+    statusCode: z.coerce.number().int().min(0).max(20),
+    libraryId: z.coerce.number().int().nonnegative().optional(),
   })
-  .passthrough();
+);
 
 export type BunnyWebhookInput = z.infer<typeof bunnyWebhookSchema>;

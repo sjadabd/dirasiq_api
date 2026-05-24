@@ -78,21 +78,25 @@ export class BunnyWebhookController {
       );
     }
 
+    // Schema has already normalised PascalCase (VideoGuid / Status) and
+    // lowercase (videoGuid / status) aliases into a single canonical
+    // shape { videoGuid, statusCode, libraryId }. The controller never
+    // sees Bunny's original key casing.
     const body = req.body as BunnyWebhookInput;
     logger.info(
-      { videoGuid: body.VideoGuid, statusCode: body.Status },
+      { videoGuid: body.videoGuid, statusCode: body.statusCode, libraryId: body.libraryId },
       '[bunny-webhook] signature OK — applying state'
     );
 
     const result = await VideoCourseService.applyBunnyWebhook({
-      videoGuid: body.VideoGuid,
-      statusCode: body.Status,
+      videoGuid: body.videoGuid,
+      statusCode: body.statusCode,
     });
 
     if (result.matched === 'lesson') {
       logger.info(
         {
-          videoGuid: body.VideoGuid,
+          videoGuid: body.videoGuid,
           lessonId: result.lesson.id,
           courseId: result.lesson.courseId,
           newStatus: result.lesson.bunnyStatus,
@@ -101,12 +105,12 @@ export class BunnyWebhookController {
       );
     } else if (result.matched === 'intro-video') {
       logger.info(
-        { videoGuid: body.VideoGuid, userId: result.userId },
+        { videoGuid: body.videoGuid, userId: result.userId },
         '[bunny-webhook] ✅ matched intro-video'
       );
     } else {
       logger.warn(
-        { videoGuid: body.VideoGuid, statusCode: body.Status },
+        { videoGuid: body.videoGuid, statusCode: body.statusCode },
         '[bunny-webhook] ⚠️  no row matched videoGuid'
       );
     }
