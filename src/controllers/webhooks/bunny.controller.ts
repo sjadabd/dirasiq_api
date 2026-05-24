@@ -69,14 +69,20 @@ export class BunnyWebhookController {
     const body = req.body as BunnyWebhookInput;
 
     // Bunny Stream's webhook UI doesn't expose a signing-secret field
-    // today, so we authenticate via VideoLibraryId match (the library
-    // id is account-specific). HMAC mode auto-activates once Bunny
-    // ships signed webhooks and the BUNNY_STREAM_WEBHOOK_SECRET env is
-    // set on both ends.
+    // today, so we authenticate via (a) a token in the URL query that
+    // matches BUNNY_WEBHOOK_TOKEN and (b) VideoLibraryId match. HMAC
+    // mode auto-activates once Bunny ships signed webhooks and the
+    // BUNNY_STREAM_WEBHOOK_SECRET env is set on both ends.
+    //
+    // The token query value is NEVER logged — only its presence is.
+    const rawToken = req.query['token'];
+    const tokenInQuery = typeof rawToken === 'string' ? rawToken : undefined;
+
     const auth = BunnyStreamService.verifyWebhookAuth({
       rawBody,
       signatureHeader,
       libraryIdInBody: body.libraryId,
+      tokenInQuery,
       sourceIp: req.ip,
     });
     if (!auth.ok) {
@@ -85,10 +91,11 @@ export class BunnyWebhookController {
           reason: auth.reason,
           mode: auth.mode,
           signaturePresent: !!signatureHeader,
+          tokenPresent: !!tokenInQuery,
           libraryIdInBody: body.libraryId,
           sourceIp: req.ip,
         },
-        '[bunny-webhook] rejected'
+        `[bunny-webhook] rejected: ${auth.reason}`
       );
       throw new ApiError(
         401,

@@ -311,34 +311,46 @@ export class BunnyStreamService {
   }
 
   /**
-   * Composite webhook authentication — Bunny Stream's webhook UI does NOT
-   * surface a "signing secret" field today, so HMAC signature verification
-   * (above) only fires for forward-compat with a future Bunny rollout.
-   * The real-world authentication relies on two cheap checks:
+   * Composite webhook authentication. Bunny Stream's UI does NOT expose a
+   * signing-secret field today, so we layer the cheaper checks BunnyDOES
+   * give us — a per-link URL token we control + the account-specific
+   * VideoLibraryId echoed in every body. HMAC stays as the strictest
+   * mode for the day Bunny ships signed webhooks.
    *
-   *   1. `VideoLibraryId` in the body MUST match `BUNNY_STREAM_LIBRARY_ID`.
-   *      The library id is a 6-digit account-specific number; a forger
-   *      would need to know it. Combined with the obscure URL path it's
-   *      a reasonable single-factor check for low-stakes status updates.
+   * Decision tree (top to bottom; first match wins):
    *
-   *   2. (Optional) the source IP must be in
-   *      `BUNNY_WEBHOOK_ALLOWED_IPS` (comma-separated). If unset, the
-   *      check is skipped — recommended once Bunny publishes a stable
-   *      outbound IP range (they don't today, so leave unset).
+   *   1. Signature header present AND BUNNY_STREAM_WEBHOOK_SECRET set
+   *      → strict HMAC compare. Reject on mismatch.
    *
-   * If a signature header IS present AND the webhook secret IS set, the
-   * HMAC path takes precedence — that's the future-proofed strict mode.
+   *   2. Otherwise:
+   *      a. `?token=<value>` in the query string MUST equal
+   *         BUNNY_WEBHOOK_TOKEN (constant-time compare; value never
+   *         appears in logs).
+   *      b. `VideoLibraryId` in the body MUST equal
+   *         BUNNY_STREAM_LIBRARY_ID.
+   *      c. (Optional) source IP MUST be in BUNNY_WEBHOOK_ALLOWED_IPS
+   *         when that env is set.
    *
-   * Returns { ok: boolean; reason: string } so the controller can log
-   * exactly which check rejected the request without leaking detail to
-   * the wire.
+   *   3. Production safety net: if NODE_ENV=production AND no
+   *      BUNNY_WEBHOOK_TOKEN is configured, refuse every unsigned
+   *      webhook. We never want a misconfigured prod to silently fall
+   *      back to "library id only" — that's a downgrade.
+   *
+   * Returns `{ ok, reason, mode }`. `reason` is a stable machine code
+   * the controller logs verbatim; clients only see HTTP 401 + a generic
+   * message so we don't leak which check failed.
    */
   static verifyWebhookAuth(args: {
     rawBody: string | Buffer;
     signatureHeader: string | undefined;
     libraryIdInBody: number | undefined;
+    tokenInQuery: string | undefined;
     sourceIp: string | undefined;
-  }): { ok: boolean; reason: string; mode: 'hmac' | 'library_id' | 'rejected' } {
+  }): {
+    ok: boolean;
+    reason: string;
+    mode: 'hmac' | 'token+library_id' | 'rejected';
+  } {
     const cfg = this.config();
     if (!cfg) {
       return { ok: false, reason: 'bunny_not_configured', mode: 'rejected' };
@@ -354,9 +366,40 @@ export class BunnyStreamService {
       return { ok: false, reason: 'hmac_mismatch', mode: 'rejected' };
     }
 
-    // ---- Mode 2: LibraryId match ------------------------------------------
-    // Defence in depth: even if the URL leaks, an attacker still needs to
-    // guess the library id to forge a webhook the system will accept.
+    // ---- Mode 2: token + libraryId ----------------------------------------
+    const expectedToken = (process.env['BUNNY_WEBHOOK_TOKEN'] || '').trim();
+    const isProduction = process.env['NODE_ENV'] === 'production';
+
+    if (!expectedToken) {
+      if (isProduction) {
+        // Refuse to fall back to a weaker scheme in prod. Setting the
+        // env is mandatory to accept unsigned webhooks here.
+        return {
+          ok: false,
+          reason: 'bunny_webhook_token_unset_in_production',
+          mode: 'rejected',
+        };
+      }
+      // Dev / staging without a token: skip the token check so local
+      // smoke tests still work (operators can curl the endpoint with
+      // just the libraryId).
+    } else {
+      if (!args.tokenInQuery) {
+        return { ok: false, reason: 'token_missing', mode: 'rejected' };
+      }
+      // Constant-time compare via crypto.timingSafeEqual. Lengths must
+      // match first — timingSafeEqual throws on differing lengths and
+      // the length itself is non-secret (long URLs are public).
+      const provided = Buffer.from(args.tokenInQuery);
+      const expected = Buffer.from(expectedToken);
+      if (
+        provided.length !== expected.length ||
+        !crypto.timingSafeEqual(provided, expected)
+      ) {
+        return { ok: false, reason: 'token_mismatch', mode: 'rejected' };
+      }
+    }
+
     if (args.libraryIdInBody == null) {
       return { ok: false, reason: 'library_id_missing_in_body', mode: 'rejected' };
     }
@@ -374,7 +417,7 @@ export class BunnyStreamService {
       }
     }
 
-    return { ok: true, reason: 'library_id_ok', mode: 'library_id' };
+    return { ok: true, reason: 'token+library_id_ok', mode: 'token+library_id' };
   }
 
   /**
