@@ -32,6 +32,8 @@ import {
 } from '../types';
 import { ApiError, ErrorCodes } from '../utils/api-error';
 import { logger } from '../utils/logger';
+import { getNotificationService } from './services-registry';
+import { VideoCourseEvents } from './video-course-events.service';
 
 /**
  * Re-stamp the bunny_* URL fields on a lesson with the currently-configured
@@ -199,7 +201,7 @@ export class VideoCourseService {
     price?: number;
     visibility?: VideoCourseVisibility;
   }): Promise<VideoCourse> {
-    return VideoCourseModel.insert({
+    const created = await VideoCourseModel.insert({
       teacherId: args.teacherId,
       title: args.title,
       description: args.description ?? null,
@@ -210,6 +212,10 @@ export class VideoCourseService {
       price: args.price ?? 0,
       visibility: args.visibility ?? VideoCourseVisibility.PRIVATE,
     });
+    // Fire-and-forget: notify every super-admin (socket + push). Never
+    // throws — see VideoCourseEvents contract.
+    void VideoCourseEvents.courseCreated(created, getNotificationService());
+    return created;
   }
 
   /**
@@ -460,6 +466,7 @@ export class VideoCourseService {
     if (!updated) {
       throw new ApiError(404, 'الدورة غير موجودة', ErrorCodes.NOT_FOUND);
     }
+    void VideoCourseEvents.courseApproved(updated, args.reviewerId, getNotificationService());
     return updated;
   }
 
@@ -477,6 +484,10 @@ export class VideoCourseService {
     if (!updated) {
       throw new ApiError(404, 'الدورة غير موجودة', ErrorCodes.NOT_FOUND);
     }
+    // HIDDEN is functionally a rejection from the teacher's perspective —
+    // it removes the course from public listings. Route it through the
+    // same "rejected" channel so the UI uses the same handling.
+    void VideoCourseEvents.courseRejected(updated, args.reviewerId, getNotificationService());
     return updated;
   }
 
@@ -494,6 +505,7 @@ export class VideoCourseService {
     if (!updated) {
       throw new ApiError(404, 'الدورة غير موجودة', ErrorCodes.NOT_FOUND);
     }
+    void VideoCourseEvents.courseRejected(updated, args.reviewerId, getNotificationService());
     return updated;
   }
 
@@ -631,6 +643,25 @@ export class VideoCourseService {
       durationSeconds,
     });
     if (lesson) {
+      // Resolve the owning teacher so we can push a per-user socket event.
+      // Best-effort: a course-row miss (e.g. soft-deleted course) just
+      // skips the notification — the lesson status was already persisted
+      // above, and the dashboard's open detail page (if any) will refresh
+      // on next manual refresh.
+      try {
+        const course = await VideoCourseModel.findById(lesson.courseId);
+        if (course?.teacherId) {
+          void VideoCourseEvents.lessonStatusChanged(
+            { lesson, teacherId: course.teacherId },
+            getNotificationService(),
+          );
+        }
+      } catch (err) {
+        logger.warn(
+          { err, lessonId: lesson.id },
+          'video-course.applyBunnyWebhook: failed to dispatch lesson event'
+        );
+      }
       return { matched: 'lesson', lesson };
     }
 

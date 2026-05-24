@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import express from 'express';
 import rateLimit from 'express-rate-limit';
 import helmet from 'helmet';
+import http from 'http';
 import path from 'path';
 import pinoHttp from 'pino-http';
 
@@ -33,6 +34,8 @@ import subjectRoutes from './routes/teacher/subject.routes';
 import userOnesignalRoutes from './routes/user-onesignal.routes';
 import { notificationCronService } from './services/notification-cron.service';
 import { NotificationService } from './services/notification.service';
+import { RealtimeService } from './services/realtime.service';
+import { registerNotificationService } from './services/services-registry';
 
 import { requestId } from './middleware/request-id.middleware';
 import { errorHandler, notFoundHandler } from './middleware/error.middleware';
@@ -273,6 +276,9 @@ try {
     restApiKey: oneSignalRestApiKey,
   });
   app.set('notificationService', notificationService);
+  // Expose the same instance to services that don't have access to the
+  // Express Request handle (VideoCourseService, webhook handlers, etc.).
+  registerNotificationService(notificationService);
   logger.info('NotificationService initialized');
 } catch (e) {
   logger.warn({ err: e }, 'NotificationService not initialized');
@@ -322,7 +328,13 @@ async function startServer() {
     await initializeDatabase();
     notificationCronService.start();
 
-    app.listen(PORT, '0.0.0.0', () => {
+    // Use http.createServer explicitly so we can attach Socket.IO to the
+    // same HTTP server. app.listen() returns a server but we want the
+    // explicit handle for the Socket.IO bind.
+    const httpServer = http.createServer(app);
+    RealtimeService.attach(httpServer, allowedOrigins);
+
+    httpServer.listen(PORT, '0.0.0.0', () => {
       logger.info({ port: PORT }, `Server running on http://localhost:${PORT}`);
     });
   } catch (error) {
