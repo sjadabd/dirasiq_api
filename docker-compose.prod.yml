@@ -22,16 +22,6 @@ services:
       - RATE_LIMIT_WINDOW_MS=900000
       - RATE_LIMIT_MAX_REQUESTS=100
       - TZ=Asia/Baghdad
-    # Persist user-uploaded assets across container rebuilds. Without this
-    # mount, every `docker compose up -d --build` wipes the writable layer
-    # and every cover image / news photo / intro-video thumbnail uploaded
-    # before the rebuild returns 404 afterwards.
-    #
-    # Mounts the project subdir directly so we can inspect / back up files
-    # from the host. Switch to a named volume if multiple compose instances
-    # need to share — single-host is the current deployment shape.
-    volumes:
-      - ./public/uploads:/app/public/uploads
     depends_on:
       - postgres
     restart: unless-stopped
