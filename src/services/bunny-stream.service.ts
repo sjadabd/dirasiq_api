@@ -311,6 +311,73 @@ export class BunnyStreamService {
   }
 
   /**
+   * Composite webhook authentication — Bunny Stream's webhook UI does NOT
+   * surface a "signing secret" field today, so HMAC signature verification
+   * (above) only fires for forward-compat with a future Bunny rollout.
+   * The real-world authentication relies on two cheap checks:
+   *
+   *   1. `VideoLibraryId` in the body MUST match `BUNNY_STREAM_LIBRARY_ID`.
+   *      The library id is a 6-digit account-specific number; a forger
+   *      would need to know it. Combined with the obscure URL path it's
+   *      a reasonable single-factor check for low-stakes status updates.
+   *
+   *   2. (Optional) the source IP must be in
+   *      `BUNNY_WEBHOOK_ALLOWED_IPS` (comma-separated). If unset, the
+   *      check is skipped — recommended once Bunny publishes a stable
+   *      outbound IP range (they don't today, so leave unset).
+   *
+   * If a signature header IS present AND the webhook secret IS set, the
+   * HMAC path takes precedence — that's the future-proofed strict mode.
+   *
+   * Returns { ok: boolean; reason: string } so the controller can log
+   * exactly which check rejected the request without leaking detail to
+   * the wire.
+   */
+  static verifyWebhookAuth(args: {
+    rawBody: string | Buffer;
+    signatureHeader: string | undefined;
+    libraryIdInBody: number | undefined;
+    sourceIp: string | undefined;
+  }): { ok: boolean; reason: string; mode: 'hmac' | 'library_id' | 'rejected' } {
+    const cfg = this.config();
+    if (!cfg) {
+      return { ok: false, reason: 'bunny_not_configured', mode: 'rejected' };
+    }
+
+    // ---- Mode 1: HMAC if both ends agree ----------------------------------
+    if (args.signatureHeader && cfg.webhookSecret) {
+      const sigOk = this.verifyWebhookSignature({
+        rawBody: args.rawBody,
+        signatureHeader: args.signatureHeader,
+      });
+      if (sigOk) return { ok: true, reason: 'hmac_ok', mode: 'hmac' };
+      return { ok: false, reason: 'hmac_mismatch', mode: 'rejected' };
+    }
+
+    // ---- Mode 2: LibraryId match ------------------------------------------
+    // Defence in depth: even if the URL leaks, an attacker still needs to
+    // guess the library id to forge a webhook the system will accept.
+    if (args.libraryIdInBody == null) {
+      return { ok: false, reason: 'library_id_missing_in_body', mode: 'rejected' };
+    }
+    if (Number(args.libraryIdInBody) !== Number(cfg.libraryId)) {
+      return { ok: false, reason: 'library_id_mismatch', mode: 'rejected' };
+    }
+
+    // ---- Optional Mode 3: IP allowlist ------------------------------------
+    const allowedIpsRaw = (process.env['BUNNY_WEBHOOK_ALLOWED_IPS'] || '').trim();
+    if (allowedIpsRaw) {
+      const allowed = allowedIpsRaw.split(',').map((s) => s.trim()).filter(Boolean);
+      const ip = args.sourceIp ?? '';
+      if (!allowed.includes(ip)) {
+        return { ok: false, reason: 'ip_not_allowlisted', mode: 'rejected' };
+      }
+    }
+
+    return { ok: true, reason: 'library_id_ok', mode: 'library_id' };
+  }
+
+  /**
    * Internal — fetch the config or throw with a label that identifies
    * which method needed it (for debugging).
    */

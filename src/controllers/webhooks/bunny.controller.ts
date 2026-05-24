@@ -62,30 +62,49 @@ export class BunnyWebhookController {
       (req.headers['x-bunny-webhook-signature'] as string | undefined) ||
       (req.headers['authentication-signature'] as string | undefined);
 
-    const ok2 = BunnyStreamService.verifyWebhookSignature({
-      rawBody,
-      signatureHeader,
-    });
-    if (!ok2) {
-      logger.warn(
-        { signaturePresent: !!signatureHeader },
-        '[bunny-webhook] rejected: invalid signature'
-      );
-      throw new ApiError(
-        401,
-        'Invalid webhook signature',
-        ErrorCodes.UNAUTHORIZED
-      );
-    }
-
     // Schema has already normalised PascalCase (VideoGuid / Status) and
     // lowercase (videoGuid / status) aliases into a single canonical
     // shape { videoGuid, statusCode, libraryId }. The controller never
     // sees Bunny's original key casing.
     const body = req.body as BunnyWebhookInput;
+
+    // Bunny Stream's webhook UI doesn't expose a signing-secret field
+    // today, so we authenticate via VideoLibraryId match (the library
+    // id is account-specific). HMAC mode auto-activates once Bunny
+    // ships signed webhooks and the BUNNY_STREAM_WEBHOOK_SECRET env is
+    // set on both ends.
+    const auth = BunnyStreamService.verifyWebhookAuth({
+      rawBody,
+      signatureHeader,
+      libraryIdInBody: body.libraryId,
+      sourceIp: req.ip,
+    });
+    if (!auth.ok) {
+      logger.warn(
+        {
+          reason: auth.reason,
+          mode: auth.mode,
+          signaturePresent: !!signatureHeader,
+          libraryIdInBody: body.libraryId,
+          sourceIp: req.ip,
+        },
+        '[bunny-webhook] rejected'
+      );
+      throw new ApiError(
+        401,
+        `Webhook auth failed: ${auth.reason}`,
+        ErrorCodes.UNAUTHORIZED
+      );
+    }
+
     logger.info(
-      { videoGuid: body.videoGuid, statusCode: body.statusCode, libraryId: body.libraryId },
-      '[bunny-webhook] signature OK — applying state'
+      {
+        videoGuid: body.videoGuid,
+        statusCode: body.statusCode,
+        libraryId: body.libraryId,
+        authMode: auth.mode,
+      },
+      `[bunny-webhook] auth OK (${auth.mode}) — applying state`
     );
 
     const result = await VideoCourseService.applyBunnyWebhook({
