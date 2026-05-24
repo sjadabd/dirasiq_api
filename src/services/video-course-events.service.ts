@@ -62,7 +62,7 @@ export const VideoCourseEvents = {
    */
   async courseCreated(course: VideoCourse, notif?: NotificationService | null): Promise<void> {
     try {
-      RealtimeService.emitToRole(UserType.SUPER_ADMIN, 'video-course:created', {
+      await RealtimeService.emitToRole(UserType.SUPER_ADMIN, 'video-course:created', {
         course: serializeCourse(course),
         at: new Date().toISOString(),
       });
@@ -97,7 +97,7 @@ export const VideoCourseEvents = {
    */
   async courseApproved(course: VideoCourse, reviewerId: string, notif?: NotificationService | null): Promise<void> {
     try {
-      RealtimeService.emitToUser(course.teacherId, 'video-course:approved', {
+      await RealtimeService.emitToUser(course.teacherId, 'video-course:approved', {
         course: serializeCourse(course),
         at: new Date().toISOString(),
       });
@@ -132,7 +132,7 @@ export const VideoCourseEvents = {
    */
   async courseRejected(course: VideoCourse, reviewerId: string, notif?: NotificationService | null): Promise<void> {
     try {
-      RealtimeService.emitToUser(course.teacherId, 'video-course:rejected', {
+      await RealtimeService.emitToUser(course.teacherId, 'video-course:rejected', {
         course: serializeCourse(course),
         at: new Date().toISOString(),
       });
@@ -177,8 +177,18 @@ export const VideoCourseEvents = {
     args: { lesson: VideoLesson; teacherId: string; previousStatus?: string | null },
     notif?: NotificationService | null,
   ): Promise<void> {
+    logger.info(
+      {
+        teacherId: args.teacherId,
+        lessonId: args.lesson.id,
+        courseId: args.lesson.courseId,
+        newStatus: args.lesson.bunnyStatus,
+        previousStatus: args.previousStatus,
+      },
+      '[events] lessonStatusChanged → calling emitToUser'
+    );
     try {
-      RealtimeService.emitToUser(args.teacherId, 'video-lesson:status_changed', {
+      await RealtimeService.emitToUser(args.teacherId, 'video-lesson:status_changed', {
         lesson: serializeLesson(args.lesson),
         previousStatus: args.previousStatus ?? null,
         at: new Date().toISOString(),

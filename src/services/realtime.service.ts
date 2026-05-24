@@ -129,17 +129,52 @@ export const RealtimeService = {
    * Push an event to a single user across all their connected sockets
    * (web tab + mobile + tablet). No-op if the user has no live connection.
    */
-  emitToUser(userId: string, event: string, payload: unknown): void {
-    if (!io || !userId) return;
-    io.to(`user:${userId}`).emit(event, payload);
+  async emitToUser(userId: string, event: string, payload: unknown): Promise<void> {
+    if (!io || !userId) {
+      logger.warn(
+        { event, userId, ioReady: !!io },
+        '[realtime] emitToUser SKIPPED (io not ready or empty userId)'
+      );
+      return;
+    }
+    const room = `user:${userId}`;
+    // socket.io v4: fetch sockets currently in the room so we can log
+    // delivery cardinality. This is the missing diagnostic for "I called
+    // emit but the client never received it" — usually means the user
+    // simply isn't connected right now.
+    try {
+      const sockets = await io.in(room).fetchSockets();
+      logger.info(
+        { event, userId, room, recipients: sockets.length },
+        sockets.length > 0
+          ? '[realtime] 📤 emitToUser'
+          : '[realtime] ⚠️  emitToUser with 0 recipients (user offline)'
+      );
+    } catch (err) {
+      logger.warn({ err, event, userId }, '[realtime] fetchSockets failed');
+    }
+    io.to(room).emit(event, payload);
   },
 
   /**
    * Push an event to every user of a given role. Used for super-admin
    * broadcasts (e.g. a new video course pending review).
    */
-  emitToRole(role: string, event: string, payload: unknown): void {
-    if (!io || !role) return;
-    io.to(`role:${role}`).emit(event, payload);
+  async emitToRole(role: string, event: string, payload: unknown): Promise<void> {
+    if (!io || !role) {
+      logger.warn({ event, role, ioReady: !!io }, '[realtime] emitToRole SKIPPED');
+      return;
+    }
+    const room = `role:${role}`;
+    try {
+      const sockets = await io.in(room).fetchSockets();
+      logger.info(
+        { event, role, room, recipients: sockets.length },
+        '[realtime] 📤 emitToRole'
+      );
+    } catch (err) {
+      logger.warn({ err, event, role }, '[realtime] fetchSockets failed');
+    }
+    io.to(room).emit(event, payload);
   },
 };
