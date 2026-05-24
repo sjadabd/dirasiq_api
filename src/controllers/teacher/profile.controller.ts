@@ -28,7 +28,7 @@ import type { Request, Response } from 'express';
 import fs from 'fs';
 
 import { UserModel } from '../../models/user.model';
-import { BunnyStreamService, hydrateBunnyUrl } from '../../services/bunny-stream.service';
+import { BunnyStreamService, hydrateBunnyUrl, signBunnyAssetUrl } from '../../services/bunny-stream.service';
 import { ApiError, ErrorCodes } from '../../utils/api-error';
 import { ok } from '../../utils/response.util';
 import { VideoService } from '../../utils/video.service';
@@ -74,12 +74,12 @@ function buildIntroVideoView(u: {
       });
       manifestUrl = signed?.url ?? null;
     }
+    const cfg = BunnyStreamService.config();
+    const thumb = hydrateBunnyUrl(u.introVideoBunnyThumbnailUrl ?? null, cfg);
     return {
       status,
       manifestUrl,
-      // Re-stamp the persisted thumbnail URL with the current CDN hostname
-      // so old rows persisted with a stale/typo'd hostname auto-heal.
-      thumbnailUrl: hydrateBunnyUrl(u.introVideoBunnyThumbnailUrl ?? null),
+      thumbnailUrl: cfg?.signAssets ? signBunnyAssetUrl(thumb, cfg) : thumb,
       durationSeconds: u.introVideoDurationSeconds ?? null,
       source: 'bunny',
     };

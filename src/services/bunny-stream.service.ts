@@ -37,6 +37,16 @@ export interface BunnyStreamConfig {
   playbackTokenTtlSeconds: number;
   ipLockPlayback: boolean;
   apiBaseUrl: string;
+  /**
+   * Sign EVERY Bunny asset URL on the way out? Off by default.
+   * Turn this on ONLY when:
+   *   1. The Bunny library has "Player → Token Authentication" enabled, AND
+   *   2. "Block Direct URL Access" is OFF (so direct .b-cdn.net works).
+   * Otherwise: leave off so raw URLs go to clients unchanged.
+   *
+   * Env flag: BUNNY_STREAM_SIGN_ASSETS=true|false  (default: false).
+   */
+  signAssets: boolean;
 }
 
 /** Bunny REST base. Public default. Override via env in tests / non-prod. */
@@ -95,6 +105,7 @@ export class BunnyStreamService {
       playbackTokenTtlSeconds: Number(process.env['BUNNY_PLAYBACK_TOKEN_TTL_SECONDS'] || 14400),
       ipLockPlayback: process.env['BUNNY_PLAYBACK_TOKEN_IP_LOCK'] === 'true',
       apiBaseUrl: process.env['BUNNY_STREAM_API_BASE'] || DEFAULT_BUNNY_API_BASE,
+      signAssets: process.env['BUNNY_STREAM_SIGN_ASSETS'] === 'true',
     };
     return cached;
   }
@@ -114,14 +125,8 @@ export class BunnyStreamService {
   }
 
   /**
-   * Build a signed HLS playback URL. The token authenticates the request
-   * to Bunny's edge AND optionally locks it to a single IP for the
-   * token's lifetime. The URL we return is what the player consumes.
-   *
-   * Signature algorithm (Bunny Stream Token Auth):
-   *   token = HMAC_SHA256_hex(tokenKey, "videoId" + expiresUnix + optionalIp)
-   *
-   * We URL-base64 the token (RFC 4648 with - / _ and no =) per Bunny's spec.
+   * Build a signed HLS playback URL — convenience wrapper around the
+   * generic signer (`signAssetPath`).
    *
    * Returns null if Bunny isn't configured — caller must handle.
    */
@@ -132,22 +137,22 @@ export class BunnyStreamService {
     const cfg = this.config();
     if (!cfg) return null;
 
-    const expiresUnix = Math.floor(Date.now() / 1000) + cfg.playbackTokenTtlSeconds;
-    const ipSegment = cfg.ipLockPlayback && args.clientIp ? args.clientIp : '';
-    const message = `${args.videoId}${expiresUnix}${ipSegment}`;
-    const hmac = crypto
-      .createHmac('sha256', cfg.tokenKey)
-      .update(message)
-      .digest('base64')
-      .replace(/\+/g, '-')
-      .replace(/\//g, '_')
-      .replace(/=+$/g, '');
+    const path = `/${args.videoId}/playlist.m3u8`;
+    const ttl = cfg.playbackTokenTtlSeconds;
+    const signedRaw = signAssetPath({
+      path,
+      ttlSeconds: ttl,
+      cfg,
+      ...(args.clientIp && cfg.ipLockPlayback ? { clientIp: args.clientIp } : {}),
+    });
+    // Append the optional ip query param for parity with the previous
+    // contract — Bunny accepts it but doesn't require it.
+    const ipSuffix = (cfg.ipLockPlayback && args.clientIp)
+      ? `&ip=${encodeURIComponent(args.clientIp)}`
+      : '';
+    const url = `${signedRaw.url}${ipSuffix}`;
 
-    const url = `https://${cfg.cdnHostname}/${args.videoId}/playlist.m3u8?token=${hmac}&expires=${expiresUnix}${
-      cfg.ipLockPlayback && args.clientIp ? `&ip=${encodeURIComponent(args.clientIp)}` : ''
-    }`;
-
-    return { url, expiresAt: new Date(expiresUnix * 1000) };
+    return { url, expiresAt: signedRaw.expiresAt };
   }
 
   // ----------------------------------------------------------------------
@@ -333,6 +338,93 @@ export interface BunnyVideoDetails {
   /** Raw HLS manifest URL — never expose to clients without signing. */
   playbackUrl: string;
   durationSeconds: number;
+}
+
+/**
+ * Sign an asset path under the configured Bunny CDN hostname.
+ *
+ * Bunny Stream signing algorithm (per their official docs):
+ *   hashable_base = security_key + path + expires_unix
+ *   raw_digest    = sha256(hashable_base)        ← RAW BINARY, NOT HEX
+ *   token         = base64url(raw_digest)        ← URL-safe, no '=' padding
+ *   url           = https://<host><path>?token=<>&expires=<unix>
+ *
+ * NOTE: this is plain SHA-256 over a concatenated string — NOT HMAC-SHA256.
+ * A previous implementation mistakenly used HMAC; that produced superficially-
+ * valid tokens that Bunny rejected with HTTP 403. If you change this signing
+ * code, test against the Bunny Stream "Token Authentication test" tool in
+ * their dashboard before shipping.
+ *
+ * If `cfg.ipLockPlayback` is on AND a `clientIp` is provided, the IP is
+ * appended to the hashable base (Bunny's optional IP-binding feature).
+ */
+export function signAssetPath(args: {
+  path: string;
+  ttlSeconds: number;
+  cfg: BunnyStreamConfig;
+  clientIp?: string;
+}): { url: string; expiresAt: Date } {
+  const path = args.path.startsWith('/') ? args.path : `/${args.path}`;
+  const expiresUnix = Math.floor(Date.now() / 1000) + args.ttlSeconds;
+  const ipPart = (args.cfg.ipLockPlayback && args.clientIp) ? args.clientIp : '';
+  const hashable = `${args.cfg.tokenKey}${path}${expiresUnix}${ipPart}`;
+  const token = crypto
+    .createHash('sha256')
+    .update(hashable)
+    .digest('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '');
+  return {
+    url: `https://${args.cfg.cdnHostname}${path}?token=${token}&expires=${expiresUnix}`,
+    expiresAt: new Date(expiresUnix * 1000),
+  };
+}
+
+/**
+ * Sign an arbitrary stored Bunny asset URL — used by the lesson hydration
+ * path to upgrade unsigned URLs (thumbnails, playback) to signed ones at
+ * read time. Returns null when:
+ *   - Input URL is empty / unparseable.
+ *   - Bunny isn't configured.
+ *   - URL hostname doesn't belong to our CDN (defence-in-depth — we won't
+ *     sign URLs to random hosts even if a row was tampered).
+ *
+ * The URL hostname is hydrated to the current CDN hostname before signing,
+ * so stale rows with the old (mis-typed) hostname self-heal.
+ */
+export function signBunnyAssetUrl(
+  rawUrl: string | null | undefined,
+  cfg: BunnyStreamConfig | null = BunnyStreamService.config(),
+  ttlSecondsOverride?: number,
+): string | null {
+  if (!rawUrl) return null;
+  if (!cfg) return rawUrl;
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    return rawUrl;
+  }
+  // Hydrate hostname FIRST so stale rows self-heal even when signing.
+  const effectiveHost = cfg.cdnHostname;
+  // Skip signing if the path looks foreign (e.g. somebody put a non-Bunny
+  // URL in the column — leave it alone instead of returning a fake-signed
+  // URL that won't work).
+  if (
+    !parsed.hostname.endsWith('.b-cdn.net') &&
+    !parsed.hostname.endsWith('.mediadelivery.net') &&
+    parsed.hostname !== effectiveHost
+  ) {
+    return rawUrl;
+  }
+  const ttl = ttlSecondsOverride ?? cfg.playbackTokenTtlSeconds;
+  const signed = signAssetPath({
+    path: parsed.pathname,
+    ttlSeconds: ttl,
+    cfg,
+  });
+  return signed.url;
 }
 
 /**

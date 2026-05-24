@@ -21,6 +21,7 @@ import {
   BunnyStreamService,
   hydrateBunnyUrl,
   mapBunnyStatusToInternal,
+  signBunnyAssetUrl,
 } from './bunny-stream.service';
 import {
   VideoCourse,
@@ -34,18 +35,44 @@ import { logger } from '../utils/logger';
 
 /**
  * Re-stamp the bunny_* URL fields on a lesson with the currently-configured
- * Bunny CDN hostname. Used on every lesson read path so old rows persisted
- * with a stale/typo'd hostname automatically render correctly once the
- * operator fixes the env var. See hydrateBunnyUrl() for the full rationale.
+ * Bunny CDN hostname AND sign them with the Bunny token-auth key. Used on
+ * every lesson read path.
+ *
+ * Why we sign EVERY URL (not just the playback manifest):
+ *   - Bunny Stream libraries can enable "Token Authentication" globally —
+ *     when on, ALL asset fetches (playlist .m3u8, thumbnail .jpg, individual
+ *     .ts segments) require a valid `?token=<>&expires=<>` query string.
+ *   - The library currently in use IS configured with token-auth enabled
+ *     (verified by curl returning HTTP 403 for an unsigned thumbnail).
+ *   - Returning raw URLs to clients produces "black thumbnails + failed
+ *     playback" with no obvious client-side error — Bunny just refuses
+ *     the request.
+ *
+ * Defensive behaviour:
+ *   - When Bunny is not configured, returns the lesson unchanged.
+ *   - When a URL is empty / null, leaves it null.
+ *   - When a URL hostname is foreign (not *.b-cdn.net / *.mediadelivery.net),
+ *     leaves it untouched (don't generate fake-signed URLs for arbitrary hosts).
  */
 function hydrateLesson<T extends { bunnyThumbnailUrl: string | null; bunnyPlaybackUrl: string | null }>(
   lesson: T
 ): T {
   const cfg = BunnyStreamService.config();
+  if (!cfg) return lesson;
+  // Two-step pipeline:
+  //   1. Hostname hydration — always safe, self-heals stale rows.
+  //   2. Token signing — only when BUNNY_STREAM_SIGN_ASSETS=true (i.e. the
+  //      operator has enabled Player → Token Authentication in the Bunny
+  //      library AND verified that Direct URL Access is allowed). Default
+  //      OFF — sending unwanted query string tokens to a token-disabled
+  //      library is harmless but signing with a stale algorithm could
+  //      400 every request.
+  const thumb = hydrateBunnyUrl(lesson.bunnyThumbnailUrl, cfg);
+  const play = hydrateBunnyUrl(lesson.bunnyPlaybackUrl, cfg);
   return {
     ...lesson,
-    bunnyThumbnailUrl: hydrateBunnyUrl(lesson.bunnyThumbnailUrl, cfg),
-    bunnyPlaybackUrl: hydrateBunnyUrl(lesson.bunnyPlaybackUrl, cfg),
+    bunnyThumbnailUrl: cfg.signAssets ? signBunnyAssetUrl(thumb, cfg) : thumb,
+    bunnyPlaybackUrl: cfg.signAssets ? signBunnyAssetUrl(play, cfg) : play,
   };
 }
 
