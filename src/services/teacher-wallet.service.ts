@@ -91,12 +91,26 @@ export class TeacherWalletService {
       [options.teacherId, balanceAfter]
     );
 
+    // teacher_wallet_transactions (migration 027) enforces a signed-amount
+    // ledger invariant via a CHECK constraint:
+    //
+    //   CHECK (balance_after = balance_before + amount)
+    //
+    // and the column comment documents the convention:
+    //
+    //   'Positive for credits, negative for debits.'
+    //
+    // A debit MUST store -options.amount or the INSERT trips the
+    // check_violation and the whole confirm-booking tx rolls back with
+    // a generic 500 ("خطأ داخلي في الخادم") — exactly the symptom prod
+    // hit on PATCH /teacher/bookings/:id/confirm once the wallet was
+    // actually funded.
     await db.query(
       `INSERT INTO teacher_wallet_transactions (teacher_id, txn_type, amount, balance_before, balance_after, reference_type, reference_id)
        VALUES ($1, 'debit', $2, $3, $4, $5, $6)`,
       [
         options.teacherId,
-        options.amount,
+        -options.amount,
         balanceBefore,
         balanceAfter,
         options.referenceType || null,
