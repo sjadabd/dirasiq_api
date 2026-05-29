@@ -25,6 +25,7 @@ import {
   videoCourseIdParamSchema,
   videoCourseLessonIdParamSchema,
   videoCourseMarketplaceQuerySchema,
+  videoCoursePurchaseInitiateBodySchema,
   videoCourseStudentLibraryQuerySchema,
 } from '../../schemas/video-course.schemas';
 
@@ -52,6 +53,16 @@ router.get(
   '/:id/lessons/:lessonId/playback-url',
   validate({ params: videoCourseLessonIdParamSchema }),
   asyncHandler(StudentVideoCourseController.signedPlaybackUrl)
+);
+
+// Phase 4 — initiate a paid purchase.
+router.post(
+  '/:id/purchase',
+  validate({
+    params: videoCourseIdParamSchema,
+    body: videoCoursePurchaseInitiateBodySchema,
+  }),
+  asyncHandler(StudentVideoCourseController.initiatePurchase)
 );
 
 export default router;

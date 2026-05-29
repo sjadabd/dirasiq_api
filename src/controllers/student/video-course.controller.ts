@@ -7,6 +7,11 @@
 // delegates every gate to VideoCourseAccessService so the only place
 // access logic lives is the function + the service that wraps it.
 //
+// Phase 4 adds the purchase initiation endpoint:
+//   POST   /:id/purchase               — create Wayl pay-link (or
+//                                          short-circuit if the student
+//                                          already has access).
+//
 // Endpoints owned by this file:
 //   GET    /                           — marketplace storefront for the
 //                                          student (paginated, filterable).
@@ -14,10 +19,12 @@
 //                                          to right now.
 //   GET    /:id                        — detail (gated by access).
 //   GET    /:id/lessons/:lessonId/playback-url — signed HLS URL (gated).
+//   POST   /:id/purchase               — start a paid purchase. Phase 4.
 
 import type { Request, Response } from 'express';
 
 import { VideoCourseAccessService } from '../../services/video-course-access.service';
+import { VideoCoursePurchaseService } from '../../services/video-course-purchase.service';
 import { ok, paginated } from '../../utils/response.util';
 import { parsePagination, buildPaginationMeta } from '../../utils/pagination';
 import type { VideoCourseMarketplaceQuery } from '../../schemas/video-course.schemas';
@@ -136,6 +143,66 @@ export class StudentVideoCourseController {
         ok(
           { url: result.url, expiresAt: result.expiresAt.toISOString() },
           'رابط تشغيل مؤقت'
+        )
+      );
+  }
+
+  // POST /api/student/video-courses/:id/purchase
+  //
+  // Phase 4 — initiate a paid purchase. Body MUST be empty (the schema
+  // enforces it via .strict()); price + commission come from the
+  // server-side course row.
+  //
+  // Three response shapes are possible:
+  //
+  //   200 + { alreadyHasAccess: { reason } }
+  //     Student already has access (whitelist / prior paid purchase /
+  //     enrolled-bypass). NO payment link is created. Client flips the
+  //     UI to "open" instead of "buy".
+  //
+  //   201 + { url, referenceId, purchaseId, amountIqd }
+  //     Pending purchase row + Wayl link created in one tx. Client
+  //     redirects to `url` to complete payment. Webhook handles the
+  //     paid-status flip + wallet credit.
+  //
+  //   4xx
+  //     400 if the course isn't marketplace_paid, the student's grade
+  //         doesn't match, or the body is malformed.
+  //     404 if the course doesn't exist / is soft-deleted / not approved.
+  //     409 if a concurrent click already created a pending purchase.
+  //     503 if Wayl env isn't configured.
+  static async initiatePurchase(req: Request, res: Response): Promise<void> {
+    const studentId = req.user.id as string;
+    const id = req.params['id'] as string;
+
+    const result = await VideoCoursePurchaseService.initiate({
+      studentId,
+      videoCourseId: id,
+    });
+
+    if (result.alreadyHasAccess) {
+      res
+        .status(200)
+        .json(
+          ok(
+            { alreadyHasAccess: result.alreadyHasAccess },
+            'لديك وصول لهذه الدورة بالفعل'
+          )
+        );
+      return;
+    }
+
+    res
+      .status(201)
+      .json(
+        ok(
+          {
+            url: result.url,
+            referenceId: result.referenceId,
+            purchaseId: result.purchaseId,
+            amountIqd: result.amountIqd,
+          },
+          'تم إنشاء رابط الدفع'
         )
       );
   }

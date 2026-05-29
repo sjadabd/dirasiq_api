@@ -253,6 +253,33 @@ export const commissionPreviewQuerySchema = z.object({
 export type CommissionPreviewQuery = z.infer<typeof commissionPreviewQuerySchema>;
 
 // ----------------------------------------------------------------------------
+// Phase 4 — purchase + refund bodies
+// ----------------------------------------------------------------------------
+
+// POST /api/student/video-courses/:id/purchase has NO body — the student
+// id is the JWT subject and the price is server-derived from the course
+// row. We keep the schema explicit (an empty object) so the validate()
+// middleware short-circuits any junk payload before the controller.
+export const videoCoursePurchaseInitiateBodySchema = z.object({}).strict();
+
+// POST /api/super-admin/video-course-purchases/:id/refund — admin only.
+export const videoCoursePurchaseRefundBodySchema = z.object({
+  reason: z
+    .string()
+    .trim()
+    .min(5,  'سبب الاسترداد مطلوب (5 أحرف على الأقل)')
+    .max(2000, 'سبب الاسترداد طويل جداً'),
+});
+export type VideoCoursePurchaseRefundInput = z.infer<
+  typeof videoCoursePurchaseRefundBodySchema
+>;
+
+// /api/super-admin/video-course-purchases/:purchaseId
+export const videoCoursePurchaseIdParamSchema = z.object({
+  id: uuidSchema,
+});
+
+// ----------------------------------------------------------------------------
 // Lesson write bodies — Phase 10.1.B.1.c
 // ----------------------------------------------------------------------------
 

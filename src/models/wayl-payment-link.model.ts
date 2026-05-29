@@ -8,7 +8,14 @@ import pool from '../config/database';
 // same migration — this model must NOT reference it on INSERT, or the
 // query fails with 'column … does not exist' on any DB that's caught up
 // past 038. That's exactly the prod 500 fixed here.
-export type WaylPaymentPurpose = 'subscription' | 'wallet_topup';
+//
+// Phase 4 marketplace adds 'video_course_purchase'. The column has no
+// CHECK constraint so the value is just a new allowed string from the
+// application's perspective.
+export type WaylPaymentPurpose =
+  | 'subscription'
+  | 'wallet_topup'
+  | 'video_course_purchase';
 export type WaylPaymentStatus = 'created' | 'paid' | 'failed' | 'canceled';
 
 export interface WaylPaymentLinkRow {
@@ -24,6 +31,8 @@ export interface WaylPaymentLinkRow {
   wayl_secret: string;
   status: WaylPaymentStatus;
   webhook_received_at: Date | null;
+  // Phase 1 marketplace FK (migration 052). NULL for non-marketplace rows.
+  video_course_purchase_id: string | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -39,15 +48,21 @@ export class WaylPaymentLinkModel {
     waylUrl?: string | null;
     waylOrderId?: string | null;
     waylCode?: string | null;
-  }): Promise<WaylPaymentLinkRow> {
+    // Phase 4 — used when purpose='video_course_purchase'. The webhook
+    // handler uses this FK to find the purchase row without parsing the
+    // reference_id format.
+    videoCoursePurchaseId?: string | null;
+  }, client?: any): Promise<WaylPaymentLinkRow> {
+    const db = client || pool;
     const q = `
       INSERT INTO wayl_payment_links (
         teacher_id, purpose, amount, currency,
-        reference_id, wayl_secret, wayl_url, wayl_order_id, wayl_code
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+        reference_id, wayl_secret, wayl_url, wayl_order_id, wayl_code,
+        video_course_purchase_id
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
       RETURNING *
     `;
-    const r = await pool.query(q, [
+    const r = (await db.query(q, [
       options.teacherId,
       options.purpose,
       options.amount,
@@ -57,8 +72,9 @@ export class WaylPaymentLinkModel {
       options.waylUrl || null,
       options.waylOrderId || null,
       options.waylCode || null,
-    ]);
-    return r.rows[0];
+      options.videoCoursePurchaseId || null,
+    ])) as { rows: WaylPaymentLinkRow[] };
+    return r.rows[0]!;
   }
 
   static async findByReferenceId(

@@ -129,6 +129,7 @@ export class WalletService {
         relatedEnrollmentId: args.enrollmentId ?? null,
         relatedWithdrawalId: null,
         relatedWaylLinkId: args.waylLinkId ?? null,
+        relatedVideoCoursePurchaseId: null,
         actorUserId: args.actorUserId ?? null,
         idempotencyKey: args.idempotencyKey ?? null,
         notes: args.notes ?? null,
@@ -144,6 +145,7 @@ export class WalletService {
         relatedEnrollmentId: args.enrollmentId ?? null,
         relatedWithdrawalId: null,
         relatedWaylLinkId: args.waylLinkId ?? null,
+        relatedVideoCoursePurchaseId: null,
         actorUserId: args.actorUserId ?? null,
         idempotencyKey: args.idempotencyKey ? `${args.idempotencyKey}#commission` : null,
         notes: `tier=${breakdown.appliedTierName ?? breakdown.source} percent=${breakdown.commissionPercent}`,
@@ -160,6 +162,7 @@ export class WalletService {
           relatedEnrollmentId: args.enrollmentId ?? null,
           relatedWithdrawalId: null,
           relatedWaylLinkId: args.waylLinkId ?? null,
+          relatedVideoCoursePurchaseId: null,
           actorUserId: args.actorUserId ?? null,
           idempotencyKey: args.idempotencyKey ? `${args.idempotencyKey}#fee` : null,
           notes: 'wayl_fee_internal',
@@ -182,6 +185,236 @@ export class WalletService {
           pendingBalance: newPending,
           lifetimeEarnings: newLifetimeEarnings,
         },
+      };
+    });
+  }
+
+  /**
+   * Phase 1 marketplace — credit a paid video_course_purchase to the
+   * teacher's PENDING balance. Mirrors `creditEnrollment` but:
+   *
+   *   - Writes entry_type='video_course_purchase_credit' (not
+   *     'enrollment_credit') so revenue reports split video sales
+   *     from live-course enrollments cleanly.
+   *   - Wires related_video_course_purchase_id so analytics can join
+   *     ledger → purchase → video_course directly.
+   *   - Takes the commission breakdown from the PURCHASE SNAPSHOT (not
+   *     a fresh CommissionService.computeFor call) so the credit
+   *     honours the percent + IQD numbers the student agreed to at
+   *     purchase time, even if the tier table or per-teacher override
+   *     changed between purchase + paid webhook.
+   *
+   * `idempotencyKey` should be `vcp:<purchaseId>` from the webhook
+   * handler. A retry collapses to a no-op by returning the existing
+   * ledger entry.
+   *
+   * Gateway-fee informational entry is still written (recomputed
+   * fresh from current env). It does NOT touch balances.
+   */
+  static async creditVideoCoursePurchase(args: {
+    teacherId: string;
+    purchaseId: string;
+    waylLinkId?: string | null;
+    snapshot: {
+      grossSalePriceIqd: number;
+      commissionPercent: number;
+      commissionAmountIqd: number;
+      netToTeacherIqd: number;
+    };
+    actorUserId?: string;
+    idempotencyKey: string;
+  }): Promise<{
+    ledgerEntryId: string;
+    snapshot: WalletSnapshot;
+  }> {
+    // Recompute gateway fee from current env. Informational only — does
+    // not change balances. The teacher_net we credit is the snapshot
+    // value, not (gross - commission - fee).
+    const gatewayBreakdown = await CommissionService.computeFor({
+      teacherId: args.teacherId,
+      grossSalePriceIqd: args.snapshot.grossSalePriceIqd,
+    });
+
+    return this.runInTx(args.teacherId, async (client, walletSnapshot) => {
+      // Idempotency short-circuit.
+      const dup = await this.findByIdempotencyKey(client, args.idempotencyKey);
+      if (dup) {
+        return { ledgerEntryId: dup.id, snapshot: walletSnapshot };
+      }
+
+      // 1. Net credit to pending.
+      const newPending = round2(
+        walletSnapshot.pendingBalance + args.snapshot.netToTeacherIqd
+      );
+      const newLifetimeEarnings = round2(
+        walletSnapshot.lifetimeEarnings + args.snapshot.netToTeacherIqd
+      );
+
+      const ledgerId = await this.insertLedger(client, {
+        teacherId: args.teacherId,
+        entryType: WalletLedgerEntryType.VIDEO_COURSE_PURCHASE_CREDIT,
+        amount: args.snapshot.netToTeacherIqd,
+        balancePendingAfter: newPending,
+        balanceWithdrawableAfter: walletSnapshot.withdrawableBalance,
+        relatedEnrollmentId: null,
+        relatedWithdrawalId: null,
+        relatedWaylLinkId: args.waylLinkId ?? null,
+        relatedVideoCoursePurchaseId: args.purchaseId,
+        actorUserId: args.actorUserId ?? null,
+        idempotencyKey: args.idempotencyKey,
+        notes: null,
+      });
+
+      // 2. Informational commission entry — does NOT touch balances.
+      await this.insertLedger(client, {
+        teacherId: args.teacherId,
+        entryType: WalletLedgerEntryType.PLATFORM_COMMISSION,
+        amount: -args.snapshot.commissionAmountIqd,
+        balancePendingAfter: newPending,
+        balanceWithdrawableAfter: walletSnapshot.withdrawableBalance,
+        relatedEnrollmentId: null,
+        relatedWithdrawalId: null,
+        relatedWaylLinkId: args.waylLinkId ?? null,
+        relatedVideoCoursePurchaseId: args.purchaseId,
+        actorUserId: args.actorUserId ?? null,
+        idempotencyKey: `${args.idempotencyKey}#commission`,
+        notes: `vcp percent=${args.snapshot.commissionPercent}`,
+      });
+
+      // 3. Informational gateway-fee entry — does NOT touch balances.
+      if (gatewayBreakdown.gatewayFeeIqd > 0) {
+        await this.insertLedger(client, {
+          teacherId: args.teacherId,
+          entryType: WalletLedgerEntryType.GATEWAY_FEE,
+          amount: -gatewayBreakdown.gatewayFeeIqd,
+          balancePendingAfter: newPending,
+          balanceWithdrawableAfter: walletSnapshot.withdrawableBalance,
+          relatedEnrollmentId: null,
+          relatedWithdrawalId: null,
+          relatedWaylLinkId: args.waylLinkId ?? null,
+          relatedVideoCoursePurchaseId: args.purchaseId,
+          actorUserId: args.actorUserId ?? null,
+          idempotencyKey: `${args.idempotencyKey}#fee`,
+          notes: 'wayl_fee_internal',
+        });
+      }
+
+      // 4. Snapshot.
+      await this.persistSnapshot(client, args.teacherId, {
+        pendingBalance: newPending,
+        withdrawableBalance: walletSnapshot.withdrawableBalance,
+        lifetimeEarnings: newLifetimeEarnings,
+        lifetimeWithdrawn: walletSnapshot.lifetimeWithdrawn,
+      });
+
+      return {
+        ledgerEntryId: ledgerId,
+        snapshot: {
+          ...walletSnapshot,
+          pendingBalance: newPending,
+          lifetimeEarnings: newLifetimeEarnings,
+        },
+      };
+    });
+  }
+
+  /**
+   * Phase 1 marketplace — claw back a refunded video_course_purchase.
+   * Debits the teacher's wallet by `amountIqd` (the teacher_net stored
+   * on the purchase row).
+   *
+   * Refund debit strategy when the funds may have crossed the T+7
+   * settlement window:
+   *   - Try `pending_balance` first (within 7 days, the credit is
+   *     guaranteed to still be in pending because the settlement sweep
+   *     hasn't fired).
+   *   - Spill over to `withdrawable_balance` for any remainder
+   *     (defensive — covers race vs. a hypothetical sweep cron).
+   *   - Throw INSUFFICIENT_FUNDS if the teacher's total < refund.
+   *     This blocks the refund cleanly; the admin must coordinate
+   *     out-of-band (e.g. wait for withdrawals to clear, or
+   *     compensate).
+   *
+   * `idempotencyKey` is `vcp_refund:<purchaseId>` so a double-click
+   * doesn't double-debit.
+   */
+  static async debitVideoCoursePurchaseRefund(args: {
+    teacherId: string;
+    purchaseId: string;
+    amountIqd: number;
+    actorUserId?: string;
+    notes?: string;
+  }): Promise<WalletSnapshot> {
+    const idempotencyKey = `vcp_refund:${args.purchaseId}`;
+
+    return this.runInTx(args.teacherId, async (client, snapshot) => {
+      // Idempotency short-circuit.
+      const dup = await this.findByIdempotencyKey(client, idempotencyKey);
+      if (dup) return snapshot;
+
+      const refund = round2(args.amountIqd);
+      const totalAvailable = round2(
+        snapshot.pendingBalance + snapshot.withdrawableBalance
+      );
+      if (totalAvailable < refund) {
+        throw new ApiError(
+          400,
+          'الرصيد غير كافٍ لاسترداد هذا الشراء',
+          ErrorCodes.INSUFFICIENT_FUNDS,
+          {
+            requestedIqd: refund,
+            availableIqd: totalAvailable,
+            pendingIqd: snapshot.pendingBalance,
+            withdrawableIqd: snapshot.withdrawableBalance,
+          }
+        );
+      }
+
+      const debitFromPending = Math.min(refund, snapshot.pendingBalance);
+      const debitFromWithdrawable = round2(refund - debitFromPending);
+
+      const newPending = round2(snapshot.pendingBalance - debitFromPending);
+      const newWithdrawable = round2(
+        snapshot.withdrawableBalance - debitFromWithdrawable
+      );
+      // lifetime_earnings is the cumulative "ever credited" total; the
+      // refund subtracts from it so the teacher's "lifetime" reflects
+      // what they actually kept.
+      const newLifetimeEarnings = Math.max(
+        0,
+        round2(snapshot.lifetimeEarnings - refund)
+      );
+
+      const ledgerId = await this.insertLedger(client, {
+        teacherId: args.teacherId,
+        entryType: WalletLedgerEntryType.VIDEO_COURSE_PURCHASE_REFUND,
+        amount: -refund,
+        balancePendingAfter: newPending,
+        balanceWithdrawableAfter: newWithdrawable,
+        relatedEnrollmentId: null,
+        relatedWithdrawalId: null,
+        relatedWaylLinkId: null,
+        relatedVideoCoursePurchaseId: args.purchaseId,
+        actorUserId: args.actorUserId ?? null,
+        idempotencyKey,
+        notes:
+          args.notes ??
+          `refund vcp:${args.purchaseId} (pending=${debitFromPending}, withdrawable=${debitFromWithdrawable})`,
+      });
+      void ledgerId;
+
+      await this.persistSnapshot(client, args.teacherId, {
+        pendingBalance: newPending,
+        withdrawableBalance: newWithdrawable,
+        lifetimeEarnings: newLifetimeEarnings,
+        lifetimeWithdrawn: snapshot.lifetimeWithdrawn,
+      });
+
+      return {
+        ...snapshot,
+        pendingBalance: newPending,
+        withdrawableBalance: newWithdrawable,
+        lifetimeEarnings: newLifetimeEarnings,
       };
     });
   }
@@ -238,6 +471,7 @@ export class WalletService {
         relatedEnrollmentId: null,
         relatedWithdrawalId: null,
         relatedWaylLinkId: null,
+        relatedVideoCoursePurchaseId: null,
         actorUserId: args.actorUserId ?? null,
         idempotencyKey: `settle:${args.teacherId}:${args.olderThanDate.toISOString().slice(0,10)}`,
         notes: 'T+settlement sweep',
@@ -293,6 +527,7 @@ export class WalletService {
         relatedEnrollmentId: null,
         relatedWithdrawalId: args.withdrawalId,
         relatedWaylLinkId: null,
+        relatedVideoCoursePurchaseId: null,
         actorUserId: args.actorUserId ?? null,
         idempotencyKey: `withdrawal_hold:${args.withdrawalId}`,
         notes: null,
@@ -326,6 +561,7 @@ export class WalletService {
         relatedEnrollmentId: null,
         relatedWithdrawalId: args.withdrawalId,
         relatedWaylLinkId: null,
+        relatedVideoCoursePurchaseId: null,
         actorUserId: args.actorUserId ?? null,
         idempotencyKey: `withdrawal_release:${args.withdrawalId}`,
         notes: null,
@@ -360,6 +596,7 @@ export class WalletService {
         relatedEnrollmentId: null,
         relatedWithdrawalId: args.withdrawalId,
         relatedWaylLinkId: null,
+        relatedVideoCoursePurchaseId: null,
         actorUserId: args.actorUserId ?? null,
         idempotencyKey: `withdrawal_paid:${args.withdrawalId}`,
         notes: null,
@@ -427,12 +664,14 @@ export class WalletService {
          teacher_id, entry_type, amount,
          balance_pending_after, balance_withdrawable_after,
          related_enrollment_id, related_withdrawal_id, related_wayl_link_id,
+         related_video_course_purchase_id,
          actor_user_id, idempotency_key, notes
        ) VALUES (
          $1, $2, $3,
          $4, $5,
          $6, $7, $8,
-         $9, $10, $11
+         $9,
+         $10, $11, $12
        )
        RETURNING id`,
       [
@@ -444,6 +683,7 @@ export class WalletService {
         entry.relatedEnrollmentId,
         entry.relatedWithdrawalId,
         entry.relatedWaylLinkId,
+        entry.relatedVideoCoursePurchaseId,
         entry.actorUserId,
         entry.idempotencyKey,
         entry.notes,

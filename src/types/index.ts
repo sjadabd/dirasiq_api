@@ -436,16 +436,20 @@ export interface UpdateCourseRequest {
 // =====================================================
 
 export enum WalletLedgerEntryType {
-  ENROLLMENT_CREDIT          = 'enrollment_credit',
-  PLATFORM_COMMISSION        = 'platform_commission',
-  GATEWAY_FEE                = 'gateway_fee',
-  PENDING_TO_WITHDRAWABLE    = 'pending_to_withdrawable',
-  WITHDRAWAL_HOLD            = 'withdrawal_hold',
-  WITHDRAWAL_RELEASE         = 'withdrawal_release',
-  WITHDRAWAL_PAID            = 'withdrawal_paid',
-  REFUND_DEBIT               = 'refund_debit',
-  MANUAL_ADJUSTMENT_CREDIT   = 'manual_adjustment_credit',
-  MANUAL_ADJUSTMENT_DEBIT    = 'manual_adjustment_debit',
+  ENROLLMENT_CREDIT             = 'enrollment_credit',
+  PLATFORM_COMMISSION           = 'platform_commission',
+  GATEWAY_FEE                   = 'gateway_fee',
+  PENDING_TO_WITHDRAWABLE       = 'pending_to_withdrawable',
+  WITHDRAWAL_HOLD               = 'withdrawal_hold',
+  WITHDRAWAL_RELEASE            = 'withdrawal_release',
+  WITHDRAWAL_PAID               = 'withdrawal_paid',
+  REFUND_DEBIT                  = 'refund_debit',
+  MANUAL_ADJUSTMENT_CREDIT      = 'manual_adjustment_credit',
+  MANUAL_ADJUSTMENT_DEBIT       = 'manual_adjustment_debit',
+  // Phase 1 marketplace additions — kept in sync with the CHECK widened
+  // in migration 053.
+  VIDEO_COURSE_PURCHASE_CREDIT  = 'video_course_purchase_credit',
+  VIDEO_COURSE_PURCHASE_REFUND  = 'video_course_purchase_refund',
 }
 
 export interface WalletLedgerEntry {
@@ -458,6 +462,8 @@ export interface WalletLedgerEntry {
   relatedEnrollmentId: string | null;
   relatedWithdrawalId: string | null;
   relatedWaylLinkId: string | null;
+  // Phase 1 marketplace FK (migration 053). NULL for non-marketplace entries.
+  relatedVideoCoursePurchaseId: string | null;
   actorUserId: string | null;
   idempotencyKey: string | null;
   notes: string | null;

@@ -3,6 +3,7 @@ import pool from '../../config/database';
 import { WaylPaymentLinkModel } from '../../models/wayl-payment-link.model';
 import { WaylWebhookEventModel } from '../../models/wayl-webhook-event.model';
 import { TeacherWalletService } from '../../services/teacher-wallet.service';
+import { VideoCoursePurchaseService } from '../../services/video-course-purchase.service';
 import { WaylService } from '../../services/wayl.service';
 
 // ---------------------------------------------------------------------------
@@ -353,6 +354,52 @@ export class WaylWebhookController {
           referenceId: referenceId,
           client,
         });
+      } else if (link.purpose === 'video_course_purchase') {
+        // Phase 4 — marketplace purchase. The link carries a FK to the
+        // purchase row (set at link-creation time); we use it to:
+        //   1. Flip the purchase row 'pending' → 'paid' (idempotent via
+        //      VideoCoursePurchaseModel.markPaid which only updates
+        //      rows currently in 'pending').
+        //   2. Credit the teacher's wallet via
+        //      WalletService.creditVideoCoursePurchase. That call is
+        //      idempotent via the ledger's idempotency_key column.
+        //
+        // The wayl_payment_links row was already flipped to 'paid'
+        // above (markR.rowCount=1 short-circuit covers the second
+        // delivery), but we double-gate inside VideoCoursePurchaseService
+        // because the wayl tx is SEPARATE from the wallet tx — a
+        // crash between the two on a first delivery must NOT cause a
+        // second delivery to skip the wallet credit. The ledger
+        // idempotency key is the load-bearing safeguard.
+        if (!link.video_course_purchase_id) {
+          // Defensive — should never happen because the create path
+          // wires this FK. Log loudly so ops can investigate.
+          console.error('Wayl webhook: video_course_purchase link missing FK', {
+            referenceId,
+            linkId: link.id,
+          });
+          throw new Error('video_course_purchase link missing FK');
+        }
+        await client.query('COMMIT');
+        // The credit runs in its OWN tx (WalletService.runInTx) so the
+        // wayl link tx above can commit and we won't hold the wayl row
+        // lock during the credit's FOR UPDATE on teacher_wallets.
+        await VideoCoursePurchaseService.completePaid({
+          videoCoursePurchaseId: link.video_course_purchase_id,
+          waylLinkId: link.id,
+          paidAt: new Date(),
+        });
+        if (event?.id) {
+          await WaylWebhookEventModel.markProcessed({
+            id: event.id,
+            status: 'processed',
+            message: 'Webhook processed',
+          });
+        }
+        res
+          .status(200)
+          .json({ success: true, message: 'Webhook processed' });
+        return;
       } else {
         // (Phase 7) The 'subscription' purpose was removed alongside the
         // legacy subscription system. Course-purchase ('enrollment')
