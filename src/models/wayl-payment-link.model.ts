@@ -1,5 +1,13 @@
 import pool from '../config/database';
 
+// Phase 7 retired the 'subscription' purpose alongside the entire legacy
+// subscription system (see migration 038). The string is intentionally kept
+// in this enum so historical paid rows (if any) still type-check on read;
+// new INSERTs only ever use 'wallet_topup' (and 'enrollment' once Phase 14
+// lands). The catalogue FK `subscription_package_id` was dropped by the
+// same migration — this model must NOT reference it on INSERT, or the
+// query fails with 'column … does not exist' on any DB that's caught up
+// past 038. That's exactly the prod 500 fixed here.
 export type WaylPaymentPurpose = 'subscription' | 'wallet_topup';
 export type WaylPaymentStatus = 'created' | 'paid' | 'failed' | 'canceled';
 
@@ -7,7 +15,6 @@ export interface WaylPaymentLinkRow {
   id: string;
   teacher_id: string;
   purpose: WaylPaymentPurpose;
-  subscription_package_id: string | null;
   amount: any;
   currency: string;
   reference_id: string;
@@ -25,7 +32,6 @@ export class WaylPaymentLinkModel {
   static async create(options: {
     teacherId: string;
     purpose: WaylPaymentPurpose;
-    subscriptionPackageId?: string | null;
     amount: number;
     currency?: string;
     referenceId: string;
@@ -36,15 +42,14 @@ export class WaylPaymentLinkModel {
   }): Promise<WaylPaymentLinkRow> {
     const q = `
       INSERT INTO wayl_payment_links (
-        teacher_id, purpose, subscription_package_id, amount, currency,
+        teacher_id, purpose, amount, currency,
         reference_id, wayl_secret, wayl_url, wayl_order_id, wayl_code
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
       RETURNING *
     `;
     const r = await pool.query(q, [
       options.teacherId,
       options.purpose,
-      options.subscriptionPackageId || null,
       options.amount,
       (options.currency || 'iqd').toLowerCase(),
       options.referenceId,
