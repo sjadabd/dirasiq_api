@@ -320,12 +320,20 @@ export class TeacherApplicationService {
         { field: 'gradeIds' }
       );
     }
-    // Preserve the applicant's selection order in the display string.
+    // Preserve the applicant's selection order in the display string. The
+    // column is TEXT post-046_*.sql, but we still cap defensively at 240
+    // chars so the admin-review chip doesn't render an absurdly long line.
+    // Older DB snapshots that haven't run 046 yet keep working too — the
+    // safety net is here as belt-and-suspenders.
     const gradeNameById = new Map(gradeRows.map((r) => [r.id, r.name]));
-    const teachingStageDisplay = input.gradeIds
+    const teachingStageFull = input.gradeIds
       .map((id) => gradeNameById.get(id))
       .filter((n): n is string => Boolean(n))
       .join('، ');
+    const teachingStageDisplay =
+      teachingStageFull.length > 240
+        ? `${teachingStageFull.slice(0, 237)}...`
+        : teachingStageFull;
 
     // 5. Prepare email-verification OTP (only for the email auth path).
     let otpHash: string | null = null;
