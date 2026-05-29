@@ -34,6 +34,8 @@ const VIDEO_COURSE_COLUMNS = `
   is_free         AS "isFree",
   visibility,
   status,
+  access_type                 AS "accessType",
+  free_for_enrolled_students  AS "freeForEnrolledStudents",
   reviewed_by     AS "reviewedBy",
   reviewed_at     AS "reviewedAt",
   review_notes    AS "reviewNotes",
@@ -227,6 +229,246 @@ export class VideoCourseModel {
          FROM video_courses
         ${whereSql}
         ORDER BY created_at DESC
+        LIMIT $${params.length - 1} OFFSET $${params.length}`,
+      params
+    );
+    return { rows, total };
+  }
+
+  // ---- MARKETPLACE / STUDENT-AUTH READS (Phase 1 of marketplace rebuild) ---
+
+  /**
+   * Marketplace browse for a student. Filters down to videos that:
+   *   1. are approved + not deleted,
+   *   2. carry an access_type that makes marketplace sense
+   *      (public_free_by_grade OR marketplace_paid) — enrolled_students_free
+   *      videos are NEVER in the marketplace; they only surface in the
+   *      Course Hub of the related teacher's live courses,
+   *   3. pass fn_student_can_view_video_course OR (for paid videos the
+   *      student has not yet bought) at least carry a grade match so the
+   *      buy-it-now flow has a target — this means a paid card can still
+   *      appear in the marketplace even if the student hasn't paid yet
+   *      (they need to be able to discover it to buy it).
+   *
+   * The "can-view OR grade-match-on-paid" rule is encoded as:
+   *
+   *   fn_student_can_view_video_course(student, vc.id)
+   *     OR (vc.access_type = 'marketplace_paid'
+   *         AND EXISTS (
+   *           SELECT 1 FROM video_course_grade_targets vcgt
+   *             JOIN student_grades sg ON sg.grade_id = vcgt.grade_id
+   *            WHERE vcgt.video_course_id = vc.id
+   *              AND sg.student_id = $student
+   *              AND sg.study_year = <active>
+   *              AND sg.deleted_at IS NULL
+   *              AND sg.is_active = TRUE
+   *         ))
+   *
+   * Sort options:
+   *   newest   → created_at DESC
+   *   popular  → lifetime paid_purchase count DESC, then created_at DESC
+   *   trending → paid_purchase count in last 7 days DESC, then created_at DESC
+   *   price_asc / price_desc — exact name says it
+   *
+   * `recommended` is intentionally omitted from this method — the ranking
+   * uses join keys that don't compose with the simple WHERE pipeline.
+   * Phase 2.B (a later step) will add it as a separate method.
+   */
+  static async findManyForStudentMarketplace(args: {
+    studentId: string;
+    offset: number;
+    limit: number;
+    subject?: string;
+    teacherId?: string;
+    gradeId?: string;
+    priceMax?: number;
+    sort?: 'newest' | 'popular' | 'trending' | 'price_asc' | 'price_desc';
+  }): Promise<{ rows: VideoCourse[]; total: number }> {
+    const params: unknown[] = [args.studentId];
+    const studentParam = '$1';
+
+    const where: string[] = [
+      'vc.deleted_at IS NULL',
+      "vc.status = 'approved'",
+      "vc.access_type IN ('public_free_by_grade','marketplace_paid')",
+    ];
+
+    // Eligibility: either the access function says yes, OR the row is a
+    // paid marketplace card the student qualifies to BUY (grade match).
+    where.push(
+      `(
+        fn_student_can_view_video_course(${studentParam}, vc.id)
+        OR (
+          vc.access_type = 'marketplace_paid'
+          AND EXISTS (
+            SELECT 1
+              FROM video_course_grade_targets vcgt
+              JOIN student_grades sg ON sg.grade_id = vcgt.grade_id
+             WHERE vcgt.video_course_id = vc.id
+               AND sg.student_id        = ${studentParam}
+               AND sg.study_year        = (SELECT year FROM academic_years WHERE is_active = TRUE LIMIT 1)
+               AND sg.deleted_at IS NULL
+               AND sg.is_active = TRUE
+          )
+        )
+      )`
+    );
+
+    if (args.subject) {
+      params.push(args.subject);
+      where.push(`vc.subject = $${params.length}`);
+    }
+    if (args.teacherId) {
+      params.push(args.teacherId);
+      where.push(`vc.teacher_id = $${params.length}`);
+    }
+    if (args.gradeId) {
+      params.push(args.gradeId);
+      where.push(
+        `EXISTS (SELECT 1 FROM video_course_grade_targets
+                  WHERE video_course_id = vc.id AND grade_id = $${params.length})`
+      );
+    }
+    if (typeof args.priceMax === 'number') {
+      params.push(args.priceMax);
+      where.push(`vc.price <= $${params.length}`);
+    }
+
+    const whereSql = `WHERE ${where.join(' AND ')}`;
+
+    const orderBy = (() => {
+      switch (args.sort) {
+        case 'popular':
+          return `(SELECT COUNT(*) FROM video_course_purchases
+                    WHERE video_course_id = vc.id AND status = 'paid') DESC,
+                  vc.created_at DESC`;
+        case 'trending':
+          return `(SELECT COUNT(*) FROM video_course_purchases
+                    WHERE video_course_id = vc.id
+                      AND status = 'paid'
+                      AND paid_at > NOW() - INTERVAL '7 days') DESC,
+                  vc.created_at DESC`;
+        case 'price_asc':
+          return 'vc.price ASC, vc.created_at DESC';
+        case 'price_desc':
+          return 'vc.price DESC, vc.created_at DESC';
+        case 'newest':
+        default:
+          return 'vc.created_at DESC';
+      }
+    })();
+
+    const { rows: countRows } = await pool.query<{ count: string }>(
+      `SELECT COUNT(*) AS count FROM video_courses vc ${whereSql}`,
+      params
+    );
+    const total = Number(countRows[0]?.count ?? 0);
+
+    params.push(args.limit, args.offset);
+    const { rows } = await pool.query<VideoCourse>(
+      `SELECT ${VIDEO_COURSE_COLUMNS.replace(/  /g, ' ')}
+         FROM video_courses vc
+         ${whereSql}
+        ORDER BY ${orderBy}
+        LIMIT $${params.length - 1} OFFSET $${params.length}`,
+      params
+    );
+    return { rows, total };
+  }
+
+  /**
+   * My Library — the videos this student currently has access to. Equivalent
+   * to "what the student owns or has been granted access to". Implemented
+   * via the access function (closed-by-default), filtered to approved rows.
+   *
+   * Sort: newest acquired first. We approximate acquisition time with the
+   * MAX(paid_at | granted_at | created_at) per row so the natural reading is
+   * "the freshly-added videos at the top".
+   */
+  static async findManyForStudentLibrary(args: {
+    studentId: string;
+    offset: number;
+    limit: number;
+  }): Promise<{ rows: VideoCourse[]; total: number }> {
+    const params: unknown[] = [args.studentId];
+
+    const whereSql = `
+      WHERE vc.deleted_at IS NULL
+        AND vc.status = 'approved'
+        AND fn_student_can_view_video_course($1, vc.id)
+    `;
+
+    const { rows: countRows } = await pool.query<{ count: string }>(
+      `SELECT COUNT(*) AS count FROM video_courses vc ${whereSql}`,
+      params
+    );
+    const total = Number(countRows[0]?.count ?? 0);
+
+    params.push(args.limit, args.offset);
+    const { rows } = await pool.query<VideoCourse>(
+      `SELECT ${VIDEO_COURSE_COLUMNS.replace(/  /g, ' ')}
+         FROM video_courses vc
+         ${whereSql}
+        ORDER BY GREATEST(
+                   COALESCE((SELECT paid_at FROM video_course_purchases
+                              WHERE video_course_id = vc.id
+                                AND student_id      = $1
+                                AND status          = 'paid'
+                              ORDER BY paid_at DESC LIMIT 1),
+                            'epoch'::timestamptz),
+                   COALESCE((SELECT granted_at FROM video_course_free_students
+                              WHERE video_course_id = vc.id
+                                AND student_id      = $1
+                              LIMIT 1),
+                            'epoch'::timestamptz),
+                   vc.created_at
+                 ) DESC
+        LIMIT $${params.length - 1} OFFSET $${params.length}`,
+      params
+    );
+    return { rows, total };
+  }
+
+  /**
+   * Course-Hub videos — the video courses pinned to a given live course
+   * via video_course_target_courses, restricted to approved rows. Access
+   * is enforced via the function so a card that would not pass the check
+   * is hidden (which is the right default — a student seeing a Hub video
+   * they can't access produces a worse UX than not seeing it at all).
+   *
+   * Phase 2 returns rows the student can VIEW. Phase 3 may add a "preview"
+   * flag for "you can see it but must buy" — defer.
+   */
+  static async findManyForCourseHub(args: {
+    studentId: string;
+    courseId: string;
+    offset: number;
+    limit: number;
+  }): Promise<{ rows: VideoCourse[]; total: number }> {
+    const params: unknown[] = [args.studentId, args.courseId];
+
+    const whereSql = `
+      WHERE vc.deleted_at IS NULL
+        AND vc.status = 'approved'
+        AND EXISTS (
+            SELECT 1 FROM video_course_target_courses
+             WHERE video_course_id = vc.id AND course_id = $2
+        )
+        AND fn_student_can_view_video_course($1, vc.id)
+    `;
+
+    const { rows: countRows } = await pool.query<{ count: string }>(
+      `SELECT COUNT(*) AS count FROM video_courses vc ${whereSql}`,
+      params
+    );
+    const total = Number(countRows[0]?.count ?? 0);
+
+    params.push(args.limit, args.offset);
+    const { rows } = await pool.query<VideoCourse>(
+      `SELECT ${VIDEO_COURSE_COLUMNS.replace(/  /g, ' ')}
+         FROM video_courses vc
+         ${whereSql}
+        ORDER BY vc.created_at DESC
         LIMIT $${params.length - 1} OFFSET $${params.length}`,
       params
     );

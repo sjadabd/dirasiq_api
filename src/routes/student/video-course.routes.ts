@@ -1,5 +1,20 @@
-// /api/student/video-courses — student-authenticated. Phase 10.1.A.
+// /api/student/video-courses — student-authenticated.
 // auth + role applied at the parent router (routes/student/index.ts).
+//
+// Phase 2 changes:
+//   - GET / now serves the marketplace storefront (per-student, with the
+//     access function gating eligibility). The legacy
+//     videoCoursePublicListQuerySchema is replaced by the richer
+//     videoCourseMarketplaceQuerySchema (subject / teacherId / gradeId /
+//     priceMax / sort).
+//   - NEW: GET /my-library — what the student already has access to.
+//   - Detail + playback-url paths unchanged in shape but now gated by
+//     the access function under the hood (see controller).
+//
+// Route ORDER matters: `/my-library` MUST be declared BEFORE `/:id`,
+// otherwise express-router's `:id` regex would catch `my-library` as a
+// UUID — failing schema validation with a `params.id` error instead of
+// reaching the right handler.
 
 import { Router } from 'express';
 
@@ -9,15 +24,22 @@ import { asyncHandler } from '../../utils/async-handler';
 import {
   videoCourseIdParamSchema,
   videoCourseLessonIdParamSchema,
-  videoCoursePublicListQuerySchema,
+  videoCourseMarketplaceQuerySchema,
+  videoCourseStudentLibraryQuerySchema,
 } from '../../schemas/video-course.schemas';
 
 const router = Router();
 
 router.get(
   '/',
-  validate({ query: videoCoursePublicListQuerySchema }),
+  validate({ query: videoCourseMarketplaceQuerySchema }),
   asyncHandler(StudentVideoCourseController.list)
+);
+
+router.get(
+  '/my-library',
+  validate({ query: videoCourseStudentLibraryQuerySchema }),
+  asyncHandler(StudentVideoCourseController.myLibrary)
 );
 
 router.get(

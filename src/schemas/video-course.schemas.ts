@@ -47,6 +47,29 @@ export const videoCoursePublicListQuerySchema = paginationQuerySchema.extend({
   teachingStage: optionalString,
 });
 
+// Marketplace browse — student-authenticated. Filters mirror the storefront
+// UX (grade / subject / teacher / price ceiling). `sort` is a small enum we
+// validate strictly so the model doesn't fall through to an injection-prone
+// dynamic ORDER BY.
+export const videoCourseMarketplaceQuerySchema = paginationQuerySchema.extend({
+  subject:   optionalString,
+  teacherId: uuidSchema.optional(),
+  gradeId:   uuidSchema.optional(),
+  priceMax:  z.coerce.number().nonnegative().max(1_000_000).optional(),
+  sort:      z.enum(['newest', 'popular', 'trending', 'price_asc', 'price_desc']).optional(),
+});
+export type VideoCourseMarketplaceQuery = z.infer<typeof videoCourseMarketplaceQuerySchema>;
+
+// My-library + Course-Hub-videos endpoints take only pagination; no filters.
+export const videoCourseStudentLibraryQuerySchema = paginationQuerySchema;
+export type VideoCourseStudentLibraryQuery = z.infer<typeof videoCourseStudentLibraryQuerySchema>;
+
+// Per-course video listing for the Course Hub. Path-param schema (courseId)
+// is the shared idParamSchema in common.schemas; this is for the query
+// (just pagination).
+export const videoCoursesForCourseHubQuerySchema = paginationQuerySchema;
+export type VideoCoursesForCourseHubQuery = z.infer<typeof videoCoursesForCourseHubQuerySchema>;
+
 // Teacher list — own courses, status filter optional.
 export const videoCourseTeacherListQuerySchema = paginationQuerySchema.extend({
   status: videoCourseStatusEnum.optional(),

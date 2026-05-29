@@ -183,6 +183,20 @@ export class VideoCourseService {
     return all.map(hydrateLesson);
   }
 
+  /**
+   * Helper used by VideoCourseAccessService (Phase 2). The caller is
+   * responsible for asserting student access BEFORE calling this — the
+   * method itself performs no gating (the legacy `lessonsForPublic`
+   * gate on visibility=public is not the right gate under the new
+   * access model). Filters to ready lessons only.
+   */
+  static async lessonsForOwnerOrAccess(courseId: string): Promise<VideoLesson[]> {
+    const all = await VideoLessonModel.findByCourse(courseId);
+    return all
+      .filter((l) => l.bunnyStatus === VideoLessonBunnyStatus.READY)
+      .map(hydrateLesson);
+  }
+
   // ---- TEACHER writes — Phase 10.1.B --------------------------------------
 
   /**
@@ -555,6 +569,20 @@ export class VideoCourseService {
       lessonId: args.lessonId,
       ...(args.clientIp ? { clientIp: args.clientIp } : {}),
     });
+  }
+
+  /**
+   * Helper used by VideoCourseAccessService (Phase 2). The caller is
+   * responsible for asserting student access BEFORE calling this — the
+   * method itself performs no access gate. The lesson-state gates
+   * (`ready` bunny status + `bunnyVideoId` present) are still applied.
+   */
+  static async mintSignedUrlForAccess(args: {
+    courseId: string;
+    lessonId: string;
+    clientIp?: string;
+  }): Promise<{ url: string; expiresAt: Date }> {
+    return this.mintSignedUrl(args);
   }
 
   private static async mintSignedUrl(args: {

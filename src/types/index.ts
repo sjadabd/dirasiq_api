@@ -1169,6 +1169,15 @@ export enum VideoLessonBunnyStatus {
   FAILED = 'failed',
 }
 
+// Marketplace Phase 1+ access model. The legacy `isFree` + `visibility` pair
+// is being phased out — derived from `accessType` on the server during
+// Phase 8 cleanup. New code should branch on `accessType`.
+export enum VideoCourseAccessType {
+  PUBLIC_FREE_BY_GRADE   = 'public_free_by_grade',
+  ENROLLED_STUDENTS_FREE = 'enrolled_students_free',
+  MARKETPLACE_PAID       = 'marketplace_paid',
+}
+
 export interface VideoCourse {
   id: string;
   teacherId: string;
@@ -1182,6 +1191,11 @@ export interface VideoCourse {
   isFree: boolean;
   visibility: VideoCourseVisibility;
   status: VideoCourseStatus;
+  // Phase 1 marketplace fields (migration 047). Either is `null` only on
+  // rows older than the migration backfill — Phase 1 backfilled every
+  // existing row.
+  accessType: VideoCourseAccessType;
+  freeForEnrolledStudents: boolean;
   reviewedBy: string | null;
   reviewedAt: string | null;
   reviewNotes: string | null;
