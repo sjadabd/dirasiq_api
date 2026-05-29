@@ -487,12 +487,19 @@ export class VideoCourseModel {
     isFree: boolean;
     price: number;
     visibility: VideoCourseVisibility;
-  }): Promise<VideoCourse> {
-    const { rows } = await pool.query<VideoCourse>(
+    // Phase 3 — required NOT NULL on the column (migration 047 backfilled
+    // every existing row so the column is always populated).
+    accessType: string;
+    freeForEnrolledStudents: boolean;
+  }, client?: any): Promise<VideoCourse> {
+    const db = client || pool;
+    const result = (await db.query(
       `INSERT INTO video_courses
          (teacher_id, title, description, subject, teaching_stage, grade_id,
-          is_free, price, visibility, status)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'pending_review')
+          is_free, price, visibility, status,
+          access_type, free_for_enrolled_students)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'pending_review',
+               $10, $11)
        RETURNING ${VIDEO_COURSE_COLUMNS}`,
       [
         args.teacherId,
@@ -504,9 +511,11 @@ export class VideoCourseModel {
         args.isFree,
         args.price,
         args.visibility,
+        args.accessType,
+        args.freeForEnrolledStudents,
       ]
-    );
-    return rows[0]!;
+    )) as { rows: VideoCourse[] };
+    return result.rows[0]!;
   }
 
   /**
@@ -529,8 +538,12 @@ export class VideoCourseModel {
       isFree: boolean;
       price: number;
       visibility: VideoCourseVisibility;
+      // Phase 3 marketplace fields.
+      accessType: string;
+      freeForEnrolledStudents: boolean;
     }>;
-  }): Promise<VideoCourse | null> {
+  }, client?: any): Promise<VideoCourse | null> {
+    const db = client || pool;
     const setClauses: string[] = [];
     const params: unknown[] = [args.id, args.teacherId];
 
@@ -543,6 +556,8 @@ export class VideoCourseModel {
       isFree: 'is_free',
       price: 'price',
       visibility: 'visibility',
+      accessType: 'access_type',
+      freeForEnrolledStudents: 'free_for_enrolled_students',
     };
     for (const [k, col] of Object.entries(map)) {
       const v = (args.updates as Record<string, unknown>)[k];
@@ -558,19 +573,19 @@ export class VideoCourseModel {
     setClauses.push(`review_notes = NULL`);
 
     if (setClauses.length === 4) {
-      // Only the moderation-reset clauses, no real changes — shouldn't
-      // happen because the Zod refine() rejects empty updates, but bail.
+      // Only the moderation-reset clauses, no real changes. Pivot syncs
+      // are handled separately in the service layer.
       return this.findById(args.id);
     }
 
-    const { rows } = await pool.query<VideoCourse>(
+    const result = (await db.query(
       `UPDATE video_courses
           SET ${setClauses.join(', ')}
         WHERE id = $1 AND teacher_id = $2 AND deleted_at IS NULL
         RETURNING ${VIDEO_COURSE_COLUMNS}`,
       params
-    );
-    return rows[0] ?? null;
+    )) as { rows: VideoCourse[] };
+    return result.rows[0] ?? null;
   }
 
   /**

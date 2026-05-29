@@ -20,6 +20,7 @@ import courseRoutes from './course.routes';
 import dashboardRoutes from './dashboard.routes';
 import examRoutes from './exam.routes';
 import expenseRoutes from './expense.routes';
+import commissionPreviewRoutes from './commission-preview.routes';
 import invoiceRoutes from './invoice.routes';
 import myGradesRoutes from './my-grades.routes';
 import notificationRoutes from './notification.routes';
@@ -59,6 +60,7 @@ router.use('/expenses', expenseRoutes);
 router.use('/reports', reportRoutes);
 router.use('/profile', profileRoutes);
 router.use('/my-grades', myGradesRoutes);
+router.use('/commission-preview', commissionPreviewRoutes);
 router.use('/wallet', walletRoutes);
 router.use('/video-courses', videoCourseRoutes);
 

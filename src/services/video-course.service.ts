@@ -12,10 +12,14 @@
 //
 // Teacher CRUD writes + the Bunny upload path land in 10.1.B.
 
+import pool from '../config/database';
 import {
   VideoCourseModel,
   VideoLessonModel,
 } from '../models/video-course.model';
+import { VideoCourseGradeTargetModel } from '../models/video-course-grade-target.model';
+import { VideoCourseTargetCourseModel } from '../models/video-course-target-course.model';
+import { VideoCourseFreeStudentModel } from '../models/video-course-free-student.model';
 import { UserModel } from '../models/user.model';
 import {
   BunnyStreamService,
@@ -23,8 +27,10 @@ import {
   mapBunnyStatusToInternal,
   signBunnyAssetUrl,
 } from './bunny-stream.service';
+import { VideoCourseValidationService } from './video-course-validation.service';
 import {
   VideoCourse,
+  VideoCourseAccessType,
   VideoCourseStatus,
   VideoCourseVisibility,
   VideoLesson,
@@ -200,9 +206,27 @@ export class VideoCourseService {
   // ---- TEACHER writes — Phase 10.1.B --------------------------------------
 
   /**
-   * Create a new (pending_review) course owned by `teacherId`. Visibility
-   * defaults to `private` so a freshly-created course is invisible to
-   * students until the teacher publishes + the admin approves.
+   * Create a new (pending_review) course owned by `teacherId`. The legacy
+   * `visibility` defaults to 'public' under the new access model (the
+   * access function — not the visibility flag — gates who actually sees
+   * what). The course still requires super-admin approval before students
+   * can see it (status='pending_review' is the starting point).
+   *
+   * Two paths share this method:
+   *
+   *   1. NEW path — `accessType` provided.
+   *      Strict cross-field validation (already done in Zod). We then
+   *      verify ownership of `targetCourseIds` + student-relationship of
+   *      `freeStudentIds` BEFORE opening the transaction so a 400 doesn't
+   *      leave a dangling video_courses row.
+   *
+   *   2. LEGACY path — `accessType` NOT provided.
+   *      Derive accessType from isFree (default TRUE → public_free_by_grade,
+   *      FALSE → marketplace_paid). All pivot lists are skipped. This
+   *      lets the existing dashboard form keep working until Phase 5.
+   *
+   * Both paths run inside a single tx so a failed pivot sync rolls the
+   * insert back.
    */
   static async createForTeacher(args: {
     teacherId: string;
@@ -210,22 +234,126 @@ export class VideoCourseService {
     description?: string;
     subject: string;
     teachingStage: string;
+
+    // Phase 1+ canonical fields.
+    accessType?: VideoCourseAccessType;
+    freeForEnrolledStudents?: boolean;
+    priceIqd?: number;
+    gradeTargetIds?: string[];
+    targetCourseIds?: string[];
+    freeStudentIds?: string[];
+
+    // Legacy back-compat.
     gradeId?: string;
     isFree?: boolean;
     price?: number;
     visibility?: VideoCourseVisibility;
   }): Promise<VideoCourse> {
-    const created = await VideoCourseModel.insert({
-      teacherId: args.teacherId,
-      title: args.title,
-      description: args.description ?? null,
-      subject: args.subject,
-      teachingStage: args.teachingStage,
-      gradeId: args.gradeId ?? null,
-      isFree: args.isFree ?? true,
-      price: args.price ?? 0,
-      visibility: args.visibility ?? VideoCourseVisibility.PRIVATE,
-    });
+    const usingNewPath = !!args.accessType;
+
+    // Resolve the four "hidden" columns from whichever input shape we got.
+    const accessType: VideoCourseAccessType =
+      args.accessType ??
+      (args.isFree === false
+        ? VideoCourseAccessType.MARKETPLACE_PAID
+        : VideoCourseAccessType.PUBLIC_FREE_BY_GRADE);
+
+    const freeForEnrolled =
+      accessType === VideoCourseAccessType.MARKETPLACE_PAID
+        ? !!args.freeForEnrolledStudents
+        : false;
+
+    // Price: prefer the new `priceIqd`, fall back to the legacy `price`,
+    // fall back to 0. The schema already rejects negative numbers.
+    const effectivePrice =
+      typeof args.priceIqd === 'number'
+        ? args.priceIqd
+        : typeof args.price === 'number'
+          ? args.price
+          : 0;
+
+    // is_free is derived from access_type for new submissions; for legacy
+    // we honour what the caller sent.
+    const effectiveIsFree =
+      args.accessType === undefined
+        ? args.isFree ?? true
+        : accessType !== VideoCourseAccessType.MARKETPLACE_PAID;
+
+    // Pre-tx ownership / relationship checks (only on the new path).
+    if (usingNewPath) {
+      await VideoCourseValidationService.validateTargetCoursesOwnership(
+        args.teacherId,
+        args.targetCourseIds
+      );
+      await VideoCourseValidationService.validateFreeStudentsRelationship(
+        args.teacherId,
+        args.freeStudentIds
+      );
+    }
+
+    const client = await pool.connect();
+    let created: VideoCourse;
+    try {
+      await client.query('BEGIN');
+
+      created = await VideoCourseModel.insert(
+        {
+          teacherId: args.teacherId,
+          title: args.title,
+          description: args.description ?? null,
+          subject: args.subject,
+          teachingStage: args.teachingStage,
+          // The new model uses grade_targets[]; we keep the legacy
+          // single-id column populated only when the caller used the
+          // legacy path so existing readers still see the same value.
+          gradeId: usingNewPath ? null : args.gradeId ?? null,
+          isFree: effectiveIsFree,
+          price: effectivePrice,
+          visibility:
+            args.visibility ??
+            (usingNewPath
+              ? VideoCourseVisibility.PUBLIC
+              : VideoCourseVisibility.PRIVATE),
+          accessType,
+          freeForEnrolledStudents: freeForEnrolled,
+        },
+        client
+      );
+
+      if (usingNewPath) {
+        if (args.gradeTargetIds) {
+          await VideoCourseGradeTargetModel.sync(
+            created.id,
+            args.gradeTargetIds,
+            client
+          );
+        }
+        if (args.targetCourseIds) {
+          await VideoCourseTargetCourseModel.sync(
+            created.id,
+            args.targetCourseIds,
+            client
+          );
+        }
+        if (args.freeStudentIds) {
+          await VideoCourseFreeStudentModel.sync(
+            created.id,
+            args.freeStudentIds,
+            args.teacherId,
+            null,
+            client
+          );
+        }
+      }
+
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw err;
+    } finally {
+      client.release();
+    }
+
     // Fire-and-forget: notify every super-admin (socket + push). Never
     // throws — see VideoCourseEvents contract.
     void VideoCourseEvents.courseCreated(created, getNotificationService());
@@ -236,20 +364,160 @@ export class VideoCourseService {
    * Partial update + reset moderation state. Throws 404 if the row doesn't
    * exist OR if it's owned by another teacher (anti-enumeration: same wire
    * shape as "no such id").
+   *
+   * Phase 3 additions:
+   *
+   *   - `accessType` / `freeForEnrolledStudents` are now updatable.
+   *   - `priceIqd` updates the same `price` column. Either field is
+   *     accepted on the wire; both never appear at the same time
+   *     thanks to controller-level mapping (see below).
+   *   - The three pivots (`gradeTargetIds`, `targetCourseIds`,
+   *     `freeStudentIds`) follow replace-set semantics: passing an empty
+   *     array clears the pivot. Omitting the key leaves it untouched.
+   *
+   * Final-state validation:
+   *   When the merged (post-update) row would have an inconsistent
+   *   access_type / grade / price combo (e.g. switching to
+   *   marketplace_paid without grade_targets), we throw a 400 BEFORE the
+   *   write. This is the equivalent of the Zod create-time superRefine,
+   *   moved to the service because partial updates lack the full
+   *   payload Zod would need to decide.
    */
   static async updateForTeacher(args: {
     id: string;
     teacherId: string;
     updates: Parameters<typeof VideoCourseModel.updateForTeacher>[0]['updates'];
+    // Pivot replace-sets — independent from `updates` because the SQL
+    // path is different (separate tables).
+    gradeTargetIds?: string[];
+    targetCourseIds?: string[];
+    freeStudentIds?: string[];
   }): Promise<VideoCourse> {
-    const updated = await VideoCourseModel.updateForTeacher({
-      id: args.id,
-      teacherId: args.teacherId,
-      updates: args.updates,
-    });
-    if (!updated) {
+    // Pre-load the current row so we can validate final state against
+    // the merged shape.
+    const current = await VideoCourseModel.findById(args.id);
+    if (!current || current.teacherId !== args.teacherId) {
       throw new ApiError(404, 'الدورة غير موجودة', ErrorCodes.NOT_FOUND);
     }
+
+    const nextAccessType =
+      (args.updates.accessType as VideoCourseAccessType | undefined) ??
+      current.accessType;
+    const nextFreeForEnrolled =
+      args.updates.freeForEnrolledStudents ?? current.freeForEnrolledStudents;
+    const nextPrice =
+      args.updates.price !== undefined
+        ? args.updates.price
+        : Number(current.price);
+
+    // freeForEnrolled only makes sense on marketplace_paid.
+    if (
+      nextFreeForEnrolled === true &&
+      nextAccessType !== VideoCourseAccessType.MARKETPLACE_PAID
+    ) {
+      throw new ApiError(
+        400,
+        'freeForEnrolledStudents يعمل فقط مع marketplace_paid',
+        ErrorCodes.INVALID_REQUEST,
+        { field: 'freeForEnrolledStudents' }
+      );
+    }
+
+    // For final-state grade validation we use the SUBMITTED list when
+    // present, else fall back to the existing rows.
+    const willSyncGrades = Array.isArray(args.gradeTargetIds);
+    const nextGradeCount = willSyncGrades
+      ? args.gradeTargetIds!.length
+      : (await VideoCourseGradeTargetModel.listForVideoCourse(args.id)).length;
+
+    if (
+      (nextAccessType === VideoCourseAccessType.PUBLIC_FREE_BY_GRADE ||
+        nextAccessType === VideoCourseAccessType.MARKETPLACE_PAID) &&
+      nextGradeCount === 0
+    ) {
+      throw new ApiError(
+        400,
+        'يجب أن تحتوي هذه الدورة على مرحلة دراسية واحدة على الأقل',
+        ErrorCodes.INVALID_REQUEST,
+        { field: 'gradeTargetIds' }
+      );
+    }
+
+    if (
+      nextAccessType === VideoCourseAccessType.MARKETPLACE_PAID &&
+      (!Number.isFinite(nextPrice) || nextPrice <= 0)
+    ) {
+      throw new ApiError(
+        400,
+        'السعر يجب أن يكون أكبر من 0 للكورسات المدفوعة',
+        ErrorCodes.INVALID_REQUEST,
+        { field: 'priceIqd' }
+      );
+    }
+
+    // Pre-tx ownership checks (only when the lists are actually changing).
+    if (Array.isArray(args.targetCourseIds)) {
+      await VideoCourseValidationService.validateTargetCoursesOwnership(
+        args.teacherId,
+        args.targetCourseIds
+      );
+    }
+    if (Array.isArray(args.freeStudentIds)) {
+      await VideoCourseValidationService.validateFreeStudentsRelationship(
+        args.teacherId,
+        args.freeStudentIds
+      );
+    }
+
+    const client = await pool.connect();
+    let updated: VideoCourse | null;
+    try {
+      await client.query('BEGIN');
+
+      updated = await VideoCourseModel.updateForTeacher(
+        {
+          id: args.id,
+          teacherId: args.teacherId,
+          updates: args.updates,
+        },
+        client
+      );
+      if (!updated) {
+        throw new ApiError(404, 'الدورة غير موجودة', ErrorCodes.NOT_FOUND);
+      }
+
+      if (Array.isArray(args.gradeTargetIds)) {
+        await VideoCourseGradeTargetModel.sync(
+          args.id,
+          args.gradeTargetIds,
+          client
+        );
+      }
+      if (Array.isArray(args.targetCourseIds)) {
+        await VideoCourseTargetCourseModel.sync(
+          args.id,
+          args.targetCourseIds,
+          client
+        );
+      }
+      if (Array.isArray(args.freeStudentIds)) {
+        await VideoCourseFreeStudentModel.sync(
+          args.id,
+          args.freeStudentIds,
+          args.teacherId,
+          null,
+          client
+        );
+      }
+
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw err;
+    } finally {
+      client.release();
+    }
+
     return updated;
   }
 

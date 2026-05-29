@@ -72,6 +72,12 @@ export class TeacherVideoCourseController {
   // ----- Phase 10.1.B writes -----------------------------------------------
 
   // POST /api/teacher/video-courses
+  //
+  // Two-path body shape (controlled by Zod): legacy fields (isFree, price,
+  // visibility, gradeId) keep working untouched; new clients use the
+  // canonical fields (accessType + freeForEnrolledStudents + priceIqd +
+  // gradeTargetIds + targetCourseIds + freeStudentIds). The service layer
+  // owns the actual branching.
   static async create(req: Request, res: Response): Promise<void> {
     const body = req.body as VideoCourseCreateInput;
     const course = await VideoCourseService.createForTeacher({
@@ -80,6 +86,16 @@ export class TeacherVideoCourseController {
       ...(body.description !== undefined ? { description: body.description } : {}),
       subject: body.subject,
       teachingStage: body.teachingStage,
+      // New marketplace fields.
+      ...(body.accessType !== undefined ? { accessType: body.accessType as any } : {}),
+      ...(body.freeForEnrolledStudents !== undefined
+        ? { freeForEnrolledStudents: body.freeForEnrolledStudents }
+        : {}),
+      ...(body.priceIqd !== undefined ? { priceIqd: body.priceIqd } : {}),
+      ...(body.gradeTargetIds !== undefined ? { gradeTargetIds: body.gradeTargetIds } : {}),
+      ...(body.targetCourseIds !== undefined ? { targetCourseIds: body.targetCourseIds } : {}),
+      ...(body.freeStudentIds !== undefined ? { freeStudentIds: body.freeStudentIds } : {}),
+      // Legacy back-compat.
       ...(body.gradeId !== undefined ? { gradeId: body.gradeId } : {}),
       ...(body.isFree !== undefined ? { isFree: body.isFree } : {}),
       ...(body.price !== undefined ? { price: body.price } : {}),
@@ -89,19 +105,51 @@ export class TeacherVideoCourseController {
   }
 
   // PATCH /api/teacher/video-courses/:id
+  //
+  // The body splits naturally into two groups:
+  //   - column-level updates (title, description, accessType, price, ...) —
+  //     passed via the `updates` object to the model's UPDATE statement.
+  //   - pivot replace-sets (gradeTargetIds, targetCourseIds,
+  //     freeStudentIds) — passed as top-level args; the service runs each
+  //     sync inside the same tx as the row update.
+  //
+  // priceIqd is normalised to price here so the model's whitelisted column
+  // map sees one canonical name.
   static async update(req: Request, res: Response): Promise<void> {
     const id = req.params['id'] as string;
     const body = req.body as VideoCourseUpdateInput;
-    // Strip undefined keys before passing to the model — `Partial<{a: string;
-    // ...}>` under exactOptionalPropertyTypes refuses `{a: undefined}`.
+
+    // Strip undefined keys + canonicalise priceIqd → price. `Partial<{a:
+    // string; ...}>` under exactOptionalPropertyTypes refuses
+    // `{a: undefined}`, hence the explicit dance.
     const updates: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(body)) {
+    const passThrough: (keyof VideoCourseUpdateInput)[] = [
+      'title',
+      'description',
+      'subject',
+      'teachingStage',
+      'gradeId',
+      'isFree',
+      'price',
+      'visibility',
+      'accessType',
+      'freeForEnrolledStudents',
+    ];
+    for (const k of passThrough) {
+      const v = (body as Record<string, unknown>)[k];
       if (v !== undefined) updates[k] = v;
     }
+    if (body.priceIqd !== undefined) {
+      updates['price'] = body.priceIqd;
+    }
+
     const course = await VideoCourseService.updateForTeacher({
       id,
       teacherId: req.user.id,
       updates: updates as Parameters<typeof VideoCourseService.updateForTeacher>[0]['updates'],
+      ...(body.gradeTargetIds !== undefined ? { gradeTargetIds: body.gradeTargetIds } : {}),
+      ...(body.targetCourseIds !== undefined ? { targetCourseIds: body.targetCourseIds } : {}),
+      ...(body.freeStudentIds !== undefined ? { freeStudentIds: body.freeStudentIds } : {}),
     });
     res.status(200).json(ok({ course }, 'تم تحديث الدورة (قيد المراجعة)'));
   }

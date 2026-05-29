@@ -115,36 +115,142 @@ const coerceBool = z.preprocess((v) => {
 // because multipart bodies pass it as a string.
 const priceSchema = z.coerce.number().nonnegative('السعر يجب أن يكون 0 أو أكثر').max(1_000_000);
 
-export const videoCourseCreateSchema = z.object({
-  title: courseTitleSchema,
-  description: courseDescriptionSchema.optional(),
-  subject: courseSubjectSchema,
-  teachingStage: courseStageSchema,
-  gradeId: uuidSchema.optional(),
-  isFree: coerceBool.optional(),
-  price: priceSchema.optional(),
-  visibility: videoCourseVisibilityEnum.optional(),
-});
+// Phase 1 marketplace access type enum — kept in sync with the SQL CHECK
+// on video_courses.access_type (migration 047) and the TS enum in types.
+const videoCourseAccessTypeEnum = z.enum([
+  'public_free_by_grade',
+  'enrolled_students_free',
+  'marketplace_paid',
+]);
+
+// Bounded id-list helpers used by all three pivots. Order is preserved by
+// the model `sync()` helpers; duplicates are tolerated (deduped on insert).
+const gradeIdsSchema   = z.array(uuidSchema).min(0).max(50,  'عدد المراحل كبير جداً');
+const courseIdsSchema  = z.array(uuidSchema).min(0).max(50,  'عدد الدورات كبير جداً');
+const studentIdsSchema = z.array(uuidSchema).min(0).max(500, 'عدد الطلاب كبير جداً');
+
+// New canonical price field. We keep the legacy `price` accepted in the
+// schema below so the existing dashboard form keeps working until Phase 5
+// lands the wizard.
+const priceIqdSchema = z.coerce
+  .number()
+  .nonnegative('السعر يجب أن يكون 0 أو أكثر')
+  .max(1_000_000);
+
+export const videoCourseCreateSchema = z
+  .object({
+    title:         courseTitleSchema,
+    description:   courseDescriptionSchema.optional(),
+    subject:       courseSubjectSchema,
+    teachingStage: courseStageSchema,
+
+    // ---- Phase 1+ canonical marketplace fields ----------------------------
+    // When `accessType` is provided the new strict validation kicks in
+    // (Phase 3 rules below). When omitted we fall through to the legacy
+    // is_free / visibility path so existing clients keep working until
+    // Phase 5 swaps them over.
+    accessType:                videoCourseAccessTypeEnum.optional(),
+    freeForEnrolledStudents:   coerceBool.optional(),
+    priceIqd:                  priceIqdSchema.optional(),
+    gradeTargetIds:            gradeIdsSchema.optional(),
+    targetCourseIds:           courseIdsSchema.optional(),
+    freeStudentIds:            studentIdsSchema.optional(),
+
+    // ---- Legacy fields kept for back-compat -------------------------------
+    // Dashboard / Flutter Phase 5+ should stop sending these. The service
+    // layer back-fills the new fields from these when only the legacy
+    // shape is provided.
+    gradeId:    uuidSchema.optional(),
+    isFree:     coerceBool.optional(),
+    price:      priceSchema.optional(),
+    visibility: videoCourseVisibilityEnum.optional(),
+  })
+  .superRefine((data, ctx) => {
+    // Cross-field rules only apply when the client opted-in to the new
+    // access model. Legacy submissions skip the new rules and are governed
+    // by the existing is_free / visibility checks downstream.
+    if (!data.accessType) return;
+
+    const hasGradeTargets =
+      Array.isArray(data.gradeTargetIds) && data.gradeTargetIds.length > 0;
+    const effectivePriceIqd =
+      typeof data.priceIqd === 'number' ? data.priceIqd : NaN;
+
+    if (data.accessType === 'public_free_by_grade' && !hasGradeTargets) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['gradeTargetIds'],
+        message: 'يجب اختيار مرحلة دراسية واحدة على الأقل',
+      });
+    }
+    if (data.accessType === 'marketplace_paid') {
+      if (!hasGradeTargets) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['gradeTargetIds'],
+          message: 'يجب اختيار مرحلة دراسية واحدة على الأقل',
+        });
+      }
+      if (!Number.isFinite(effectivePriceIqd) || effectivePriceIqd <= 0) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['priceIqd'],
+          message: 'السعر يجب أن يكون أكبر من 0 للكورسات المدفوعة',
+        });
+      }
+    }
+    if (data.freeForEnrolledStudents === true && data.accessType !== 'marketplace_paid') {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['freeForEnrolledStudents'],
+        message: 'freeForEnrolledStudents يعمل فقط مع marketplace_paid',
+      });
+    }
+  });
 export type VideoCourseCreateInput = z.infer<typeof videoCourseCreateSchema>;
 
-// Update: same fields, all optional, but the body must have at least one
+// Update: every field is optional, but the body must have at least one
 // recognised key. Status fields are intentionally NOT here — they are
 // super-admin owned.
+//
+// We intentionally keep cross-field validation OUT of the update schema:
+//   - Partial updates can change ONLY accessType without touching
+//     priceIqd / gradeTargetIds — but the final stored state still has
+//     to satisfy the access-type rules. That check needs DB visibility
+//     into the current row state, so it lives in the service layer
+//     (VideoCourseService.updateForTeacher).
+//   - Keeping Zod focused on per-field type checks keeps error messages
+//     predictable and avoids "tried to update X, but Y must also be
+//     present" surprises.
 export const videoCourseUpdateSchema = z
   .object({
-    title: courseTitleSchema.optional(),
-    description: courseDescriptionSchema.optional(),
-    subject: courseSubjectSchema.optional(),
+    title:         courseTitleSchema.optional(),
+    description:   courseDescriptionSchema.optional(),
+    subject:       courseSubjectSchema.optional(),
     teachingStage: courseStageSchema.optional(),
-    gradeId: uuidSchema.optional(),
-    isFree: coerceBool.optional(),
-    price: priceSchema.optional(),
+
+    accessType:                videoCourseAccessTypeEnum.optional(),
+    freeForEnrolledStudents:   coerceBool.optional(),
+    priceIqd:                  priceIqdSchema.optional(),
+    gradeTargetIds:            gradeIdsSchema.optional(),
+    targetCourseIds:           courseIdsSchema.optional(),
+    freeStudentIds:            studentIdsSchema.optional(),
+
+    gradeId:    uuidSchema.optional(),
+    isFree:     coerceBool.optional(),
+    price:      priceSchema.optional(),
     visibility: videoCourseVisibilityEnum.optional(),
   })
   .refine((obj) => Object.values(obj).some((v) => v !== undefined), {
     message: 'يجب تمرير حقل واحد على الأقل للتحديث',
   });
 export type VideoCourseUpdateInput = z.infer<typeof videoCourseUpdateSchema>;
+
+// GET /api/teacher/commission-preview?priceIqd=N
+export const commissionPreviewQuerySchema = z.object({
+  priceIqd: priceIqdSchema,
+});
+export type CommissionPreviewQuery = z.infer<typeof commissionPreviewQuerySchema>;
 
 // ----------------------------------------------------------------------------
 // Lesson write bodies — Phase 10.1.B.1.c
