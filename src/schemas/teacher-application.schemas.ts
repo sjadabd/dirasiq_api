@@ -17,6 +17,7 @@ import {
   idParamSchema,
   optionalString,
   paginationQuerySchema,
+  uuidSchema,
 } from './common.schemas';
 
 // ---------------------------------------------------------------------------
@@ -81,15 +82,14 @@ export const teacherApplicationCreateSchema = z
     area: z.string().trim().min(1, 'المنطقة مطلوبة').max(100, 'اسم المنطقة طويل جداً'),
 
     subject: z.string().trim().min(1, 'المادة مطلوبة').max(100, 'اسم المادة طويل جداً'),
-    teachingStage: z.string().trim().min(1, 'المرحلة الدراسية مطلوبة').max(100, 'اسم المرحلة طويل جداً'),
-    // Phase 8 — when teachingStage = "أخرى" the applicant types the actual
-    // stage here. Super-admin reviews + may promote it later.
-    customTeachingStage: z
-      .string()
-      .trim()
-      .max(200, 'النص طويل جداً')
-      .transform((v) => (v === '' ? undefined : v))
-      .optional(),
+    // The applicant picks one OR MORE grades they teach (from the
+    // super-admin-managed `grades` table). On approval these become rows in
+    // `teacher_grades`. The legacy `teaching_stage` display string is now
+    // derived server-side from the chosen grade names.
+    gradeIds: z
+      .array(uuidSchema)
+      .min(1, 'يجب اختيار مرحلة دراسية واحدة على الأقل')
+      .max(20, 'عدد المراحل المختارة كبير جداً'),
     yearsOfExperience: z.coerce
       .number()
       .int('سنوات الخبرة يجب أن تكون عدداً صحيحاً')

@@ -33,7 +33,7 @@ describe('Teacher Applications — Phase 1', () => {
           'body.city',
           'body.area',
           'body.subject',
-          'body.teachingStage',
+          'body.gradeIds',
           'body.yearsOfExperience',
           'body.hasPhysicalCourses',
           'body.estimatedStudentCount',

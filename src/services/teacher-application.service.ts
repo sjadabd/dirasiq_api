@@ -300,7 +300,34 @@ export class TeacherApplicationService {
 
     const fullName = `${input.firstName} ${input.lastName}`.trim();
 
-    // 4. Prepare email-verification OTP (only for the email auth path).
+    // 4. Resolve the chosen grades against the active super-admin catalog.
+    //    We need both the IDs (for teacher_application_grades) and the names
+    //    (to build the legacy display string stored on teaching_stage).
+    //    Querying `WHERE id = ANY($1)` keeps unknown ids out without an N+1.
+    const { rows: gradeRows } = await pool.query<{ id: string; name: string }>(
+      `SELECT id, name
+         FROM grades
+        WHERE id = ANY($1::uuid[])
+          AND is_active = TRUE
+          AND deleted_at IS NULL`,
+      [input.gradeIds]
+    );
+    if (gradeRows.length !== input.gradeIds.length) {
+      throw new ApiError(
+        400,
+        'بعض المراحل الدراسية المختارة غير صالحة',
+        ErrorCodes.INVALID_REQUEST,
+        { field: 'gradeIds' }
+      );
+    }
+    // Preserve the applicant's selection order in the display string.
+    const gradeNameById = new Map(gradeRows.map((r) => [r.id, r.name]));
+    const teachingStageDisplay = input.gradeIds
+      .map((id) => gradeNameById.get(id))
+      .filter((n): n is string => Boolean(n))
+      .join('، ');
+
+    // 5. Prepare email-verification OTP (only for the email auth path).
     let otpHash: string | null = null;
     let otpExpiresAt: Date | null = null;
     let plaintextOtp: string | null = null;
@@ -310,9 +337,13 @@ export class TeacherApplicationService {
       otpExpiresAt = new Date(Date.now() + EMAIL_OTP_EXPIRY_MINUTES * 60_000);
     }
 
-    // 5. Insert.
+    // 6. Insert inside a transaction so the join-table rows can't get
+    //    orphaned from the parent application on a partial failure.
+    const client = await pool.connect();
     try {
-      const { rows } = await pool.query<{
+      await client.query('BEGIN');
+
+      const { rows } = await client.query<{
         id: string;
         application_status: TeacherApplicationStatus;
       }>(
@@ -356,8 +387,8 @@ export class TeacherApplicationService {
           input.city,
           input.area,
           input.subject,
-          input.teachingStage,
-          input.customTeachingStage ?? null,
+          teachingStageDisplay,
+          null,
           input.yearsOfExperience,
           input.currentWorkplace ?? null,
           input.hasPhysicalCourses,
@@ -378,6 +409,18 @@ export class TeacherApplicationService {
       );
 
       const created = rows[0]!;
+
+      // 7. Pivot rows. UNNEST is the canonical bulk-insert shape — one
+      //    parameterized call regardless of how many grades were chosen.
+      await client.query(
+        `INSERT INTO teacher_application_grades (application_id, grade_id)
+         SELECT $1, grade_id
+           FROM UNNEST($2::uuid[]) AS grade_id`,
+        [created.id, input.gradeIds]
+      );
+
+      await client.query('COMMIT');
+
       const tokenInfo = signUploadToken(created.id);
       logger.info(
         {
@@ -419,6 +462,7 @@ export class TeacherApplicationService {
         authProvider: input.authProvider,
       };
     } catch (err: unknown) {
+      await client.query('ROLLBACK').catch(() => undefined);
       if (
         typeof err === 'object' &&
         err !== null &&
@@ -431,6 +475,8 @@ export class TeacherApplicationService {
         );
       }
       throw err;
+    } finally {
+      client.release();
     }
   }
 
@@ -809,7 +855,9 @@ export class TeacherApplicationService {
     return { rows, total };
   }
 
-  static async getByIdForAdmin(id: string): Promise<TeacherApplication> {
+  static async getByIdForAdmin(
+    id: string
+  ): Promise<TeacherApplication & { grades: Array<{ id: string; name: string }> }> {
     const { rows } = await pool.query<TeacherApplication>(
       `SELECT ${APPLICATION_PUBLIC_COLUMNS}
          FROM teacher_applications
@@ -822,7 +870,22 @@ export class TeacherApplicationService {
     if (!app) {
       throw new ApiError(404, 'طلب الانضمام غير موجود', ErrorCodes.NOT_FOUND);
     }
-    return app;
+
+    // Pull the chosen grades. Inner join filters out grades that were soft-
+    // deleted between submission and review — the admin sees only the
+    // currently-valid set, which matches what gets mirrored to teacher_grades
+    // on approval.
+    const { rows: grades } = await pool.query<{ id: string; name: string }>(
+      `SELECT g.id, g.name
+         FROM teacher_application_grades tag
+         JOIN grades g ON g.id = tag.grade_id
+        WHERE tag.application_id = $1
+          AND g.deleted_at IS NULL
+        ORDER BY tag.created_at ASC`,
+      [id]
+    );
+
+    return { ...app, grades };
   }
 
   // -------------------------------------------------------------------------
@@ -1006,6 +1069,28 @@ export class TeacherApplicationService {
       //    subscription model is gone; commission + wallet take its place.
       //    The wallet row was already created above; no further setup
       //    needed here.
+
+      // 7b. Mirror the chosen application grades into `teacher_grades` for
+      //     the currently-active academic year. Approval is the only place
+      //     these rows are minted; downstream the teacher's course-creation
+      //     dropdown reads from teacher_grades directly. If no active
+      //     academic year exists we skip silently — the teacher can still
+      //     log in and add grades manually from their dashboard later.
+      const activeYearRes = await client.query<{ year: string }>(
+        `SELECT year FROM academic_years WHERE is_active = TRUE LIMIT 1`
+      );
+      const activeYear = activeYearRes.rows[0]?.year ?? null;
+
+      if (activeYear) {
+        await client.query(
+          `INSERT INTO teacher_grades (teacher_id, grade_id, study_year)
+           SELECT $1, tag.grade_id, $2
+             FROM teacher_application_grades tag
+            WHERE tag.application_id = $3
+           ON CONFLICT (teacher_id, grade_id, study_year) DO NOTHING`,
+          [newUserId, activeYear, applicationId]
+        );
+      }
 
       // 8. Finalise the application — set status, audit, and NULL the
       //    hash now that it lives on users.password (Decision 4).
