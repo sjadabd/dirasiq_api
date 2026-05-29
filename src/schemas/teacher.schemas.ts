@@ -612,3 +612,27 @@ export const teacherSyncMyGradesBodySchema = z.object({
 export type TeacherSyncMyGradesInput = z.infer<
   typeof teacherSyncMyGradesBodySchema
 >;
+
+// =============================================================================
+// Wallet — Wayl top-up
+// =============================================================================
+
+// POST /api/teacher/wallet/topup — create a Wayl payment link the teacher can
+// pay to credit their own wallet. The Wayl webhook flips the link to 'paid'
+// AND calls TeacherWalletService.credit on the same teacher_id, all inside
+// the webhook handler's tx.
+//
+// Bounds:
+//   - 1000 IQD minimum: Wayl's documented per-payment floor.
+//   - 5_000_000 IQD maximum: arbitrary upper cap to constrain blast radius
+//     on a compromised session — teachers asking for more should split the
+//     payment or use offline rails.
+export const walletTopupBodySchema = z.object({
+  amount: z
+    .number({ error: 'المبلغ مطلوب' })
+    .int('المبلغ يجب أن يكون عدداً صحيحاً')
+    .min(1000, 'الحد الأدنى للشحن 1000 د.ع')
+    .max(5_000_000, 'الحد الأقصى للشحن 5,000,000 د.ع'),
+});
+
+export type WalletTopupInput = z.infer<typeof walletTopupBodySchema>;
