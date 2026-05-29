@@ -5,6 +5,7 @@ import { NotificationService } from '../../services/notification.service';
 import { CourseBookingService } from '../../services/teacher/course-booking.service';
 import { BookingStatus, type CourseBooking, type UpdateCourseBookingRequest } from '../../types';
 import { ApiError, ErrorCodes } from '../../utils/api-error';
+import { logger } from '../../utils/logger';
 import { ok, paginated } from '../../utils/response.util';
 import { buildPaginationMeta, parsePagination } from '../../utils/pagination';
 
@@ -13,13 +14,32 @@ import { buildPaginationMeta, parsePagination } from '../../utils/pagination';
 const SERVICE_BUSINESS_MESSAGES = [
   'لا يوجد اشتراك فعال للمعلم',
   'انتهت صلاحية الاشتراك',
+  // State-machine guards from CourseBookingModel.updateStatus / *.cancel*
+  'الحجز مؤكد بالفعل',
+  'الحجز مرفوض بالفعل',
+  'No fields to update',
 ];
+
+// Insufficient-balance from CourseBookingModel pre-check OR
+// TeacherWalletService.debit (raised when wallet < confirm fee).
+const SERVICE_INSUFFICIENT_FUNDS_MESSAGES = [
+  'رصيد المحفظة غير كافي لتأكيد الطلب',
+  'رصيد المحفظة غير كافي',
+];
+
 const SERVICE_NOT_FOUND_MESSAGE = 'Booking not found or access denied';
 
 const mapServiceError = (err: unknown): ApiError => {
   const message = err instanceof Error ? err.message : String(err ?? '');
   if (message === SERVICE_NOT_FOUND_MESSAGE) {
     return new ApiError(404, 'الحجز غير موجود أو الوصول مرفوض', ErrorCodes.NOT_FOUND);
+  }
+  if (SERVICE_INSUFFICIENT_FUNDS_MESSAGES.includes(message)) {
+    return new ApiError(
+      400,
+      'رصيد المحفظة غير كافٍ لتأكيد الحجز — يرجى شحن المحفظة أولاً',
+      ErrorCodes.INSUFFICIENT_FUNDS
+    );
   }
   if (
     SERVICE_BUSINESS_MESSAGES.includes(message) ||
@@ -28,7 +48,13 @@ const mapServiceError = (err: unknown): ApiError => {
   ) {
     return new ApiError(400, message || 'لا يمكن تأكيد الحجز', ErrorCodes.BUSINESS_RULE);
   }
-  // Unknown error → bubble to global error middleware as a 500.
+  // Unknown error — log the real cause server-side so it can be diagnosed
+  // (production hides the message from the wire), then bubble to the global
+  // error middleware as a 500.
+  logger.error(
+    { err, message },
+    'unmapped CourseBookingService error — surfacing as 500 INTERNAL_ERROR'
+  );
   return new ApiError(500, 'خطأ داخلي في الخادم', ErrorCodes.INTERNAL_ERROR, undefined, {
     expected: false,
     cause: err,
