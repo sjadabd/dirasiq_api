@@ -593,3 +593,22 @@ export const reservationReportQuerySchema = z.object({
 
 // (Phase 7) waylSubscriptionLinkSchema + waylWalletTopupLinkSchema removed
 // alongside the legacy subscription / wallet-topup flow.
+
+// =============================================================================
+// My grades — teacher self-service grade-set sync
+// =============================================================================
+
+// PUT /api/teacher/my-grades — replace-set semantics for teacher_grades scoped
+// to the teacher (req.user.id) + the active academic year. The body carries
+// the FULL desired set; the service adds the missing rows, soft-deletes the
+// removed ones, and revives previously-soft-deleted rows it sees again.
+export const teacherSyncMyGradesBodySchema = z.object({
+  gradeIds: z
+    .array(uuidSchema)
+    .min(1, 'يجب اختيار مرحلة دراسية واحدة على الأقل')
+    .max(20, 'عدد المراحل المختارة كبير جداً'),
+});
+
+export type TeacherSyncMyGradesInput = z.infer<
+  typeof teacherSyncMyGradesBodySchema
+>;

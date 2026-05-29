@@ -21,6 +21,7 @@ import dashboardRoutes from './dashboard.routes';
 import examRoutes from './exam.routes';
 import expenseRoutes from './expense.routes';
 import invoiceRoutes from './invoice.routes';
+import myGradesRoutes from './my-grades.routes';
 import notificationRoutes from './notification.routes';
 import paymentRoutes from './payment.routes';
 import profileRoutes from './profile.routes';
@@ -57,6 +58,7 @@ router.use('/academic-years', academicYearRoutes);
 router.use('/expenses', expenseRoutes);
 router.use('/reports', reportRoutes);
 router.use('/profile', profileRoutes);
+router.use('/my-grades', myGradesRoutes);
 router.use('/wallet', walletRoutes);
 router.use('/video-courses', videoCourseRoutes);
 
