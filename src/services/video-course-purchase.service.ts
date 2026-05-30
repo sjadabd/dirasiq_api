@@ -131,6 +131,73 @@ export class VideoCoursePurchaseService {
       }
     }
 
+    // 2b. Resume an existing pending purchase. The active-per-student
+    //     partial unique index forbids two pending rows for the same
+    //     (student, course) pair — without this branch the second tap
+    //     of "buy" would 23505 → 409 → the Flutter UI shows a generic
+    //     "تعذّر بدء عملية الشراء" snackbar with no path forward.
+    //     Instead, return the SAME Wayl URL the previous attempt
+    //     created so the student can continue the existing payment
+    //     flow (or expire it naturally on the Wayl side).
+    //
+    //     Stale-row recovery: if the pending row exists but lost its
+    //     wayl link (FK is SET NULL on link delete, or the ops team
+    //     manually purged), flip it to 'failed' here so the unique
+    //     index frees and the rest of this method creates a fresh
+    //     pending row + Wayl link in the transaction below. This
+    //     should be vanishingly rare under normal operation — the
+    //     create-link tx is atomic — but the recovery is cheap.
+    const existing = await pool.query<{
+      purchaseId: string;
+      amountIqd: string;
+      url: string | null;
+      referenceId: string | null;
+    }>(
+      `SELECT
+         p.id                                AS "purchaseId",
+         p.amount_iqd::text                  AS "amountIqd",
+         l.wayl_url                          AS "url",
+         l.reference_id                      AS "referenceId"
+         FROM video_course_purchases p
+         LEFT JOIN wayl_payment_links l ON l.id = p.wayl_payment_link_id
+        WHERE p.video_course_id = $1
+          AND p.student_id      = $2
+          AND p.status          = 'pending'
+        LIMIT 1`,
+      [args.videoCourseId, args.studentId],
+    );
+    const existingRow = existing.rows[0];
+    if (existingRow) {
+      if (existingRow.url && existingRow.referenceId) {
+        logger.info(
+          {
+            purchaseId: existingRow.purchaseId,
+            videoCourseId: args.videoCourseId,
+            studentId: args.studentId,
+          },
+          'video course purchase: resumed existing pending row',
+        );
+        return {
+          url: existingRow.url,
+          referenceId: existingRow.referenceId,
+          purchaseId: existingRow.purchaseId,
+          amountIqd: Number(existingRow.amountIqd),
+        };
+      }
+      // Stale pending row with no link → mark failed to free the unique
+      // constraint, then fall through to the normal create path.
+      await pool.query(
+        `UPDATE video_course_purchases
+            SET status = 'failed', updated_at = NOW()
+          WHERE id = $1`,
+        [existingRow.purchaseId],
+      );
+      logger.warn(
+        { purchaseId: existingRow.purchaseId },
+        'video course purchase: orphan pending row marked failed; retrying create',
+      );
+    }
+
     // 3. Grade eligibility — student must be in the targeted grade for
     //    the active study year. We hit the access function with a
     //    "fake whitelist" trick? No — easier to just check grade
