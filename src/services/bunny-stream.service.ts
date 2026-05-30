@@ -138,9 +138,14 @@ export class BunnyStreamService {
     if (!cfg) return null;
 
     const path = `/${args.videoId}/playlist.m3u8`;
+    // HLS master references child variant manifests (360p/, 480p/, …) via
+    // relative paths. Sign the video DIRECTORY so the same token authenticates
+    // every child request — per-file signing 403s every child.
+    const signingPathPrefix = `/${args.videoId}/`;
     const ttl = cfg.playbackTokenTtlSeconds;
     const signedRaw = signAssetPath({
       path,
+      signingPathPrefix,
       ttlSeconds: ttl,
       cfg,
       ...(args.clientIp && cfg.ipLockPlayback ? { clientIp: args.clientIp } : {}),
@@ -454,10 +459,25 @@ export interface BunnyVideoDetails {
  * Sign an asset path under the configured Bunny CDN hostname.
  *
  * Bunny Stream signing algorithm (per their official docs):
- *   hashable_base = security_key + path + expires_unix
+ *   hashable_base = security_key + signed_path + expires_unix [+ client_ip]
  *   raw_digest    = sha256(hashable_base)        ← RAW BINARY, NOT HEX
  *   token         = base64url(raw_digest)        ← URL-safe, no '=' padding
- *   url           = https://<host><path>?token=<>&expires=<unix>
+ *   url           = https://<host><asset_path>?token=<>&expires=<unix>
+ *
+ * Two signing modes are supported:
+ *
+ *   1. Per-file (default) — `signed_path` is the full asset path. The
+ *      resulting token authenticates EXACTLY this URL. Suitable for static
+ *      single-file assets (thumbnail.jpg, a downloadable mp4, etc.).
+ *
+ *   2. Path-prefix — pass `signingPathPrefix` (e.g. `/<videoGuid>/`).
+ *      `signed_path` becomes that prefix, and an additional `token_path`
+ *      query param is appended carrying base64url(prefix). Bunny then
+ *      authenticates ANY request whose path starts with the prefix.
+ *      Required for HLS playback: the master `playlist.m3u8` references
+ *      child variant manifests (`360p/video.m3u8`, …) via relative paths;
+ *      per-file signing 403s every child request because each variant
+ *      manifest needs its own signed URL otherwise.
  *
  * NOTE: this is plain SHA-256 over a concatenated string — NOT HMAC-SHA256.
  * A previous implementation mistakenly used HMAC; that produced superficially-
@@ -473,11 +493,19 @@ export function signAssetPath(args: {
   ttlSeconds: number;
   cfg: BunnyStreamConfig;
   clientIp?: string;
+  /**
+   * Optional directory prefix to sign instead of the exact `path`. When
+   * provided, the resulting URL keeps `path` as the asset location but the
+   * token is computed over the prefix, and `token_path=<base64url(prefix)>`
+   * is appended so Bunny accepts any child URL under the prefix.
+   */
+  signingPathPrefix?: string;
 }): { url: string; expiresAt: Date } {
   const path = args.path.startsWith('/') ? args.path : `/${args.path}`;
   const expiresUnix = Math.floor(Date.now() / 1000) + args.ttlSeconds;
   const ipPart = (args.cfg.ipLockPlayback && args.clientIp) ? args.clientIp : '';
-  const hashable = `${args.cfg.tokenKey}${path}${expiresUnix}${ipPart}`;
+  const signedPath = args.signingPathPrefix ?? path;
+  const hashable = `${args.cfg.tokenKey}${signedPath}${expiresUnix}${ipPart}`;
   const token = crypto
     .createHash('sha256')
     .update(hashable)
@@ -485,10 +513,31 @@ export function signAssetPath(args: {
     .replace(/\+/g, '-')
     .replace(/\//g, '_')
     .replace(/=+$/g, '');
-  return {
-    url: `https://${args.cfg.cdnHostname}${path}?token=${token}&expires=${expiresUnix}`,
-    expiresAt: new Date(expiresUnix * 1000),
-  };
+  let url = `https://${args.cfg.cdnHostname}${path}?token=${token}&expires=${expiresUnix}`;
+  if (args.signingPathPrefix) {
+    const tokenPath = Buffer.from(args.signingPathPrefix)
+      .toString('base64')
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=+$/g, '');
+    url += `&token_path=${tokenPath}`;
+  }
+  return { url, expiresAt: new Date(expiresUnix * 1000) };
+}
+
+/**
+ * Extract the Bunny video directory prefix (`/<videoGuid>/`) from a full
+ * asset path, or return null if the path doesn't look like a Bunny video
+ * asset. The first segment of a Bunny Stream URL is always the video guid.
+ */
+function videoDirectoryPrefix(path: string): string | null {
+  const normalized = path.startsWith('/') ? path : `/${path}`;
+  const segments = normalized.split('/').filter(Boolean);
+  if (segments.length === 0) return null;
+  // Defence in depth: Bunny video guids are UUIDs; if the first segment
+  // doesn't even loosely look like one, fall back to per-file signing.
+  if (!/^[a-f0-9-]{8,}$/i.test(segments[0]!)) return null;
+  return `/${segments[0]}/`;
 }
 
 /**
@@ -529,10 +578,17 @@ export function signBunnyAssetUrl(
     return rawUrl;
   }
   const ttl = ttlSecondsOverride ?? cfg.playbackTokenTtlSeconds;
+  // Sign the video directory (`/<videoGuid>/`) rather than the exact file.
+  // The same token then authenticates every asset under the directory —
+  // thumbnail, master playlist, AND every child variant playlist + segment.
+  // Per-file signing was the root cause of the HLS playback 403 storm
+  // diagnosed during the Phase 7 QA pass.
+  const signingPathPrefix = videoDirectoryPrefix(parsed.pathname);
   const signed = signAssetPath({
     path: parsed.pathname,
     ttlSeconds: ttl,
     cfg,
+    ...(signingPathPrefix ? { signingPathPrefix } : {}),
   });
   return signed.url;
 }
