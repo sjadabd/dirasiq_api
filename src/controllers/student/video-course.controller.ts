@@ -25,6 +25,7 @@ import type { Request, Response } from 'express';
 
 import { VideoCourseAccessService } from '../../services/video-course-access.service';
 import { VideoCoursePurchaseService } from '../../services/video-course-purchase.service';
+import { VideoCourseService } from '../../services/video-course.service';
 import { VideoCourseModel } from '../../models/video-course.model';
 import { ok, paginated } from '../../utils/response.util';
 import { parsePagination, buildPaginationMeta } from '../../utils/pagination';
@@ -156,11 +157,24 @@ export class StudentVideoCourseController {
     }
 
     if (course.accessType === VideoCourseAccessType.MARKETPLACE_PAID) {
+      // Preview metadata for the purchase decision — title, description,
+      // duration, thumbnail, displayOrder. STRIP the playback fields so
+      // the 4h-valid proxy ticket minted in hydrateLesson never reaches
+      // a non-buyer. The Flutter detail screen already blocks playback
+      // in `_isPaidUnowned`, so the empty playback URL is harmless to UX.
+      const previewLessons = (
+        await VideoCourseService.lessonsForOwnerOrAccess(id)
+      ).map((lesson) => ({
+        ...lesson,
+        bunnyPlaybackUrl: null,
+        bunnyVideoId: null,
+        bunnyLibraryId: null,
+      }));
       res
         .status(200)
         .json(
           ok(
-            { course: { ...course, hasAccess: false }, lessons: [] },
+            { course: { ...course, hasAccess: false }, lessons: previewLessons },
             'تفاصيل الدورة',
           ),
         );
