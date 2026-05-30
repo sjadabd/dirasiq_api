@@ -25,8 +25,14 @@ import type { Request, Response } from 'express';
 
 import { VideoCourseAccessService } from '../../services/video-course-access.service';
 import { VideoCoursePurchaseService } from '../../services/video-course-purchase.service';
+import { VideoCourseModel } from '../../models/video-course.model';
 import { ok, paginated } from '../../utils/response.util';
 import { parsePagination, buildPaginationMeta } from '../../utils/pagination';
+import { ApiError, ErrorCodes } from '../../utils/api-error';
+import {
+  VideoCourseAccessType,
+  VideoCourseStatus,
+} from '../../types';
 import type { VideoCourseMarketplaceQuery } from '../../schemas/video-course.schemas';
 
 export class StudentVideoCourseController {
@@ -98,24 +104,74 @@ export class StudentVideoCourseController {
 
   // GET /api/student/video-courses/:id
   //
-  // Detail view, gated by the access function. The lessons list is
-  // included alongside the course so a single round trip hydrates the
-  // detail screen. Lessons not yet processed (bunny_status != 'ready')
-  // are filtered out by the service.
+  // Detail view. Two modes:
+  //
+  //   1. Student HAS access → return course + ready lessons. The playback
+  //      URL endpoint is the gate for actually playing; this endpoint
+  //      just hydrates the detail screen.
+  //
+  //   2. Student does NOT have access AND the course is marketplace_paid →
+  //      return course with `hasAccess: false` + an empty lessons list.
+  //      The Flutter detail screen reads `hasAccess` and renders the
+  //      purchase CTA in this case. We deliberately let discovery reach
+  //      the buy button — without this branch, students would see a
+  //      generic load error instead of a clear "اشترِ الدورة" sheet.
+  //
+  // The 403 stays for the legitimate denial case: no access AND the
+  // course is not marketplace_paid (e.g. enrolled_students_free for a
+  // student who isn't enrolled in the gating live course).
+  //
+  // Notes:
+  //   - The SQL access function and the playback-url endpoint are
+  //     UNCHANGED. Playback access is enforced independently — this
+  //     endpoint never mints a manifest URL.
+  //   - The course existence + approved check stays in the 404 path
+  //     because a missing / pending / rejected course must not be
+  //     enumerable through the discovery surface.
   static async detail(req: Request, res: Response): Promise<void> {
     const studentId = req.user.id as string;
     const id = req.params['id'] as string;
 
-    const course = await VideoCourseAccessService.assertCanViewOrThrow(
-      studentId,
-      id
-    );
-    const lessons = await VideoCourseAccessService.lessonsForStudent({
-      studentId,
-      courseId: id,
-    });
+    const course = await VideoCourseModel.findById(id);
+    if (!course || course.status !== VideoCourseStatus.APPROVED) {
+      throw new ApiError(404, 'الدورة غير موجودة', ErrorCodes.NOT_FOUND);
+    }
 
-    res.status(200).json(ok({ course, lessons }, 'تفاصيل الدورة'));
+    const hasAccess = await VideoCourseAccessService.canStudentView(
+      studentId,
+      id,
+    );
+
+    if (hasAccess) {
+      const lessons = await VideoCourseAccessService.lessonsForStudent({
+        studentId,
+        courseId: id,
+      });
+      res
+        .status(200)
+        .json(
+          ok({ course: { ...course, hasAccess: true }, lessons }, 'تفاصيل الدورة'),
+        );
+      return;
+    }
+
+    if (course.accessType === VideoCourseAccessType.MARKETPLACE_PAID) {
+      res
+        .status(200)
+        .json(
+          ok(
+            { course: { ...course, hasAccess: false }, lessons: [] },
+            'تفاصيل الدورة',
+          ),
+        );
+      return;
+    }
+
+    throw new ApiError(
+      403,
+      'لا تمتلك صلاحية الوصول لهذه الدورة',
+      ErrorCodes.FORBIDDEN,
+    );
   }
 
   // GET /api/student/video-courses/:id/lessons/:lessonId/playback-url
