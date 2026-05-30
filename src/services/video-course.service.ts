@@ -63,25 +63,61 @@ import { VideoCourseEvents } from './video-course-events.service';
  *   - When a URL hostname is foreign (not *.b-cdn.net / *.mediadelivery.net),
  *     leaves it untouched (don't generate fake-signed URLs for arbitrary hosts).
  */
-function hydrateLesson<T extends { bunnyThumbnailUrl: string | null; bunnyPlaybackUrl: string | null }>(
-  lesson: T
-): T {
+function hydrateLesson<T extends {
+  id: string;
+  courseId: string;
+  bunnyVideoId: string | null;
+  bunnyStatus: VideoLessonBunnyStatus;
+  bunnyThumbnailUrl: string | null;
+  bunnyPlaybackUrl: string | null;
+}>(lesson: T): T {
   const cfg = BunnyStreamService.config();
   if (!cfg) return lesson;
-  // Two-step pipeline:
-  //   1. Hostname hydration — always safe, self-heals stale rows.
-  //   2. Token signing — only when BUNNY_STREAM_SIGN_ASSETS=true (i.e. the
-  //      operator has enabled Player → Token Authentication in the Bunny
-  //      library AND verified that Direct URL Access is allowed). Default
-  //      OFF — sending unwanted query string tokens to a token-disabled
-  //      library is harmless but signing with a stale algorithm could
-  //      400 every request.
-  const thumb = hydrateBunnyUrl(lesson.bunnyThumbnailUrl, cfg);
-  const play = hydrateBunnyUrl(lesson.bunnyPlaybackUrl, cfg);
+  // Thumbnail: per-file Bunny signing is fine — thumbnails are single
+  // files, not multi-segment HLS, so a per-file token works.
+  const thumbHydrated = hydrateBunnyUrl(lesson.bunnyThumbnailUrl, cfg);
+  const thumbnail = cfg.signAssets
+    ? signBunnyAssetUrl(thumbHydrated, cfg)
+    : thumbHydrated;
+  // Playback: route through the manifest proxy when the lesson is ready
+  // AND the ticket secret is configured. Per-file Bunny signing 403s on
+  // HLS child variant manifests (verified during QA-04); the proxy
+  // rewrites every child URL with its own per-file token so the player
+  // never hits an unsigned child manifest. Falls back to the legacy
+  // raw / per-file Bunny URL when:
+  //   - PLAYBACK_TICKET_SECRET is unset (operator hasn't rolled the proxy yet)
+  //   - lesson is not in `ready` state (no manifest to mint anyway)
+  //   - bunnyVideoId is missing (malformed row — leave for debug)
+  let playback = hydrateBunnyUrl(lesson.bunnyPlaybackUrl, cfg);
+  const canProxyPlayback =
+    lesson.bunnyStatus === VideoLessonBunnyStatus.READY &&
+    Boolean(lesson.bunnyVideoId) &&
+    Boolean(process.env['PLAYBACK_TICKET_SECRET']);
+  if (canProxyPlayback && lesson.bunnyVideoId) {
+    try {
+      const { ticket } = PlaybackTicketService.issue({
+        courseId: lesson.courseId,
+        lessonId: lesson.id,
+        bunnyVideoId: lesson.bunnyVideoId,
+        ttlSeconds: cfg.playbackTokenTtlSeconds,
+      });
+      const base = (process.env['APP_URL']?.trim() || 'https://api.mulhimiq.com')
+        .replace(/\/+$/, '');
+      playback =
+        `${base}/api/student/video-courses/${encodeURIComponent(lesson.courseId)}` +
+        `/lessons/${encodeURIComponent(lesson.id)}/manifest.m3u8` +
+        `?ticket=${encodeURIComponent(ticket)}`;
+    } catch {
+      // Ticket issue failed (env misconfig). Fall through — the raw URL
+      // is still set; per-file signing applies below if signAssets is on.
+    }
+  } else if (cfg.signAssets && playback) {
+    playback = signBunnyAssetUrl(playback, cfg);
+  }
   return {
     ...lesson,
-    bunnyThumbnailUrl: cfg.signAssets ? signBunnyAssetUrl(thumb, cfg) : thumb,
-    bunnyPlaybackUrl: cfg.signAssets ? signBunnyAssetUrl(play, cfg) : play,
+    bunnyThumbnailUrl: thumbnail,
+    bunnyPlaybackUrl: playback,
   };
 }
 
