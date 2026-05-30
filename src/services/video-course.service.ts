@@ -28,6 +28,7 @@ import {
   signBunnyAssetUrl,
 } from './bunny-stream.service';
 import { VideoCourseValidationService } from './video-course-validation.service';
+import { PlaybackTicketService } from './playback-ticket.service';
 import {
   VideoCourse,
   VideoCourseAccessType,
@@ -869,18 +870,33 @@ export class VideoCourseService {
         ErrorCodes.BUSINESS_RULE
       );
     }
-    const signed = BunnyStreamService.buildSignedPlaybackUrl({
-      videoId: lesson.bunnyVideoId,
-      ...(args.clientIp ? { clientIp: args.clientIp } : {}),
-    });
-    if (!signed) {
+    if (!BunnyStreamService.isConfigured()) {
       throw new ApiError(
         503,
         'تشغيل الفيديو غير متاح حالياً',
         ErrorCodes.SERVICE_UNAVAILABLE
       );
     }
-    return signed;
+    // QA-04 fix: Bunny Stream signs URLs per-file, so the master playlist
+    // token cannot authenticate the child variant manifests (360p/, 480p/, …).
+    // Instead of returning a raw Bunny URL we issue an HMAC ticket and point
+    // the player at our manifest proxy, which rewrites every child URL to a
+    // separately-signed Bunny URL. See VideoCourseProxyController.
+    const cfg = BunnyStreamService.config()!;
+    const ttlSeconds = cfg.playbackTokenTtlSeconds;
+    const { ticket, expiresAt } = PlaybackTicketService.issue({
+      courseId: args.courseId,
+      lessonId: args.lessonId,
+      bunnyVideoId: lesson.bunnyVideoId,
+      ttlSeconds,
+    });
+    const base = (process.env['APP_URL']?.trim() || 'https://api.mulhimiq.com')
+      .replace(/\/+$/, '');
+    const url =
+      `${base}/api/student/video-courses/${encodeURIComponent(args.courseId)}` +
+      `/lessons/${encodeURIComponent(args.lessonId)}/manifest.m3u8` +
+      `?ticket=${encodeURIComponent(ticket)}`;
+    return { url, expiresAt };
   }
 
   // ---- WEBHOOK reconcile --------------------------------------------------

@@ -19,6 +19,7 @@ import searchRoutes from './search.routes';
 import studentEvaluationRoutes from './student-evaluation.routes';
 import teacherRoutes from './teacher.routes';
 import videoCourseRoutes from './video-course.routes';
+import videoCourseProxyRoutes from './video-course-proxy.routes';
 
 import { authenticateToken, requireRole } from '../../middleware/auth.middleware';
 import { UserType } from '../../types';
@@ -28,6 +29,14 @@ import { asyncHandler } from '../../utils/async-handler';
 import { okEmpty } from '../../utils/response.util';
 
 const router = Router();
+
+// HLS manifest proxy is mounted BEFORE the auth middleware: it carries its
+// own HMAC ticket (PlaybackTicketService) because HLS players cannot reliably
+// attach a JWT to every segment fetch. Requests that don't match a proxy
+// route fall through to the auth gate below — there's no path overlap with
+// the authenticated video-course routes (proxy uses /manifest.m3u8 and
+// /variants/:quality/video.m3u8 only).
+router.use('/video-courses', videoCourseProxyRoutes);
 
 router.use(authenticateToken, requireRole(UserType.STUDENT));
 
