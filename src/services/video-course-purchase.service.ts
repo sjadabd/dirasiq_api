@@ -57,6 +57,35 @@ const REFUND_WINDOW_DAYS = 7;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const DEFAULT_REDIRECT_FALLBACK = 'https://mulhimiq.com/student/library?poll=1';
 
+/**
+ * Maximum age of a `pending` purchase row before its Wayl checkout URL
+ * is considered stale. Older rows are flipped to `failed` and a fresh
+ * Wayl link is minted on the next "buy" tap.
+ *
+ * 20 minutes is conservative — Wayl checkout pages typically stay live
+ * longer (their docs say up to 24 h depending on merchant config), but
+ * we'd rather over-refresh than send the student to a "link expired"
+ * page. Tunable via `WAYL_PENDING_PURCHASE_TTL_MINUTES` for ops who
+ * want a different cadence without redeploying.
+ */
+const PENDING_LINK_TTL_MINUTES = Math.max(
+  1,
+  Number(process.env['WAYL_PENDING_PURCHASE_TTL_MINUTES'] || 20),
+);
+const PENDING_LINK_TTL_MS = PENDING_LINK_TTL_MINUTES * 60 * 1000;
+
+/**
+ * Pure helper — exposed for unit tests. Returns true when a pending row
+ * created at `createdAt` is older than the TTL when measured from `now`.
+ */
+export function isPendingPurchaseExpired(
+  createdAt: Date,
+  now: number = Date.now(),
+  ttlMs: number = PENDING_LINK_TTL_MS,
+): boolean {
+  return now - createdAt.getTime() > ttlMs;
+}
+
 interface InitiateResult {
   // When the student already has access — no payment link is created.
   alreadyHasAccess?: {
@@ -131,33 +160,44 @@ export class VideoCoursePurchaseService {
       }
     }
 
-    // 2b. Resume an existing pending purchase. The active-per-student
-    //     partial unique index forbids two pending rows for the same
-    //     (student, course) pair — without this branch the second tap
-    //     of "buy" would 23505 → 409 → the Flutter UI shows a generic
-    //     "تعذّر بدء عملية الشراء" snackbar with no path forward.
-    //     Instead, return the SAME Wayl URL the previous attempt
-    //     created so the student can continue the existing payment
-    //     flow (or expire it naturally on the Wayl side).
+    // 2b. Resume-or-replace an existing pending purchase.
     //
-    //     Stale-row recovery: if the pending row exists but lost its
-    //     wayl link (FK is SET NULL on link delete, or the ops team
-    //     manually purged), flip it to 'failed' here so the unique
-    //     index frees and the rest of this method creates a fresh
-    //     pending row + Wayl link in the transaction below. This
-    //     should be vanishingly rare under normal operation — the
-    //     create-link tx is atomic — but the recovery is cheap.
+    //     The active-per-student partial unique index forbids two pending
+    //     rows for the same (student, course) pair — without this branch
+    //     the second tap of "buy" would 23505 → 409 → the Flutter UI
+    //     shows a generic "تعذّر بدء عملية الشراء" snackbar with no
+    //     path forward.
+    //
+    //     Three cases:
+    //
+    //       a. Pending row YOUNGER THAN TTL with a live Wayl URL
+    //          → resume: return the same URL so the student lands on
+    //          the SAME Wayl checkout they had before. No new gateway
+    //          call, no new audit row.
+    //
+    //       b. Pending row OLDER THAN TTL → the Wayl link is likely
+    //          dead ("Broken link / link used or disabled"). Flip the
+    //          row to `failed` here so the partial unique index frees
+    //          up, then fall through to the transactional create path
+    //          to mint a fresh row + fresh Wayl link.
+    //
+    //       c. Pending row with NO link (orphan — should not happen
+    //          under normal operation because the create-link tx is
+    //          atomic, but the FK is SET NULL on link delete) → same
+    //          recovery as (b): mark failed, fall through.
     const existing = await pool.query<{
       purchaseId: string;
       amountIqd: string;
       url: string | null;
       referenceId: string | null;
+      createdAt: Date;
     }>(
       `SELECT
          p.id                                AS "purchaseId",
          p.amount_iqd::text                  AS "amountIqd",
          l.wayl_url                          AS "url",
-         l.reference_id                      AS "referenceId"
+         l.reference_id                      AS "referenceId",
+         p.created_at                        AS "createdAt"
          FROM video_course_purchases p
          LEFT JOIN wayl_payment_links l ON l.id = p.wayl_payment_link_id
         WHERE p.video_course_id = $1
@@ -168,23 +208,31 @@ export class VideoCoursePurchaseService {
     );
     const existingRow = existing.rows[0];
     if (existingRow) {
-      if (existingRow.url && existingRow.referenceId) {
+      const ageMs = Date.now() - new Date(existingRow.createdAt).getTime();
+      const ageMinutes = Math.round(ageMs / 60_000);
+      const expired = isPendingPurchaseExpired(
+        new Date(existingRow.createdAt),
+      );
+      const hasLink = Boolean(existingRow.url && existingRow.referenceId);
+
+      if (hasLink && !expired) {
         logger.info(
           {
             purchaseId: existingRow.purchaseId,
             videoCourseId: args.videoCourseId,
             studentId: args.studentId,
+            ageMinutes,
           },
           'video course purchase: resumed existing pending row',
         );
         return {
-          url: existingRow.url,
-          referenceId: existingRow.referenceId,
+          url: existingRow.url!,
+          referenceId: existingRow.referenceId!,
           purchaseId: existingRow.purchaseId,
           amountIqd: Number(existingRow.amountIqd),
         };
       }
-      // Stale pending row with no link → mark failed to free the unique
+      // Either expired OR missing link → mark failed to free the unique
       // constraint, then fall through to the normal create path.
       await pool.query(
         `UPDATE video_course_purchases
@@ -192,9 +240,15 @@ export class VideoCoursePurchaseService {
           WHERE id = $1`,
         [existingRow.purchaseId],
       );
-      logger.warn(
-        { purchaseId: existingRow.purchaseId },
-        'video course purchase: orphan pending row marked failed; retrying create',
+      logger.info(
+        {
+          purchaseId: existingRow.purchaseId,
+          videoCourseId: args.videoCourseId,
+          studentId: args.studentId,
+          ageMinutes,
+          reason: !hasLink ? 'no_link' : 'expired_ttl',
+        },
+        'video course purchase: expired pending row replaced with fresh Wayl link',
       );
     }
 
@@ -355,14 +409,56 @@ export class VideoCoursePurchaseService {
     } catch (err: unknown) {
       await client.query('ROLLBACK').catch(() => undefined);
       // 23505 on the active-per-student partial unique index = a
-      // concurrent click already created a pending purchase. Surface
-      // that as a friendly 409 — the existing row is the one the
-      // student should pay for.
+      // concurrent click won the race and inserted a pending purchase
+      // row between our resume-SELECT (step 2b) and our INSERT. Recover
+      // by re-SELECTing the winner's row and returning its Wayl URL —
+      // the loser's tap is functionally identical to the winner's.
+      // We never re-throw the 409 to the user; the resume contract is
+      // "any tap on a buy button always gets the in-flight URL or a
+      // fresh one, never an error".
       if (
         typeof err === 'object' &&
         err !== null &&
         (err as { code?: string }).code === '23505'
       ) {
+        const concurrent = await pool.query<{
+          purchaseId: string;
+          amountIqd: string;
+          url: string | null;
+          referenceId: string | null;
+        }>(
+          `SELECT p.id              AS "purchaseId",
+                  p.amount_iqd::text AS "amountIqd",
+                  l.wayl_url        AS "url",
+                  l.reference_id    AS "referenceId"
+             FROM video_course_purchases p
+             LEFT JOIN wayl_payment_links l ON l.id = p.wayl_payment_link_id
+            WHERE p.video_course_id = $1
+              AND p.student_id      = $2
+              AND p.status          = 'pending'
+            LIMIT 1`,
+          [args.videoCourseId, args.studentId],
+        );
+        const winner = concurrent.rows[0];
+        if (winner && winner.url && winner.referenceId) {
+          logger.info(
+            {
+              purchaseId: winner.purchaseId,
+              videoCourseId: args.videoCourseId,
+              studentId: args.studentId,
+            },
+            'video course purchase: lost race, returning concurrent winner URL',
+          );
+          return {
+            url: winner.url,
+            referenceId: winner.referenceId,
+            purchaseId: winner.purchaseId,
+            amountIqd: Number(winner.amountIqd),
+          };
+        }
+        // Genuinely degenerate state — fall back to the legacy 409 so
+        // the client at least sees a clear "try again" rather than a
+        // 500. Should be unreachable in practice.
         throw new ApiError(
           409,
           'يوجد طلب شراء معلّق لهذه الدورة بالفعل',
