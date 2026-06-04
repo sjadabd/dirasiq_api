@@ -1223,6 +1223,74 @@ export class AuthService {
       throw new ApiError(404, 'المستخدم غير موجود', ErrorCodes.NOT_FOUND);
     }
 
+    // ── Academic stage (grade) change — students only ──────────────────────────
+    // Rule: a student may change their academic stage ONLY when they have no
+    // active in-person (physical) enrollment. `course_bookings` ARE the physical
+    // courses — video courses live in a separate library and are NOT affected by
+    // stage (nor are invoices, past orders, or access rights). Active = confirmed
+    // | approved. This server-side guard is authoritative; the mobile UI also
+    // gates the field, but UI gating alone is insufficient.
+    //
+    // The grade write also happens here because `gradeId` is intentionally kept
+    // out of the field allow-list below — only this validated path may change it.
+    if (
+      userType === 'student' &&
+      profileData.gradeId !== undefined &&
+      profileData.gradeId !== null &&
+      String(profileData.gradeId).length > 0
+    ) {
+      const newGradeId = String(profileData.gradeId);
+      const activeGrades = await StudentGradeModel.findActiveByStudentId(userId);
+      const currentGradeId = activeGrades[0]?.gradeId;
+
+      if (currentGradeId !== newGradeId) {
+        const { rows } = await pool.query(
+          `SELECT 1 FROM course_bookings
+            WHERE student_id = $1
+              AND status IN ('confirmed', 'approved')
+              AND is_deleted = FALSE
+            LIMIT 1`,
+          [userId]
+        );
+        if (rows.length > 0) {
+          throw new ApiError(
+            409,
+            'لا يمكن تغيير المرحلة الدراسية أثناء وجود دورة حضورية مفعّلة. يمكنك تغييرها بعد انتهاء الدورة.',
+            ErrorCodes.BUSINESS_RULE
+          );
+        }
+
+        // Allowed → deactivate the previous active grade(s) and record the new
+        // one for the active study year. Best-effort: a failure here must not
+        // wipe the rest of the profile update.
+        const studyYear =
+          (await AcademicYearService.getActive())?.academicYear?.year ??
+          activeGrades[0]?.studyYear ??
+          null;
+        try {
+          for (const g of activeGrades) {
+            if (g.gradeId !== newGradeId) {
+              await StudentGradeModel.update(g.id, { isActive: false });
+            }
+          }
+          if (studyYear) {
+            await StudentGradeModel.create({
+              studentId: userId,
+              gradeId: newGradeId,
+              studyYear,
+            });
+          } else {
+            logger.warn(
+              { userId },
+              'no active study year — skipped student grade change (updateProfile)'
+            );
+          }
+        } catch (err) {
+          logger.warn({ err }, 'failed to apply student grade change (updateProfile)');
+        }
+      }
+    }
+
     let allowedFields: string[];
     if (userType === 'teacher') {
       allowedFields = [
