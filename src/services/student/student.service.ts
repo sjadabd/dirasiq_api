@@ -365,9 +365,9 @@ export namespace StudentService {
           c.course_name, c.subject_id::text AS subject_id, sub.name AS subject_name,
           u.name AS teacher_name, u.profile_image_path, u.latitude, u.longitude,
           CASE
-            WHEN s.weekday = EXTRACT(DOW FROM NOW())::int THEN
-              CASE WHEN (CURRENT_DATE + s.start_time) > NOW() THEN 0 ELSE 7 END
-            ELSE ((s.weekday - EXTRACT(DOW FROM NOW())::int + 7) % 7)
+            WHEN s.weekday = EXTRACT(DOW FROM (NOW() AT TIME ZONE 'Asia/Baghdad'))::int THEN
+              CASE WHEN ((NOW() AT TIME ZONE 'Asia/Baghdad')::date + s.start_time) > (NOW() AT TIME ZONE 'Asia/Baghdad') THEN 0 ELSE 7 END
+            ELSE ((s.weekday - EXTRACT(DOW FROM (NOW() AT TIME ZONE 'Asia/Baghdad'))::int + 7) % 7)
           END AS offset_days
         FROM sessions s
         JOIN session_attendees sa ON sa.session_id = s.id AND sa.student_id = $1
@@ -377,7 +377,7 @@ export namespace StudentService {
         WHERE s.is_deleted = false
           AND s.state IN ('draft','proposed','conflict','confirmed','negotiating')
       )
-      SELECT *, (CURRENT_DATE + (offset_days || ' days')::interval + start_time) AS next_occurrence
+      SELECT *, ((NOW() AT TIME ZONE 'Asia/Baghdad')::date + (offset_days || ' days')::interval + start_time) AS next_occurrence
       FROM base
       ORDER BY next_occurrence ASC
       LIMIT 1

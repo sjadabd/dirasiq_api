@@ -22,15 +22,21 @@ export interface AttendanceRecord {
 export class AttendanceModel {
   // Find active session for teacher at current time (server time)
   static async findActiveSessionForTeacherNow(teacherId: string): Promise<SessionWithComputedTimes | null> {
+    // Evaluate "now" explicitly in Asia/Baghdad. session.start_time / end_time /
+    // weekday are stored as the teacher's local wall-clock values; comparing them
+    // against a raw NOW()::time uses the DB connection's timezone (UTC in the
+    // docker image), which shifts the window by 3h and never matches the real
+    // lecture slot. `NOW() AT TIME ZONE 'Asia/Baghdad'` yields a tz-less local
+    // timestamp regardless of server timezone — correct in UTC or Baghdad alike.
     const q = `
       SELECT id, course_id, teacher_id, weekday, start_time, end_time
       FROM sessions
       WHERE teacher_id = $1
         AND is_deleted = false
         AND state IN ('draft','proposed','conflict','confirmed','negotiating')
-        AND weekday = EXTRACT(DOW FROM NOW())::int
-        AND start_time <= (NOW()::time)
-        AND end_time   >= (NOW()::time)
+        AND weekday = EXTRACT(DOW FROM (NOW() AT TIME ZONE 'Asia/Baghdad'))::int
+        AND start_time <= (NOW() AT TIME ZONE 'Asia/Baghdad')::time
+        AND end_time   >= (NOW() AT TIME ZONE 'Asia/Baghdad')::time
       ORDER BY start_time ASC
       LIMIT 1
     `;

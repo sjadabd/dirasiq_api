@@ -38,8 +38,8 @@ export class SessionStartReminderService {
       JOIN courses c ON c.id = s.course_id
       WHERE s.is_deleted = false
         AND s.state IN ('draft','proposed','conflict','confirmed','negotiating')
-        AND s.weekday = EXTRACT(DOW FROM NOW())::int
-        AND s.start_time = (date_trunc('minute', NOW() + interval '5 minutes'))::time
+        AND s.weekday = EXTRACT(DOW FROM (NOW() AT TIME ZONE 'Asia/Baghdad'))::int
+        AND s.start_time = (date_trunc('minute', (NOW() AT TIME ZONE 'Asia/Baghdad') + interval '5 minutes'))::time
     `;
 
     const r = await pool.query(q);
@@ -106,8 +106,8 @@ export class SessionStartReminderService {
       JOIN users u ON u.id = sa.student_id AND u.user_type = 'student' AND u.deleted_at IS NULL
       WHERE s.is_deleted = false
         AND s.state IN ('draft','proposed','conflict','confirmed','negotiating')
-        AND s.weekday = EXTRACT(DOW FROM NOW())::int
-        AND s.start_time = (date_trunc('minute', NOW() + interval '30 minutes'))::time
+        AND s.weekday = EXTRACT(DOW FROM (NOW() AT TIME ZONE 'Asia/Baghdad'))::int
+        AND s.start_time = (date_trunc('minute', (NOW() AT TIME ZONE 'Asia/Baghdad') + interval '30 minutes'))::time
     `;
 
     const r = await pool.query(q);

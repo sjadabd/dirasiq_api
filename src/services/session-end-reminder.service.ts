@@ -20,9 +20,9 @@ export class SessionEndReminderService {
       FROM sessions
       WHERE is_deleted = false
         AND state IN ('draft','proposed','conflict','confirmed','negotiating')
-        AND weekday = EXTRACT(DOW FROM NOW())::int
-        AND start_time <= (NOW()::time)
-        AND end_time = (date_trunc('minute', NOW() + interval '3 minutes'))::time
+        AND weekday = EXTRACT(DOW FROM (NOW() AT TIME ZONE 'Asia/Baghdad'))::int
+        AND start_time <= ((NOW() AT TIME ZONE 'Asia/Baghdad')::time)
+        AND end_time = (date_trunc('minute', (NOW() AT TIME ZONE 'Asia/Baghdad') + interval '3 minutes'))::time
     `;
 
     const r = await pool.query(q);

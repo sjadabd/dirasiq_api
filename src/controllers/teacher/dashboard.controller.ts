@@ -40,7 +40,7 @@ export class TeacherDashboardController {
           FROM sessions
          WHERE teacher_id = $1
            AND is_deleted = false
-           AND weekday = EXTRACT(DOW FROM CURRENT_DATE)::int
+           AND weekday = EXTRACT(DOW FROM (NOW() AT TIME ZONE 'Asia/Baghdad'))::int
       `,
       depositsTotals: `
         SELECT
@@ -126,9 +126,9 @@ export class TeacherDashboardController {
        JOIN courses c ON c.id = s.course_id
        WHERE s.teacher_id = $1
          AND s.is_deleted = false
-         AND s.weekday = EXTRACT(DOW FROM CURRENT_DATE)::int
+         AND s.weekday = EXTRACT(DOW FROM (NOW() AT TIME ZONE 'Asia/Baghdad'))::int
          AND s.state IN ('draft','proposed','conflict','confirmed','negotiating')
-         AND s.start_time >= CURRENT_TIME
+         AND s.start_time >= (NOW() AT TIME ZONE 'Asia/Baghdad')::time
        ORDER BY s.start_time ASC`,
       [teacherId]
     );
