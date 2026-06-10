@@ -387,7 +387,10 @@ export class TeacherAssignmentController {
   // -------------------------------------------------------------------------
   static async remove(req: Request, res: Response): Promise<void> {
     const id = req.params['id'] as string;
+    const teacherId = req.user.id as string;
     const service = fetchService();
+    // Capture the assignment before soft-delete so we can notify its students.
+    const existing = await service.getById(id);
     const success = await service.softDelete(id);
     if (!success) {
       throw new ApiError(404, 'الواجب غير موجود', ErrorCodes.NOT_FOUND);
@@ -396,6 +399,40 @@ export class TeacherAssignmentController {
       await NotificationModel.softDeleteByAssignmentId(id);
     } catch (err) {
       req.log?.warn({ err, id }, 'failed to soft-delete notifications for assignment');
+    }
+    // Alert students that the homework was removed. Sent AFTER the cleanup above
+    // (with no assignmentId in data) so it isn't swept by softDeleteByAssignmentId.
+    try {
+      if (existing) {
+        const notif = req.app.get('notificationService') as NotificationService;
+        let recipientIds: string[] = [];
+        if (existing.visibility === 'all_students') {
+          const r = await pool.query(
+            `SELECT u.id::text AS id
+               FROM course_bookings cb
+               JOIN users u ON u.id = cb.student_id AND u.user_type = 'student' AND u.deleted_at IS NULL
+              WHERE cb.course_id = $1 AND cb.teacher_id = $2 AND cb.status = 'confirmed' AND cb.is_deleted = false`,
+            [String(existing.course_id), teacherId]
+          );
+          recipientIds = r.rows.map((row: any) => String(row.id));
+        } else if (existing.visibility === 'specific_students') {
+          recipientIds = await AssignmentModel.getRecipientIds(id);
+        }
+        if (recipientIds.length) {
+          await notif.createAndSendNotification({
+            title: 'حذف واجب',
+            message: `تم حذف الواجب: ${existing.title}`,
+            type: 'assignment_due' as any,
+            priority: 'medium',
+            recipientType: 'specific_students' as any,
+            recipientIds,
+            data: { subType: 'homework' },
+            createdBy: teacherId,
+          });
+        }
+      }
+    } catch (err) {
+      req.log?.warn({ err }, 'assignment delete notification failed');
     }
     res.status(200).json(ok(null, 'تم الحذف'));
   }
@@ -512,5 +549,26 @@ export class TeacherAssignmentController {
       }
     }
     res.status(200).json(ok(updated, 'تم تقييم الواجب'));
+  }
+
+  // -------------------------------------------------------------------------
+  // PUT /api/teacher/assignments/:assignmentId/received/:studentId
+  // Teacher marks (or unmarks) a student's homework as received in person.
+  // -------------------------------------------------------------------------
+  static async markReceived(req: Request, res: Response): Promise<void> {
+    const teacherId = req.user.id as string;
+    const assignmentId = req.params['assignmentId'] as string;
+    const studentId = req.params['studentId'] as string;
+    const { received } = req.body as { received?: boolean };
+    const service = fetchService();
+    const existing = await service.getById(assignmentId);
+    if (!existing || String(existing.teacher_id) !== teacherId) {
+      throw new ApiError(404, 'الواجب غير موجود', ErrorCodes.NOT_FOUND);
+    }
+    const isReceived = received !== false;
+    const updated = await service.markReceived(assignmentId, studentId, isReceived);
+    res
+      .status(200)
+      .json(ok(updated, isReceived ? 'تم تسجيل الاستلام' : 'تم إلغاء الاستلام'));
   }
 }

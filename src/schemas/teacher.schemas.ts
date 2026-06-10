@@ -335,6 +335,10 @@ export const assignmentGradeBodySchema = z.object({
   feedback: z.string().optional(),
 });
 
+export const assignmentReceivedBodySchema = z.object({
+  received: z.boolean().optional(),
+});
+
 // =============================================================================
 // Exam
 // =============================================================================

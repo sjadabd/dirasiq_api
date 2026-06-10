@@ -254,10 +254,32 @@ export class AssignmentModel {
   }
 
   static async gradeSubmission(assignmentId: string, studentId: string, score: number, gradedBy: string, feedback?: string): Promise<AssignmentSubmission | null> {
+    // UPSERT so a teacher can grade a paper/manual student who never created a
+    // submission row electronically.
     const r = await pool.query(
-      `UPDATE assignment_submissions SET score=$3, graded_at=NOW(), graded_by=$4, status='graded', feedback=COALESCE($5, feedback), updated_at=NOW()
-       WHERE assignment_id=$1 AND student_id=$2 RETURNING *`,
+      `INSERT INTO assignment_submissions (assignment_id, student_id, score, graded_at, graded_by, status, feedback)
+       VALUES ($1, $2, $3, NOW(), $4, 'graded', $5)
+       ON CONFLICT (assignment_id, student_id) DO UPDATE SET
+         score=$3, graded_at=NOW(), graded_by=$4, status='graded',
+         feedback=COALESCE($5, assignment_submissions.feedback), updated_at=NOW()
+       RETURNING *`,
       [assignmentId, studentId, score, gradedBy, feedback ?? null]
+    );
+    return r.rows[0] || null;
+  }
+
+  // Teacher manually marks a student's homework as received (paper/in-person).
+  // "Received" is represented by submitted_at being non-null; status is left
+  // untouched so an already-graded row stays graded.
+  static async markReceived(assignmentId: string, studentId: string, received: boolean): Promise<AssignmentSubmission | null> {
+    const r = await pool.query(
+      `INSERT INTO assignment_submissions (assignment_id, student_id, submitted_at, status)
+       VALUES ($1, $2, CASE WHEN $3 THEN NOW() ELSE NULL END, 'submitted')
+       ON CONFLICT (assignment_id, student_id) DO UPDATE SET
+         submitted_at = CASE WHEN $3 THEN NOW() ELSE NULL END,
+         updated_at = NOW()
+       RETURNING *`,
+      [assignmentId, studentId, received]
     );
     return r.rows[0] || null;
   }

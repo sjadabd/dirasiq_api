@@ -51,4 +51,8 @@ export class AssignmentService {
     }
     return AssignmentModel.gradeSubmission(assignmentId, studentId, score, gradedBy, feedback);
   }
+
+  async markReceived(assignmentId: string, studentId: string, received: boolean) {
+    return AssignmentModel.markReceived(assignmentId, studentId, received);
+  }
 }

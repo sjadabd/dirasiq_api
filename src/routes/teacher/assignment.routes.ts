@@ -12,6 +12,7 @@ import {
   assignmentCreateSchema,
   assignmentGradeBodySchema,
   assignmentListQuerySchema,
+  assignmentReceivedBodySchema,
   assignmentRecipientsBodySchema,
   assignmentUpdateSchema,
 } from '../../schemas/teacher.schemas';
@@ -62,6 +63,11 @@ router.put(
   '/:assignmentId/grade/:studentId',
   validate({ params: assignmentGradeParamsSchema, body: assignmentGradeBodySchema }),
   asyncHandler(TeacherAssignmentController.grade)
+);
+router.put(
+  '/:assignmentId/received/:studentId',
+  validate({ params: assignmentGradeParamsSchema, body: assignmentReceivedBodySchema }),
+  asyncHandler(TeacherAssignmentController.markReceived)
 );
 router.get(
   '/:id/recipients',
