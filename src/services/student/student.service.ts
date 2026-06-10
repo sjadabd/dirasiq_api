@@ -649,8 +649,8 @@ export namespace StudentService {
     // Fallback: no location -> alphabetical
     if (!student || !student.latitude || !student.longitude) {
       const [items, count] = await Promise.all([
-        UserModel.findTeachersAlphabetical(limit, offset, search),
-        UserModel.countTeachersAlphabetical(search),
+        UserModel.findTeachersAlphabetical(limit, offset, search, studentId),
+        UserModel.countTeachersAlphabetical(search, studentId),
       ]);
       return {
         teachers: items.map((t: any) => ({
@@ -677,8 +677,9 @@ export namespace StudentService {
       maxDistance,
       limit,
       offset,
+      studentId, // $6 — exclude teachers the student is already booked with
     ];
-    let paramIndex = 6;
+    let paramIndex = 7;
     if (search && search.trim() !== '') {
       searchClause = `AND (
         u.name ILIKE $${paramIndex} OR
@@ -711,6 +712,13 @@ export namespace StudentService {
           AND u.status = 'active'
           AND u.latitude IS NOT NULL
           AND u.longitude IS NOT NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM course_bookings cb
+            WHERE cb.teacher_id = u.id
+              AND cb.student_id = $6
+              AND cb.is_deleted = false
+              AND cb.status IN ('pending','pre_approved','confirmed','approved')
+          )
       )
       SELECT * FROM nearby_teachers u
       WHERE u.distance <= $3 ${searchClause}
@@ -719,8 +727,8 @@ export namespace StudentService {
     `;
 
     let countSearchClause = '';
-    const countParams: any[] = [student.latitude, student.longitude, maxDistance];
-    let countParamIndex = 4;
+    const countParams: any[] = [student.latitude, student.longitude, maxDistance, studentId];
+    let countParamIndex = 5;
     if (search && search.trim() !== '') {
       countSearchClause = `AND (
         EXISTS (
@@ -754,6 +762,13 @@ export namespace StudentService {
           AND u.status = 'active'
           AND u.latitude IS NOT NULL
           AND u.longitude IS NOT NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM course_bookings cb
+            WHERE cb.teacher_id = u.id
+              AND cb.student_id = $4
+              AND cb.is_deleted = false
+              AND cb.status IN ('pending','pre_approved','confirmed','approved')
+          )
       )
       SELECT COUNT(*)::int as count
       FROM nearby_teachers u

@@ -750,7 +750,8 @@ export class UserModel {
   static async findTeachersAlphabetical(
     limit: number,
     offset: number,
-    search?: string
+    search?: string,
+    excludeStudentId?: string
   ): Promise<any[]> {
     let query = `
       SELECT u.*
@@ -761,6 +762,16 @@ export class UserModel {
     `;
     const values: any[] = [];
     let param = 1;
+    if (excludeStudentId) {
+      query += ` AND NOT EXISTS (
+        SELECT 1 FROM course_bookings cb
+        WHERE cb.teacher_id = u.id AND cb.student_id = $${param}
+          AND cb.is_deleted = false
+          AND cb.status IN ('pending','pre_approved','confirmed','approved')
+      )`;
+      values.push(excludeStudentId);
+      param++;
+    }
     if (search && search.trim() !== '') {
       query += ` AND (u.name ILIKE $${param})`;
       values.push(`%${search.trim()}%`);
@@ -773,7 +784,10 @@ export class UserModel {
   }
 
   // Count active teachers matching optional search (for pagination)
-  static async countTeachersAlphabetical(search?: string): Promise<number> {
+  static async countTeachersAlphabetical(
+    search?: string,
+    excludeStudentId?: string
+  ): Promise<number> {
     let query = `
       SELECT COUNT(*)::int AS count
       FROM users u
@@ -782,8 +796,19 @@ export class UserModel {
         AND u.deleted_at IS NULL
     `;
     const values: any[] = [];
+    let param = 1;
+    if (excludeStudentId) {
+      query += ` AND NOT EXISTS (
+        SELECT 1 FROM course_bookings cb
+        WHERE cb.teacher_id = u.id AND cb.student_id = $${param}
+          AND cb.is_deleted = false
+          AND cb.status IN ('pending','pre_approved','confirmed','approved')
+      )`;
+      values.push(excludeStudentId);
+      param++;
+    }
     if (search && search.trim() !== '') {
-      query += ` AND (u.name ILIKE $1)`;
+      query += ` AND (u.name ILIKE $${param})`;
       values.push(`%${search.trim()}%`);
     }
     const r = await pool.query(query, values);
