@@ -366,7 +366,10 @@ export namespace StudentService {
           u.name AS teacher_name, u.profile_image_path, u.latitude, u.longitude,
           CASE
             WHEN s.weekday = EXTRACT(DOW FROM (NOW() AT TIME ZONE 'Asia/Baghdad'))::int THEN
-              CASE WHEN ((NOW() AT TIME ZONE 'Asia/Baghdad')::date + s.start_time) > (NOW() AT TIME ZONE 'Asia/Baghdad') THEN 0 ELSE 7 END
+              -- Keep today's session selected until it ENDS (not just starts), so
+              -- an in-progress lecture surfaces as the current event instead of
+              -- jumping to next week.
+              CASE WHEN ((NOW() AT TIME ZONE 'Asia/Baghdad')::date + s.end_time) > (NOW() AT TIME ZONE 'Asia/Baghdad') THEN 0 ELSE 7 END
             ELSE ((s.weekday - EXTRACT(DOW FROM (NOW() AT TIME ZONE 'Asia/Baghdad'))::int + 7) % 7)
           END AS offset_days
         FROM sessions s
@@ -377,7 +380,9 @@ export namespace StudentService {
         WHERE s.is_deleted = false
           AND s.state IN ('draft','proposed','conflict','confirmed','negotiating')
       )
-      SELECT *, ((NOW() AT TIME ZONE 'Asia/Baghdad')::date + (offset_days || ' days')::interval + start_time) AS next_occurrence
+      SELECT *,
+        ((NOW() AT TIME ZONE 'Asia/Baghdad')::date + (offset_days || ' days')::interval + start_time) AS next_occurrence,
+        ((NOW() AT TIME ZONE 'Asia/Baghdad')::date + (offset_days || ' days')::interval + end_time) AS next_occurrence_end
       FROM base
       ORDER BY next_occurrence ASC
       LIMIT 1
@@ -480,6 +485,7 @@ export namespace StudentService {
           startTime: nextSessionRes.rows[0].start_time,
           endTime: nextSessionRes.rows[0].end_time,
           nextOccurrence: new Date(nextSessionRes.rows[0].next_occurrence).toISOString(),
+          endAt: new Date(nextSessionRes.rows[0].next_occurrence_end).toISOString(),
           courseName: nextSessionRes.rows[0].course_name,
           subject: {
             id: nextSessionRes.rows[0].subject_id || null,
