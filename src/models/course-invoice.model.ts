@@ -41,7 +41,7 @@ export class CourseInvoiceModel {
       INSERT INTO course_invoices (
         student_id, teacher_id, course_id, study_year, invoice_type, payment_mode,
         amount_due, discount_total, amount_paid, invoice_status, invoice_date, due_date, notes
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7, 0, 0, 'pending', COALESCE($8, TO_CHAR(CURRENT_DATE,'YYYY-MM-DD')), $9, $10)
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7, 0, 0, 'pending', COALESCE($8::date, CURRENT_DATE), $9::date, $10)
       RETURNING *
     `;
     const v = [
