@@ -542,6 +542,35 @@ export const invoiceCreateSchema = z
     },
   );
 
+// Full edit — replaces amount / discount / dates / notes / payment-mode and
+// regenerates the installment plan. studentId / courseId / studyYear are
+// immutable (an invoice belongs to one student+course), so they are NOT
+// accepted here. Only allowed before any payment has been collected (enforced
+// in the service).
+export const invoiceUpdateFullSchema = z
+  .object({
+    paymentMode: paymentModeSchema,
+    amountDue: positiveMoneySchema,
+    invoiceDate: isoDateSchema.optional(),
+    dueDate: isoDateSchema.optional(),
+    discountAmount: moneySchema.optional(),
+    notes: z.string().optional(),
+    installmentsCount: z.coerce.number().int().min(2).max(36).optional(),
+    installmentIntervalDays: z.coerce.number().int().min(1).max(365).default(30).optional(),
+    installmentFirstDueDate: isoDateSchema.optional(),
+    installments: z.array(installmentManualSchema).optional(),
+  })
+  .refine(
+    (d) =>
+      d.paymentMode !== 'installments'
+      || (Array.isArray(d.installments) && d.installments.length >= 2)
+      || (typeof d.installmentsCount === 'number' && d.installmentsCount >= 2),
+    {
+      message: 'لخطة الأقساط: أعطِ installmentsCount (>= 2) أو installments[]',
+      path: ['installmentsCount'],
+    },
+  );
+
 // Targeted update — meta only (dates + notes). No mode/amount/installments changes.
 // To change those, soft-delete and recreate.
 export const invoiceUpdateMetaSchema = z

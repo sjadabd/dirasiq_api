@@ -27,6 +27,7 @@ import {
   invoicePaymentBodySchema,
   invoiceSummaryQuerySchema,
   invoiceUpdateDiscountSchema,
+  invoiceUpdateFullSchema,
   invoiceUpdateMetaSchema,
 } from '../../schemas/teacher.schemas';
 
@@ -63,6 +64,13 @@ router.post(
   '/:invoiceId/payments',
   validate({ params: invoiceIdParamSchema, body: invoicePaymentBodySchema }),
   asyncHandler(TeacherInvoiceController.addPayment),
+);
+
+// Full edit — regenerates installments + notifies the student.
+router.put(
+  '/:invoiceId',
+  validate({ params: invoiceIdParamSchema, body: invoiceUpdateFullSchema }),
+  asyncHandler(TeacherInvoiceController.updateInvoiceFull),
 );
 
 // Targeted updates (no monolithic PATCH)

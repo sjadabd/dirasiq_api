@@ -35,6 +35,9 @@ const toDateOnly = (d: any): string | null => {
   }
 };
 const toMoneyStr = (n: any): string => Number(n ?? 0).toFixed(2);
+// Human-facing money in notification text: thousands separators, no decimals.
+const moneyText = (n: any): string =>
+  Math.round(Number(n ?? 0)).toLocaleString('en-US');
 const toIso = (d: any): string | null => (d ? new Date(d).toISOString() : null);
 
 const formatInvoice = (inv: any): any => {
@@ -139,7 +142,7 @@ export class TeacherInvoiceController {
     await notifyStudent(req, {
       studentId: body['studentId'],
       title: 'فاتورة جديدة',
-      message: `تم إنشاء فاتورة جديدة بمبلغ ${invoice?.amount_due} د.ع`,
+      message: `تم إنشاء فاتورة جديدة بمبلغ ${moneyText(invoice?.amount_due)} د.ع`,
       subType: 'invoice_created',
       data: {
         studyYear: body['studyYear'],
@@ -257,8 +260,8 @@ export class TeacherInvoiceController {
       studentId: inv?.student_id,
       title: fullyPaid ? 'تم سداد الفاتورة كاملة' : 'تم تسجيل دفعة',
       message: fullyPaid
-        ? `تم سداد فاتورتك بالكامل. مبلغ الدفعة: ${body['amount']} د.ع`
-        : `تم تسجيل دفعة بمبلغ ${body['amount']} د.ع. المتبقّي على فاتورتك: ${remaining} د.ع`,
+        ? `تم سداد فاتورتك بالكامل. مبلغ الدفعة: ${moneyText(body['amount'])} د.ع`
+        : `تم تسجيل دفعة بمبلغ ${moneyText(body['amount'])} د.ع. المتبقّي على فاتورتك: ${moneyText(remaining)} د.ع`,
       subType: 'invoice_paid',
       data: {
         invoiceId,
@@ -308,13 +311,69 @@ export class TeacherInvoiceController {
     await notifyStudent(req, {
       studentId: (updated as any)?.student_id,
       title: 'تحديث خصم الفاتورة',
-      message: `تم ضبط الخصم على ${Number(body['discountAmount'])} د.ع`,
+      message: `تم ضبط الخصم على ${moneyText(body['discountAmount'])} د.ع`,
       subType: 'invoice_discount',
       data: { invoiceId, amount: Number(body['discountAmount']) },
       createdBy: teacherId,
     });
 
     res.status(200).json(ok(formatInvoice(updated), 'تم تحديث الخصم'));
+  }
+
+  // ---------------------------------------------------------------------------
+  // PUT /teacher/invoices/:invoiceId  (full edit — regenerates installments)
+  // ---------------------------------------------------------------------------
+  static async updateInvoiceFull(req: Request, res: Response): Promise<void> {
+    const teacherId = req.user.id as string;
+    const { invoiceId } = req.params as { invoiceId: string };
+    const body = req.body as Record<string, any>;
+
+    const opts: any = {
+      teacherId,
+      invoiceId,
+      paymentMode: body['paymentMode'],
+      amountDue: Number(body['amountDue']),
+      discountAmount: body['discountAmount'] != null ? Number(body['discountAmount']) : 0,
+      invoiceDate: toDateOnly(body['invoiceDate']),
+      dueDate: toDateOnly(body['dueDate']),
+      notes: body['notes'] ?? null,
+    };
+    if (Array.isArray(body['installments']) && body['installments'].length) {
+      opts.installments = body['installments'].map((it: any) => {
+        const row: any = {
+          plannedAmount: Number(it.plannedAmount),
+          dueDate: String(toDateOnly(it.dueDate)),
+        };
+        if (it.notes) row.notes = String(it.notes);
+        return row;
+      });
+    }
+    if (body['installmentsCount'] != null) {
+      opts.installmentsCount = Number(body['installmentsCount']);
+    }
+    if (body['installmentIntervalDays'] != null) {
+      opts.installmentIntervalDays = Number(body['installmentIntervalDays']);
+    }
+    if (body['installmentFirstDueDate']) {
+      opts.installmentFirstDueDate = String(toDateOnly(body['installmentFirstDueDate']));
+    }
+
+    const invoice = await TeacherInvoiceService.updateInvoiceFull(opts);
+
+    await notifyStudent(req, {
+      studentId: (invoice as any)?.student_id,
+      title: 'تم تعديل فاتورتك',
+      message: `تم تعديل فاتورتك. المبلغ المستحق: ${moneyText((invoice as any)?.amount_due)} د.ع`,
+      subType: 'invoice_updated',
+      data: {
+        invoiceId,
+        studyYear: (invoice as any)?.study_year,
+        courseId: (invoice as any)?.course_id,
+      },
+      createdBy: teacherId,
+    });
+
+    res.status(200).json(ok(formatInvoice(invoice), 'تم تعديل الفاتورة'));
   }
 
   // ---------------------------------------------------------------------------

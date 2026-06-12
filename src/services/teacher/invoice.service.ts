@@ -497,8 +497,151 @@ export class TeacherInvoiceService {
   // ===========================================================================
   // GET FULL — single endpoint for invoice + installments + computed totals
   // ===========================================================================
+  // ===========================================================================
+  // UPDATE FULL — replace amount/discount/dates/notes/mode + regenerate plan.
+  // Only allowed before any payment has been collected.
+  // ===========================================================================
+  static async updateInvoiceFull(opts: {
+    teacherId: string;
+    invoiceId: string;
+    paymentMode: 'cash' | 'installments';
+    amountDue: number;
+    discountAmount?: number;
+    invoiceDate?: string | null;
+    dueDate?: string | null;
+    notes?: string | null;
+    installments?: Array<{ plannedAmount: number; dueDate: string; notes?: string }>;
+    installmentsCount?: number;
+    installmentIntervalDays?: number;
+    installmentFirstDueDate?: string;
+  }) {
+    const inv = await this.getOwnedInvoice(opts.teacherId, opts.invoiceId);
+
+    // Editing the plan after collection started would corrupt payment allocation.
+    if (toMoneyNum(inv.amount_paid) > 0) {
+      throw new ApiError(
+        400,
+        'لا يمكن تعديل فاتورة بدأ تحصيل دفعات منها. استخدم تسجيل الدفعات بدلاً من التعديل.',
+        ErrorCodes.BUSINESS_RULE,
+      );
+    }
+
+    const amountDue = toMoneyNum(opts.amountDue);
+    const discount = toMoneyNum(opts.discountAmount || 0);
+    if (amountDue <= 0) {
+      throw new ApiError(400, 'المبلغ المستحق يجب أن يكون أكبر من صفر', ErrorCodes.VALIDATION_ERROR);
+    }
+    if (discount > amountDue) {
+      throw new ApiError(400, 'الخصم لا يمكن أن يتجاوز المبلغ المستحق', ErrorCodes.VALIDATION_ERROR);
+    }
+    const targetCollect = toMoneyNum(amountDue - discount);
+
+    // Build the installment plan (same rules as create).
+    let plan: Array<{ installmentNumber: number; plannedAmount: number; dueDate: string; notes?: string }> = [];
+    if (opts.paymentMode === 'installments') {
+      if (opts.installments && opts.installments.length >= 2) {
+        const totalPlanned = opts.installments.reduce((s, it) => s + toMoneyNum(it.plannedAmount), 0);
+        if (Math.abs(totalPlanned - targetCollect) > 0.01) {
+          throw new ApiError(
+            400,
+            `إجمالي الأقساط (${totalPlanned}) لا يطابق المبلغ المستحق بعد الخصم (${targetCollect})`,
+            ErrorCodes.VALIDATION_ERROR,
+          );
+        }
+        plan = opts.installments.map((row, idx) => {
+          const out: { installmentNumber: number; plannedAmount: number; dueDate: string; notes?: string } = {
+            installmentNumber: idx + 1,
+            plannedAmount: toMoneyNum(row.plannedAmount),
+            dueDate: row.dueDate,
+          };
+          if (row.notes) out.notes = row.notes;
+          return out;
+        });
+      } else if (opts.installmentsCount && opts.installmentsCount >= 2) {
+        const n = Math.min(opts.installmentsCount, 36);
+        const interval = opts.installmentIntervalDays || 30;
+        const firstDueStr =
+          opts.installmentFirstDueDate || opts.dueDate || toDateOnly(addDays(new Date(), interval));
+        const firstDue = new Date((firstDueStr || '') + 'T00:00:00Z');
+        const amounts = splitAmount(targetCollect, n);
+        plan = amounts.map((amt, idx) => ({
+          installmentNumber: idx + 1,
+          plannedAmount: amt,
+          dueDate: toDateOnly(addDays(firstDue, idx * interval)) as string,
+        }));
+      } else {
+        throw new ApiError(
+          400,
+          'لخطة الأقساط: أعطِ installmentsCount أو installments[] (الحد الأدنى قسطان)',
+          ErrorCodes.VALIDATION_ERROR,
+        );
+      }
+    }
+
+    const isCash = opts.paymentMode === 'cash';
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(
+        `UPDATE course_invoices SET
+           payment_mode  = $1,
+           amount_due    = $2,
+           discount_total = $3,
+           amount_paid   = $4,
+           invoice_date  = COALESCE($5::date, invoice_date),
+           due_date      = $6::date,
+           notes         = $7,
+           invoice_status = $8,
+           paid_date     = $9,
+           updated_at    = NOW()
+         WHERE id = $10`,
+        [
+          opts.paymentMode,
+          amountDue,
+          discount,
+          isCash ? targetCollect : 0,
+          opts.invoiceDate || null,
+          opts.dueDate || null,
+          opts.notes ?? null,
+          isCash ? 'paid' : 'pending',
+          isCash ? new Date() : null,
+          opts.invoiceId,
+        ],
+      );
+      // Regenerate the installment rows from scratch.
+      await client.query('DELETE FROM invoice_installments WHERE invoice_id = $1', [opts.invoiceId]);
+      for (const p of plan) {
+        await client.query(
+          `INSERT INTO invoice_installments (invoice_id, installment_number, planned_amount, due_date, notes)
+           VALUES ($1, $2, $3, $4::date, $5)`,
+          [opts.invoiceId, p.installmentNumber, p.plannedAmount, p.dueDate, p.notes || null],
+        );
+      }
+      await client.query('COMMIT');
+    } catch (e) {
+      await client.query('ROLLBACK');
+      throw e;
+    } finally {
+      client.release();
+    }
+    return await CourseInvoiceModel.findById(opts.invoiceId);
+  }
+
   static async getInvoiceFull(teacherId: string, invoiceId: string) {
     const invoice = await this.getOwnedInvoice(teacherId, invoiceId);
+    // Enrich with student + course names (the bare invoice row has only ids).
+    const named = await pool.query(
+      `SELECT u.name AS student_name, c.course_name
+         FROM course_invoices ci
+         JOIN users u   ON u.id = ci.student_id
+         JOIN courses c ON c.id = ci.course_id
+        WHERE ci.id = $1`,
+      [invoiceId],
+    );
+    if (named.rows[0]) {
+      (invoice as any).student_name = named.rows[0].student_name;
+      (invoice as any).course_name = named.rows[0].course_name;
+    }
     const installments = (await InvoiceInstallmentModel.listByInvoice(invoiceId)) || [];
     const todayStr = toDateOnly(new Date()) as string;
 
