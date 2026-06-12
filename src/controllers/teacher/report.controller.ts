@@ -129,12 +129,14 @@ export class TeacherReportController {
         videoGross > 0 ? Number(((videoCommission / videoGross) * 100).toFixed(2)) : 0,
     };
 
-    // The teacher's NET video income is realized money — it counts toward both
-    // the expected (due) and the actual (paid) income bases.
-    const totalPaidIncome =
-      studentInvoices.totalPaid + reservation.totalPaid + videoNet;
-    const totalDueIncome =
-      studentInvoices.totalDue + reservation.totalDue + videoNet;
+    // Video-course earnings are deliberately EXCLUDED from the profit totals.
+    // That money is held in the teacher's wallet (credited net-of-commission on
+    // payment) and is withdrawn separately — it is not part of the in-person
+    // course business profit the financial report describes. The wallet screen
+    // owns the dedicated video earned/withdrawn/remaining report instead. The
+    // `videoCourses` block below is kept for reference only.
+    const totalPaidIncome = studentInvoices.totalPaid + reservation.totalPaid;
+    const totalDueIncome = studentInvoices.totalDue + reservation.totalDue;
     const netProfitPaidBasis = totalPaidIncome - expensesTotal;
     const netProfitDueBasis =
       totalDueIncome -

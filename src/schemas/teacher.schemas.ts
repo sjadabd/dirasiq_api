@@ -669,3 +669,15 @@ export const walletTopupBodySchema = z.object({
 });
 
 export type WalletTopupInput = z.infer<typeof walletTopupBodySchema>;
+
+export const walletWithdrawalBodySchema = z.object({
+  amount: z
+    .number({ error: 'المبلغ مطلوب' })
+    .int('المبلغ يجب أن يكون عدداً صحيحاً')
+    .min(1000, 'الحد الأدنى للسحب 1000 د.ع')
+    .max(50_000_000, 'الحد الأقصى للسحب 50,000,000 د.ع'),
+  notes: z.string().trim().max(500).optional(),
+  destination: z.string().trim().max(500).optional(),
+});
+
+export type WalletWithdrawalInput = z.infer<typeof walletWithdrawalBodySchema>;
