@@ -91,6 +91,23 @@ export class TeacherInvoiceService {
       throw new ApiError(400, 'الخصم لا يمكن أن يتجاوز المبلغ المستحق', ErrorCodes.VALIDATION_ERROR);
     }
 
+    // One invoice per (student, course): block a second invoice for the same
+    // student in the same course (ignores soft-deleted ones so a deleted
+    // invoice can be re-issued).
+    const dup = await pool.query(
+      `SELECT id FROM course_invoices
+        WHERE teacher_id = $1 AND student_id = $2 AND course_id = $3 AND deleted_at IS NULL
+        LIMIT 1`,
+      [opts.teacherId, opts.studentId, opts.courseId],
+    );
+    if (dup.rows.length > 0) {
+      throw new ApiError(
+        409,
+        'يوجد فاتورة لهذا الطالب في هذا الكورس بالفعل',
+        ErrorCodes.ALREADY_EXISTS,
+      );
+    }
+
     // 1. Create the base invoice (always type='course' — see header comment).
     const invoice = await CourseInvoiceModel.create({
       studentId: opts.studentId,
