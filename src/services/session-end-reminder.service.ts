@@ -75,7 +75,10 @@ export class SessionEndReminderService {
 
     for (const s of sessions) {
       try {
-        await pool.query(
+        // RETURNING yields ONLY the rows actually inserted (ON CONFLICT DO
+        // NOTHING skips students already present / on leave / manually marked),
+        // so we notify exactly the students newly marked absent.
+        const inserted = await pool.query(
           `INSERT INTO session_attendance
              (session_id, course_id, teacher_id, student_id, occurred_on, source, meta)
            SELECT $1, $2, $3, sa.student_id,
@@ -86,9 +89,23 @@ export class SessionEndReminderService {
                          AND u.user_type = 'student'
                          AND u.deleted_at IS NULL
             WHERE sa.session_id = $1
-           ON CONFLICT (session_id, student_id, occurred_on) DO NOTHING`,
+           ON CONFLICT (session_id, student_id, occurred_on) DO NOTHING
+           RETURNING student_id::text AS student_id`,
           [s.id, s.course_id, s.teacher_id],
         );
+        const newlyAbsent = inserted.rows.map((r: any) => String(r.student_id));
+        if (newlyAbsent.length > 0) {
+          await this.notif.createAndSendNotification({
+            title: 'تسجيل غياب',
+            message: 'تم تسجيلك غائباً في محاضرة اليوم لعدم تسجيل حضورك',
+            type: NotificationType.COURSE_UPDATE,
+            priority: NotificationPriority.HIGH,
+            recipientType: RecipientType.SPECIFIC_STUDENTS,
+            recipientIds: newlyAbsent,
+            data: { sessionId: s.id, courseId: s.course_id, subType: 'attendance_absent' },
+            createdBy: String(s.teacher_id),
+          });
+        }
       } catch (e) {
         console.error('Failed to auto-mark absentees for session', s.id, e);
       }

@@ -86,7 +86,7 @@ export class AttendanceModel {
   }
 
   // Get all students of a session with their attendance status for a given date
-  static async getSessionAttendanceForDate(sessionId: string, dateISO: string): Promise<Array<{ student_id: string; student_name: string; status: 'present' | 'absent' | 'leave'; checkin_at: string | null }>> {
+  static async getSessionAttendanceForDate(sessionId: string, dateISO: string): Promise<Array<{ student_id: string; student_name: string; status: 'present' | 'absent' | 'leave' | null; checkin_at: string | null }>> {
     const q = `
       SELECT
         sa.student_id::text,
@@ -105,12 +105,14 @@ export class AttendanceModel {
     const r = await pool.query(q, [sessionId, dateISO]);
     return r.rows.map((row: any) => {
       const raw = row.raw_status as string | null;
-      let status: 'present' | 'absent' | 'leave';
+      let status: 'present' | 'absent' | 'leave' | null;
       if (raw === 'leave') status = 'leave';
       else if (raw === 'present') status = 'present';
       else if (raw === 'absent') status = 'absent';
       else if (row.checkin_at) status = 'present';
-      else status = 'absent';
+      // No attendance row yet → empty (NOT assumed absent). The auto-absent job
+      // fills it in only after the session ends.
+      else status = null;
       return {
         student_id: String(row.student_id),
         student_name: String(row.student_name),
