@@ -7,6 +7,7 @@
 import type { Request, Response } from 'express';
 
 import { VideoCourseService } from '../../services/video-course.service';
+import { VideoCourseTargetCourseModel } from '../../models/video-course-target-course.model';
 import { getStorageBackend } from '../../services/storage';
 import { ok, paginated } from '../../utils/response.util';
 import { parsePagination, buildPaginationMeta } from '../../utils/pagination';
@@ -56,7 +57,10 @@ export class TeacherVideoCourseController {
       id,
       teacherId: req.user.id,
     });
-    res.status(200).json(ok({ course }, 'تفاصيل الدورة'));
+    // The live (in-person) courses this video course is linked to — lets the
+    // edit form prefill the "ربط بكورس حضوري" picker.
+    const targetCourses = await VideoCourseTargetCourseModel.listForVideoCourse(id);
+    res.status(200).json(ok({ course, targetCourses }, 'تفاصيل الدورة'));
   }
 
   // GET /api/teacher/video-courses/:id/lessons
