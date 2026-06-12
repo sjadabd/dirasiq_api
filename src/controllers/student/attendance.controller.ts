@@ -55,7 +55,11 @@ export class StudentAttendanceController {
       );
     }
 
-    const occurredOnISO = new Date().toISOString().substring(0, 10);
+    // Use the Asia/Baghdad calendar date (not UTC) so QR check-in, manual
+    // teacher edits, and the auto-absent job all key on the same occurred_on.
+    const occurredOnISO = new Date().toLocaleDateString('en-CA', {
+      timeZone: 'Asia/Baghdad',
+    });
 
     const already = await AttendanceModel.hasCheckedIn(session.id, me.id, occurredOnISO);
     if (already) {

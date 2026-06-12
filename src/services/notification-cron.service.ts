@@ -36,6 +36,10 @@ export class NotificationCronService {
       return;
     }
 
+    // One-time on boot: purge stray attendance rows whose date's weekday doesn't
+    // match their session (artifacts of the old "default to today" bug).
+    void this.sessionEndReminderService.cleanupWeekdayMismatchedAttendance();
+
     // Run every minute to check for pending notifications
     cron.schedule('* * * * *', async () => {
       try {
@@ -46,6 +50,8 @@ export class NotificationCronService {
         await this.sessionStartReminderService.sendThirtyMinuteBeforeStartStudentReminders();
         // Also send 3-minute-before-end reminders for sessions ending soon
         await this.sessionEndReminderService.sendThreeMinuteBeforeEndReminders();
+        // After a session ends, auto-mark un-checked-in attendees as absent
+        await this.sessionEndReminderService.markAbsenteesForEndedSessions();
       } catch (error) {
         console.error('❌ Error processing pending notifications:', error);
       }
