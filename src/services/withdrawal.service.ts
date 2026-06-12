@@ -25,13 +25,54 @@ import {
   type WithdrawalRequestRow,
   type PayoutMethod,
 } from '../models/teacher-withdrawal-request.model';
+import { NotificationType, RecipientType } from '../models/notification.model';
 import { WalletLedgerEntryType } from '../types';
 import { ApiError, ErrorCodes } from '../utils/api-error';
 import { ImageService } from '../utils/image.service';
 import { logger } from '../utils/logger';
+import { getNotificationService } from './services-registry';
 
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
+}
+
+function fmtIqd(n: number): string {
+  return Math.round(n).toLocaleString('en-US');
+}
+
+/**
+ * Fire-and-forget push + inbox notification to the teacher on every status
+ * change. Tapping the notification deep-links to the wallet screen (which hosts
+ * the "السحوبات" section). Never throws — a notification failure must not roll
+ * back the payout transition.
+ */
+async function notifyTeacher(args: {
+  teacherId: string;
+  actorUserId: string;
+  title: string;
+  message: string;
+  subType: string;
+  withdrawalId: string;
+}): Promise<void> {
+  const notif = getNotificationService();
+  if (!notif) return;
+  try {
+    await notif.createAndSendNotification({
+      title: args.title,
+      message: args.message,
+      type: NotificationType.PAYMENT_REMINDER,
+      recipientType: RecipientType.SPECIFIC_TEACHERS,
+      recipientIds: [args.teacherId],
+      data: {
+        subType: args.subType,
+        withdrawalId: args.withdrawalId,
+        route: '/teacher/wallet',
+      },
+      createdBy: args.actorUserId,
+    });
+  } catch (err) {
+    logger.warn({ err, withdrawalId: args.withdrawalId }, 'withdrawal notification failed');
+  }
 }
 
 interface LockedWallet {
@@ -161,6 +202,14 @@ export class WithdrawalService {
     if (!rows[0]) {
       throw new ApiError(409, 'تغيّرت حالة الطلب', ErrorCodes.CONFLICT);
     }
+    await notifyTeacher({
+      teacherId: rows[0].teacher_id,
+      actorUserId: args.adminId,
+      title: 'تمت الموافقة على طلب السحب',
+      message: `تمت الموافقة على سحب ${fmtIqd(Number(rows[0].amount_iqd))} د.ع — سيتم التحويل خلال 24 ساعة إلى 3 أيام.`,
+      subType: 'withdrawal_approved',
+      withdrawalId: rows[0].id,
+    });
     return rows[0];
   }
 
@@ -237,6 +286,14 @@ export class WithdrawalService {
         { withdrawalId: req.id, teacherId: req.teacher_id, heldFromVideo, heldFromTopup },
         'withdrawal rejected — hold released'
       );
+      await notifyTeacher({
+        teacherId: req.teacher_id,
+        actorUserId: args.adminId,
+        title: 'تم رفض طلب السحب',
+        message: `تم رفض طلب سحب ${fmtIqd(Number(req.amount_iqd))} د.ع وأُعيد المبلغ إلى محفظتك. السبب: ${args.reason}`,
+        subType: 'withdrawal_rejected',
+        withdrawalId: req.id,
+      });
       return rows[0]!;
     } catch (err) {
       await client.query('ROLLBACK').catch(() => undefined);
@@ -334,6 +391,14 @@ export class WithdrawalService {
         { withdrawalId: req.id, teacherId: req.teacher_id, amount, method: args.method },
         'withdrawal marked paid'
       );
+      await notifyTeacher({
+        teacherId: req.teacher_id,
+        actorUserId: args.adminId,
+        title: 'تم تحويل مبلغ السحب',
+        message: `تم تحويل ${fmtIqd(amount)} د.ع إلى حسابك. يمكنك عرض وصل التحويل في المحفظة.`,
+        subType: 'withdrawal_paid',
+        withdrawalId: req.id,
+      });
       return rows[0];
     } catch (err) {
       await client.query('ROLLBACK').catch(() => undefined);
