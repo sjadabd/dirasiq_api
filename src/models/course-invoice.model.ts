@@ -94,7 +94,7 @@ export class CourseInvoiceModel {
         WHEN amount_paid > 0 AND remaining_amount > 0 THEN 'partial'
         ELSE 'pending'
       END,
-      paid_date = CASE WHEN remaining_amount = 0 THEN (CURRENT_DATE)::text ELSE paid_date END,
+      paid_date = CASE WHEN remaining_amount = 0 THEN now() ELSE paid_date END,
       updated_at = NOW()
       WHERE id = $1
       RETURNING *
