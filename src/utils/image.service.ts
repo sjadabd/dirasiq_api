@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 
@@ -8,6 +9,66 @@ export class ImageService {
     'uploads',
     'courses'
   );
+
+  // PRIVATE storage root — NOT under `public/`, so it is never served by the
+  // static middleware. Used for sensitive documents (e.g. bank transfer
+  // receipts) that must only be reachable through an auth + ownership-checked
+  // streaming endpoint.
+  private static privateDir = path.join(process.cwd(), 'private');
+
+  /**
+   * Save a base64 data-URL image into a PRIVATE sub-directory (outside
+   * `public/`). Returns the storage KEY `"<subdir>/<filename>"` (NOT a public
+   * URL). Read it back only via `readPrivateFile`. The filename suffix uses a
+   * cryptographically strong random token so the key is unguessable.
+   */
+  static async saveBase64ImagePrivate(
+    base64Data: string,
+    subdir: string,
+    filenamePrefix: string
+  ): Promise<string> {
+    const match = base64Data.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+    if (!match) throw new Error('Invalid base64 image format');
+    const [, mimeType, base64String] = match;
+    if (!mimeType || !mimeType.startsWith('image/')) {
+      throw new Error('Invalid image mime type');
+    }
+    if (!base64String) throw new Error('Invalid base64 data');
+
+    const safeSub = subdir.replace(/[^a-z0-9_-]/gi, '');
+    const dir = path.join(this.privateDir, safeSub);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+
+    const buffer = Buffer.from(base64String, 'base64');
+    const token = crypto.randomBytes(16).toString('hex');
+    const ext = (mimeType.split('/')[1] || 'png').replace(/[^a-z0-9]/gi, '');
+    const filename = `${filenamePrefix}_${token}.${ext}`;
+    fs.writeFileSync(path.join(dir, filename), buffer);
+    return `${safeSub}/${filename}`;
+  }
+
+  /**
+   * Resolve a private storage key to an absolute path, refusing any traversal.
+   * Returns null if the key is malformed or the file is missing.
+   */
+  static resolvePrivatePath(key: string): string | null {
+    if (!key || key.includes('..') || path.isAbsolute(key)) return null;
+    const abs = path.join(this.privateDir, key);
+    // Ensure the resolved path stays inside privateDir.
+    const rel = path.relative(this.privateDir, abs);
+    if (rel.startsWith('..') || path.isAbsolute(rel)) return null;
+    return fs.existsSync(abs) ? abs : null;
+  }
+
+  /** Best-effort delete of a private file by its storage key. */
+  static deletePrivateFile(key: string): void {
+    try {
+      const abs = this.resolvePrivatePath(key);
+      if (abs) fs.unlinkSync(abs);
+    } catch {
+      /* ignore */
+    }
+  }
   private static usersUploadsDir = path.join(
     process.cwd(),
     'public',

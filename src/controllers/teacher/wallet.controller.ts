@@ -4,6 +4,8 @@ import pool from '../../config/database';
 import { TeacherWalletTransactionModel } from '../../models/teacher-wallet-transaction.model';
 import { TeacherWithdrawalRequestModel } from '../../models/teacher-withdrawal-request.model';
 import { WithdrawalService } from '../../services/withdrawal.service';
+import { ApiError, ErrorCodes } from '../../utils/api-error';
+import { ImageService } from '../../utils/image.service';
 import { ok, paginated } from '../../utils/response.util';
 import { buildPaginationMeta, parsePagination } from '../../utils/pagination';
 
@@ -96,9 +98,33 @@ export class TeacherWalletController {
   static async listWithdrawals(req: Request, res: Response): Promise<void> {
     const teacherId = req.user.id as string;
     const { page, limit, offset } = parsePagination(req.query);
-    const items = await TeacherWithdrawalRequestModel.listByTeacher(teacherId, limit, offset);
+    const { items, total } = await TeacherWithdrawalRequestModel.listByTeacherPaged(
+      teacherId,
+      limit,
+      offset
+    );
     res
       .status(200)
-      .json(paginated(items, buildPaginationMeta(items.length, page, limit), 'تم جلب طلبات السحب'));
+      .json(paginated(items, buildPaginationMeta(total, page, limit), 'تم جلب طلبات السحب'));
+  }
+
+  /**
+   * Stream the transfer-receipt image for one of the teacher's OWN paid
+   * withdrawals. The file lives in private storage and is never publicly
+   * served; ownership is enforced here (the row must belong to req.user.id).
+   */
+  static async getWithdrawalReceipt(req: Request, res: Response): Promise<void> {
+    const teacherId = req.user.id as string;
+    const { id } = req.params as { id: string };
+    const row = await TeacherWithdrawalRequestModel.findById(id);
+    if (!row || row.teacher_id !== teacherId || !row.payout_receipt_url) {
+      throw new ApiError(404, 'لا يوجد وصل لهذا الطلب', ErrorCodes.NOT_FOUND);
+    }
+    const abs = ImageService.resolvePrivatePath(row.payout_receipt_url);
+    if (!abs) {
+      throw new ApiError(404, 'تعذّر العثور على صورة الوصل', ErrorCodes.NOT_FOUND);
+    }
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.sendFile(abs);
   }
 }

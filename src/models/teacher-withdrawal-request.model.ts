@@ -87,6 +87,27 @@ export class TeacherWithdrawalRequestModel {
     return rows;
   }
 
+  static async listByTeacherPaged(
+    teacherId: string,
+    limit: number,
+    offset: number
+  ): Promise<{ items: WithdrawalRequestRow[]; total: number }> {
+    const [list, count] = await Promise.all([
+      pool.query<WithdrawalRequestRow>(
+        `SELECT * FROM teacher_withdrawal_requests
+          WHERE teacher_id = $1
+          ORDER BY created_at DESC
+          LIMIT $2 OFFSET $3`,
+        [teacherId, limit, offset]
+      ),
+      pool.query<{ count: string }>(
+        `SELECT COUNT(*)::int AS count FROM teacher_withdrawal_requests WHERE teacher_id = $1`,
+        [teacherId]
+      ),
+    ]);
+    return { items: list.rows, total: Number(count.rows[0]?.count ?? 0) };
+  }
+
   /**
    * Admin inbox: requests joined to the teacher name/email. Optional status
    * filter. Most-recent first.

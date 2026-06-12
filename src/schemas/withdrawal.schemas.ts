@@ -27,8 +27,11 @@ export const withdrawalMarkPaidBodySchema = z.object({
   reference: z.string().trim().max(255).optional(),
   destination: z.string().trim().max(500).optional(),
   // Base64 data URL of the transfer-receipt image. Required — the teacher must
-  // see proof of the payout.
+  // see proof of the payout. Capped at ~8 MB of base64 (≈ 6 MB image) so a huge
+  // payload can't be buffered to disk; the global 1000 MB body limit is not a
+  // safe bound here.
   receiptImage: z
     .string({ error: 'صورة وصل التحويل مطلوبة' })
-    .regex(/^data:image\/[A-Za-z.+-]+;base64,/, 'صيغة صورة الوصل غير صالحة'),
+    .regex(/^data:image\/[A-Za-z.+-]+;base64,/, 'صيغة صورة الوصل غير صالحة')
+    .max(8_000_000, 'حجم صورة الوصل كبير جداً (الحد الأقصى ~6 ميغابايت)'),
 });

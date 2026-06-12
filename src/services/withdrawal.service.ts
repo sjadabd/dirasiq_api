@@ -325,12 +325,15 @@ export class WithdrawalService {
       );
     }
 
-    // Persist the receipt image first; a failure here must not flip the status.
-    let receiptUrl: string;
+    // Persist the receipt into PRIVATE storage (never publicly served) — it is
+    // a bank transfer slip and must only be reachable via the auth + ownership
+    // checked streaming endpoints. A failure here must not flip the status.
+    let receiptKey: string;
     try {
-      receiptUrl = await ImageService.saveBase64Image(
+      receiptKey = await ImageService.saveBase64ImagePrivate(
         args.receiptImageBase64,
-        `withdrawal_receipt_${req.id}`
+        'withdrawal-receipts',
+        `wr_${req.id}`
       );
     } catch {
       throw new ApiError(
@@ -379,7 +382,7 @@ export class WithdrawalService {
           args.method,
           args.reference ?? null,
           args.destination ?? null,
-          receiptUrl,
+          receiptKey,
         ]
       );
       if (!rows[0]) {
@@ -402,6 +405,9 @@ export class WithdrawalService {
       return rows[0];
     } catch (err) {
       await client.query('ROLLBACK').catch(() => undefined);
+      // The receipt was written before the transaction; on any failure it is
+      // orphaned — remove it so it can't accumulate on disk.
+      ImageService.deletePrivateFile(receiptKey);
       throw err;
     } finally {
       client.release();

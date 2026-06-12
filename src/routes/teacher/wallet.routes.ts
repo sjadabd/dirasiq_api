@@ -52,6 +52,13 @@ router.post(
   asyncHandler(TeacherWalletController.createWithdrawal)
 );
 
+// Auth + ownership-checked receipt stream (the file lives in PRIVATE storage,
+// never under the public /uploads path).
+router.get(
+  '/withdrawals/:id/receipt',
+  asyncHandler(TeacherWalletController.getWithdrawalReceipt)
+);
+
 // Tighter rate-limit on the topup-link creation endpoint: 10 requests per
 // hour per IP. A topup is a real human flow (teacher hits "شحن" → enters
 // amount → confirms) — 10/h is plenty. Stops scripted abuse where the same

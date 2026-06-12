@@ -45,4 +45,10 @@ router.patch(
   asyncHandler(SuperAdminWithdrawalController.markPaid)
 );
 
+router.get(
+  '/:id/receipt',
+  validate({ params: withdrawalIdParamSchema }),
+  asyncHandler(SuperAdminWithdrawalController.getReceipt)
+);
+
 export default router;
