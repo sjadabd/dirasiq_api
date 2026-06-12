@@ -93,8 +93,48 @@ export class TeacherReportController {
 
     const expensesTotal = await TeacherExpenseModel.sum(teacherId, from, to, studyYear);
 
-    const totalPaidIncome = studentInvoices.totalPaid + reservation.totalPaid;
-    const totalDueIncome = studentInvoices.totalDue + reservation.totalDue;
+    // Paid video-course sales. The platform takes a commission; the teacher's
+    // realized income is teacher_net_iqd. Video courses are not study-year
+    // scoped, so only the optional date window (on paid_at) applies.
+    const vConds: string[] = ['vp.teacher_id = $1', "vp.status = 'paid'"];
+    const vParams: unknown[] = [teacherId];
+    let vp = 2;
+    if (from) {
+      vConds.push(`vp.paid_at::date >= $${vp++}::date`);
+      vParams.push(from);
+    }
+    if (to) {
+      vConds.push(`vp.paid_at::date <= $${vp++}::date`);
+      vParams.push(to);
+    }
+    const videoQ = `
+      SELECT
+        COUNT(*)::int                              AS sales_count,
+        COALESCE(SUM(vp.amount_iqd),0)::decimal              AS total_gross,
+        COALESCE(SUM(vp.platform_commission_iqd),0)::decimal AS platform_commission,
+        COALESCE(SUM(vp.teacher_net_iqd),0)::decimal         AS teacher_net
+      FROM video_course_purchases vp
+      WHERE ${vConds.join(' AND ')}
+    `;
+    const resVideo = await pool.query(videoQ, vParams);
+    const videoGross = Number(resVideo.rows[0].total_gross || 0);
+    const videoCommission = Number(resVideo.rows[0].platform_commission || 0);
+    const videoNet = Number(resVideo.rows[0].teacher_net || 0);
+    const videoCourses = {
+      salesCount: Number(resVideo.rows[0].sales_count || 0),
+      totalGross: videoGross,
+      platformCommission: videoCommission,
+      teacherNet: videoNet,
+      commissionPercent:
+        videoGross > 0 ? Number(((videoCommission / videoGross) * 100).toFixed(2)) : 0,
+    };
+
+    // The teacher's NET video income is realized money — it counts toward both
+    // the expected (due) and the actual (paid) income bases.
+    const totalPaidIncome =
+      studentInvoices.totalPaid + reservation.totalPaid + videoNet;
+    const totalDueIncome =
+      studentInvoices.totalDue + reservation.totalDue + videoNet;
     const netProfitPaidBasis = totalPaidIncome - expensesTotal;
     const netProfitDueBasis =
       totalDueIncome -
@@ -106,12 +146,14 @@ export class TeacherReportController {
         {
           filters: { from: from ?? null, to: to ?? null, studyYear: studyYear ?? null },
           invoices: { student: studentInvoices, reservation },
+          videoCourses,
           expenses: { total: expensesTotal },
           summary: {
             totalPaidIncome,
             totalDueIncome,
             netProfitPaidBasis,
             netProfitDueBasis,
+            videoTeacherNet: videoNet,
           },
         },
         'تم جلب التقرير المالي'
