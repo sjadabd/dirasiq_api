@@ -18,8 +18,17 @@ export class StudentCourseController {
     const page = query.page ?? 1;
     const limit = query.limit ?? 10;
 
-    // Throws 404 NOT_FOUND if the student has no active grade.
-    const { grades } = await StudentService.getActiveGrades(studentId);
+    // Released clients render non-200 responses as a generic loading error.
+    // No active grade means there are no matching suggestions, not a failure.
+    const { grades } = await StudentService.getActiveGrades(studentId, {
+      allowEmpty: true,
+    });
+    if (grades.length === 0) {
+      res
+        .status(200)
+        .json(ok({ courses: [], count: 0 }, 'لا توجد دورات مطابقة حالياً'));
+      return;
+    }
 
     // Returns null if the student has no location → fall back to the
     // "newest courses for my grade" path. Any other failure (student not

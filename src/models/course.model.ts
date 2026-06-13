@@ -431,9 +431,15 @@ export class CourseModel {
         s.name as subject_name,
         (
           6371 * acos(
-            cos(radians($1)) * cos(radians(u.latitude)) *
-            cos(radians(u.longitude) - radians($2)) +
-            sin(radians($1)) * sin(radians(u.latitude))
+            LEAST(
+              1.0::double precision,
+              GREATEST(
+                -1.0::double precision,
+                cos(radians($1)) * cos(radians(u.latitude)) *
+                cos(radians(u.longitude) - radians($2)) +
+                sin(radians($1)) * sin(radians(u.latitude))
+              )
+            )
           )
         ) as distance
       FROM courses c
@@ -448,9 +454,15 @@ export class CourseModel {
         AND u.longitude IS NOT NULL
         AND (
           6371 * acos(
-            cos(radians($1)) * cos(radians(u.latitude)) *
-            cos(radians(u.longitude) - radians($2)) +
-            sin(radians($1)) * sin(radians(u.latitude))
+            LEAST(
+              1.0::double precision,
+              GREATEST(
+                -1.0::double precision,
+                cos(radians($1)) * cos(radians(u.latitude)) *
+                cos(radians(u.longitude) - radians($2)) +
+                sin(radians($1)) * sin(radians(u.latitude))
+              )
+            )
           )
         ) <= $4
       ORDER BY distance ASC, c.created_at DESC

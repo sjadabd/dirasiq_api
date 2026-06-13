@@ -30,10 +30,15 @@ export class StudentService {
   // Lookups
   // -------------------------------------------------------------------------
 
-  /** Throws 404 if the student has no active grades. */
-  static async getActiveGrades(studentId: string): Promise<{ grades: StudentGrade[] }> {
-    const studentGrades = await StudentGradeModel.findActiveByStudentId(studentId);
+  /** Throws 404 if the student has no active grades unless allowEmpty is set. */
+  static async getActiveGrades(
+    studentId: string,
+    options: { allowEmpty?: boolean } = {}
+  ): Promise<{ grades: StudentGrade[] }> {
+    const studentGrades =
+      await StudentGradeModel.findActiveByStudentId(studentId);
     if (!studentGrades || studentGrades.length === 0) {
+      if (options.allowEmpty) return { grades: [] };
       throw new ApiError(404, 'لا يوجد صف نشط', ErrorCodes.NOT_FOUND);
     }
     return { grades: studentGrades };
