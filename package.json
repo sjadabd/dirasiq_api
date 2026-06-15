@@ -13,7 +13,9 @@
     "lint:fix": "eslint src/**/*.ts --fix",
     "format": "prettier --write src/**/*.{ts,js,json}",
     "format:check": "prettier --check src/**/*.{ts,js,json}",
-    "db:init": "ts-node -r tsconfig-paths/register src/database/init.ts"
+    "db:init": "ts-node -r tsconfig-paths/register src/database/init.ts",
+    "seed:apple-review": "node dist/scripts/seed_apple_review_accounts.js",
+    "seed:apple-review:src": "ts-node -r tsconfig-paths/register src/scripts/seed_apple_review_accounts.ts"
   },
   "keywords": [
     "api",
