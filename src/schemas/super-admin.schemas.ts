@@ -109,6 +109,11 @@ export const bookingConfirmFeeBodySchema = z.object({
   feeIqd: moneySchema,
 });
 
+export const paymentFeaturesBodySchema = z.object({
+  videoCoursePurchasesEnabled: z.boolean(),
+  teacherWalletTopupsEnabled: z.boolean(),
+});
+
 // =============================================================================
 // Super-admin teacher listing
 // =============================================================================

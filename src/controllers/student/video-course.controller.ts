@@ -26,6 +26,7 @@ import type { Request, Response } from 'express';
 import { VideoCourseAccessService } from '../../services/video-course-access.service';
 import { VideoCoursePurchaseService } from '../../services/video-course-purchase.service';
 import { VideoCourseService } from '../../services/video-course.service';
+import { AppSettingService } from '../../services/app-setting.service';
 import { VideoCourseModel } from '../../models/video-course.model';
 import { ok, paginated } from '../../utils/response.util';
 import { parsePagination, buildPaginationMeta } from '../../utils/pagination';
@@ -244,6 +245,16 @@ export class StudentVideoCourseController {
   static async initiatePurchase(req: Request, res: Response): Promise<void> {
     const studentId = req.user.id as string;
     const id = req.params['id'] as string;
+
+    const features = await AppSettingService.getPaymentFeatures();
+    if (!features.videoCoursePurchasesEnabled) {
+      throw new ApiError(
+        503,
+        'سوف تتوفر هذه الميزة قريبًا',
+        ErrorCodes.SERVICE_UNAVAILABLE,
+        { feature: 'video_course_purchases' }
+      );
+    }
 
     const result = await VideoCoursePurchaseService.initiate({
       studentId,

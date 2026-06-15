@@ -10,6 +10,7 @@ import pinoHttp from 'pino-http';
 
 import { initializeDatabase } from './database/init';
 import authRoutes from './routes/auth.routes';
+import appSettingRoutes from './routes/app-setting.routes';
 import notificationRoutes from './routes/notification.routes';
 import waylRoutes from './routes/payments/wayl.routes';
 import publicNewsRoutes from './routes/public/news.routes';
@@ -290,6 +291,7 @@ try {
 // 🔹 API Routes
 // =====================================================
 app.use('/api/auth', authRoutes);
+app.use('/api/app-settings', appSettingRoutes);
 app.use('/api/student', studentRoutes);
 app.use('/api/teacher', teacherRoutes);
 app.use('/api/academic-years', academicYearRoutes);

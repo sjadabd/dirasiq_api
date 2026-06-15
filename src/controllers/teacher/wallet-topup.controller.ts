@@ -21,6 +21,7 @@ import type { Request, Response } from 'express';
 
 import { WaylPaymentLinkLogModel } from '../../models/wayl-payment-link-log.model';
 import { WaylPaymentLinkModel } from '../../models/wayl-payment-link.model';
+import { AppSettingService } from '../../services/app-setting.service';
 import { WaylService } from '../../services/wayl.service';
 import type { WalletTopupInput } from '../../schemas/teacher.schemas';
 import { ApiError, ErrorCodes } from '../../utils/api-error';
@@ -77,6 +78,16 @@ export class TeacherWalletTopupController {
   static async createTopupLink(req: Request, res: Response): Promise<void> {
     const teacherId = req.user.id as string;
     const { amount } = req.body as WalletTopupInput;
+
+    const features = await AppSettingService.getPaymentFeatures();
+    if (!features.teacherWalletTopupsEnabled) {
+      throw new ApiError(
+        503,
+        'سوف تتوفر هذه الميزة قريبًا',
+        ErrorCodes.SERVICE_UNAVAILABLE,
+        { feature: 'teacher_wallet_topups' }
+      );
+    }
 
     // Env preflight — fail with a clear ops-side message instead of a
     // generic 500 from the Wayl SDK if the merchant token isn't set.

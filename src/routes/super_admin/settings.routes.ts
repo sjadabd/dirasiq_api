@@ -5,7 +5,10 @@ import { authenticateToken, requireRole } from '../../middleware/auth.middleware
 import { validate } from '../../middleware/validate.middleware';
 import { asyncHandler } from '../../utils/async-handler';
 import { UserType } from '../../types';
-import { bookingConfirmFeeBodySchema } from '../../schemas/super-admin.schemas';
+import {
+  bookingConfirmFeeBodySchema,
+  paymentFeaturesBodySchema,
+} from '../../schemas/super-admin.schemas';
 
 const router = Router();
 
@@ -19,6 +22,15 @@ router.put(
   '/booking-confirm-fee',
   validate({ body: bookingConfirmFeeBodySchema }),
   asyncHandler(SuperAdminSettingsController.setBookingConfirmFee)
+);
+router.get(
+  '/payment-features',
+  asyncHandler(SuperAdminSettingsController.getPaymentFeatures)
+);
+router.put(
+  '/payment-features',
+  validate({ body: paymentFeaturesBodySchema }),
+  asyncHandler(SuperAdminSettingsController.setPaymentFeatures)
 );
 
 export default router;
