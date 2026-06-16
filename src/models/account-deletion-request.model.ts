@@ -21,8 +21,8 @@ export type AccountDeletionRequestRow = {
   updated_at: Date;
 };
 
-const ENSURE_TABLE_SQL = `
-CREATE TABLE IF NOT EXISTS account_deletion_requests (
+const ENSURE_TABLE_STATEMENTS = [
+  `CREATE TABLE IF NOT EXISTS account_deletion_requests (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     email           CITEXT NOT NULL,
     phone           VARCHAR(32),
@@ -32,30 +32,29 @@ CREATE TABLE IF NOT EXISTS account_deletion_requests (
                         CHECK (status IN ('pending', 'completed', 'cancelled')),
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE INDEX IF NOT EXISTS idx_account_deletion_requests_email
-    ON account_deletion_requests (email);
-
-CREATE INDEX IF NOT EXISTS idx_account_deletion_requests_pending
-    ON account_deletion_requests (created_at DESC)
-    WHERE status = 'pending';
-`;
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_account_deletion_requests_email
+     ON account_deletion_requests (email)`,
+  `CREATE INDEX IF NOT EXISTS idx_account_deletion_requests_pending
+     ON account_deletion_requests (created_at DESC)
+     WHERE status = 'pending'`,
+];
 
 let tableReady: Promise<void> | null = null;
 
 async function ensureTable(): Promise<void> {
-  try {
-    await pool.query(ENSURE_TABLE_SQL);
-  } catch (err) {
-    logger.error({ err }, 'account_deletion_requests table ensure failed');
-    throw err;
+  for (const sql of ENSURE_TABLE_STATEMENTS) {
+    await pool.query(sql);
   }
 }
 
 function ensureTableOnce(): Promise<void> {
   if (!tableReady) {
-    tableReady = ensureTable();
+    tableReady = ensureTable().catch((err) => {
+      tableReady = null;
+      logger.error({ err }, 'account_deletion_requests table ensure failed');
+      throw err;
+    });
   }
   return tableReady;
 }

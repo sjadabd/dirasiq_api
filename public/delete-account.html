@@ -372,6 +372,7 @@
       <p style="margin-bottom:18px">If you opened this page from the app, complete the form below to submit your deletion request. Deletion will be completed within <strong>30 days</strong>.</p>
 
       <form method="POST" action="/api/public/account-deletion-requests">
+        <input type="hidden" name="source" value="delete-account-page">
         <label for="email">Email address linked to your account</label>
         <input id="email" name="email" type="email" required value="{{EMAIL}}" autocomplete="email" inputmode="email">
 

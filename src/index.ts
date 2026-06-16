@@ -113,6 +113,7 @@ const envOrigins = (process.env['CORS_ALLOWED_ORIGINS'] || '')
 const PRODUCTION_DEFAULT_ORIGINS = [
   'https://mulhimiq.com',
   'https://www.mulhimiq.com',
+  'https://api.mulhimiq.com',
 ];
 
 const DEV_ORIGINS = [
@@ -129,10 +130,14 @@ const allowedOrigins =
 app.use(
   cors({
     origin: (origin, callback) => {
+      // No Origin: same-origin navigation, curl, server-to-server.
       if (!origin) return callback(null, true);
+      // Opaque origin — Flutter / iOS / Android in-app WebViews often send
+      // the literal string "null" when posting from delete-account.html.
+      if (origin === 'null') return callback(null, true);
       if (allowedOrigins.includes(origin)) return callback(null, true);
       logger.warn({ origin }, 'CORS rejected');
-      return callback(new Error('CORS not allowed for this origin'), false);
+      return callback(null, false);
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],

@@ -73,6 +73,18 @@ const normalizeError = (err: unknown): ApiError => {
     );
   }
 
+  // undefined_object (42704) — e.g. citext extension missing.
+  if (pgErr?.code === '42704') {
+    return new ApiError(
+      503,
+      isProduction
+        ? 'حدث خطأ في الخادم'
+        : `Database extension missing (${pgErr.message ?? '42704'}) — run npm run db:init`,
+      ErrorCodes.INTERNAL_ERROR,
+      { pgCode: pgErr.code },
+    );
+  }
+
   // unique violation (23505) — surface as 409.
   if (pgErr?.code === '23505') {
     return new ApiError(409, 'هذا السجل موجود بالفعل', ErrorCodes.ALREADY_EXISTS, {
