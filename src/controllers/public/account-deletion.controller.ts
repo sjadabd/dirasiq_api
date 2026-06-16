@@ -1,35 +1,56 @@
 import type { Request, Response } from 'express';
 
-import { AccountDeletionRequestModel } from '../../models/account-deletion-request.model';
+import {
+  AccountDeletionRequestModel,
+  type AccountDeletionRequestInput,
+} from '../../models/account-deletion-request.model';
 import { UserModel } from '../../models/user.model';
-import { accountDeletionRequestSchema } from '../../schemas/public.schemas';
-import { asyncHandler } from '../../utils/async-handler';
+import type { AccountDeletionRequestBody } from '../../schemas/public.schemas';
+import { UserType } from '../../types';
 import { okEmpty } from '../../utils/response.util';
 
+function optionalTrimmed(value: string | null | undefined): string | null {
+  if (value == null) return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function normalizeUserType(userType: UserType | null | undefined): string | null {
+  if (userType === UserType.STUDENT || userType === UserType.TEACHER) {
+    return userType;
+  }
+  return null;
+}
+
 export class PublicAccountDeletionController {
-  static submit = asyncHandler(async (req: Request, res: Response) => {
-    const body = accountDeletionRequestSchema.parse(req.body);
+  // POST /api/public/account-deletion-requests
+  static async submit(req: Request, res: Response): Promise<void> {
+    const body = req.body as AccountDeletionRequestBody;
     const user = await UserModel.findByEmail(body.email);
 
-    await AccountDeletionRequestModel.create({
+    const input: AccountDeletionRequestInput = {
       email: body.email,
-      phone: body.phone,
-      reason: body.reason,
-      userType: user?.userType ?? null,
-    });
+      phone: optionalTrimmed(body.phone),
+      reason: optionalTrimmed(body.reason),
+      userType: normalizeUserType(user?.userType),
+    };
+
+    await AccountDeletionRequestModel.create(input);
 
     const wantsHtml =
       req.accepts(['html', 'json']) === 'html' ||
       String(req.headers['content-type'] || '').includes('application/x-www-form-urlencoded');
 
     if (wantsHtml) {
-      const email = encodeURIComponent(body.email);
-      res.redirect(302, `/delete-account?submitted=1&email=${email}`);
+      const encodedEmail = encodeURIComponent(body.email);
+      res.redirect(302, `/delete-account?submitted=1&email=${encodedEmail}`);
       return;
     }
 
     res.status(201).json(
-      okEmpty('Your account deletion request has been received. Deletion will be completed within 30 days.'),
+      okEmpty(
+        'Your account deletion request has been received. Deletion will be completed within 30 days.',
+      ),
     );
-  });
+  }
 }

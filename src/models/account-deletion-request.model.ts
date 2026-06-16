@@ -2,9 +2,9 @@ import pool from '../config/database';
 
 export type AccountDeletionRequestInput = {
   email: string;
-  phone?: string | null;
-  reason?: string | null;
-  userType?: string | null;
+  phone: string | null;
+  reason: string | null;
+  userType: string | null;
 };
 
 export class AccountDeletionRequestModel {
@@ -13,12 +13,7 @@ export class AccountDeletionRequestModel {
       `INSERT INTO account_deletion_requests (email, phone, reason, user_type)
        VALUES ($1, $2, $3, $4)
        RETURNING id`,
-      [
-        input.email,
-        input.phone?.trim() || null,
-        input.reason?.trim() || null,
-        input.userType?.trim() || null,
-      ],
+      [input.email, input.phone, input.reason, input.userType],
     );
     return result.rows[0].id as string;
   }
