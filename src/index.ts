@@ -6,6 +6,7 @@ import rateLimit from 'express-rate-limit';
 import helmet from 'helmet';
 import http from 'http';
 import path from 'path';
+import fs from 'fs';
 import pinoHttp from 'pino-http';
 
 import { initializeDatabase } from './database/init';
@@ -14,6 +15,7 @@ import appSettingRoutes from './routes/app-setting.routes';
 import notificationRoutes from './routes/notification.routes';
 import waylRoutes from './routes/payments/wayl.routes';
 import publicNewsRoutes from './routes/public/news.routes';
+import publicAccountDeletionRoutes from './routes/public/account-deletion.routes';
 import publicCatalogRoutes from './routes/public/catalog.routes';
 import publicVideoCourseRoutes from './routes/public/video-course.routes';
 import superAdminVideoCourseRoutes from './routes/super_admin/video-course.routes';
@@ -244,10 +246,19 @@ app.use(
 );
 
 // =====================================================
-// 🔹 Delete Account Info Page
+// 🔹 Delete Account Request Page (students + teachers)
 // =====================================================
-app.get('/delete-account', (_req, res) => {
-  res.sendFile(path.join(__dirname, '../public/delete-account.html'));
+app.get('/delete-account', (req, res) => {
+  const submitted = req.query['submitted'] === '1';
+  const rawEmail = typeof req.query['email'] === 'string' ? req.query['email'] : '';
+  const safeEmail = rawEmail.replace(/[<>"']/g, '').slice(0, 254);
+  const templatePath = path.join(__dirname, '../public/delete-account.html');
+  let html = fs.readFileSync(templatePath, 'utf8');
+  html = html
+    .replace(/\{\{EMAIL\}\}/g, safeEmail)
+    .replace(/\{\{SUCCESS_DISPLAY\}\}/g, submitted ? 'block' : 'none')
+    .replace(/\{\{FORM_DISPLAY\}\}/g, submitted ? 'none' : 'block');
+  res.type('html').send(html);
 });
 
 // =====================================================
@@ -299,6 +310,7 @@ app.use('/api/subjects', subjectRoutes);
 app.use('/api/grades', gradeRoutes);
 app.use('/api/news', newsRoutes);
 app.use('/api/public/news', publicNewsRoutes);
+app.use('/api/public', publicAccountDeletionRoutes);
 app.use('/api/public', publicCatalogRoutes);
 app.use('/api/public/video-courses', publicVideoCourseRoutes);
 app.use('/api/super-admin/video-courses', superAdminVideoCourseRoutes);

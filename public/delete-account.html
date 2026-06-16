@@ -1,30 +1,110 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ar" dir="rtl">
 <head>
 <meta charset="UTF-8">
-<title>Delete Account – MulhimIQ</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>حذف الحساب – MulhimIQ</title>
 <style>
-body { font-family: Arial, sans-serif; margin: 40px; line-height: 1.7; }
-h1 { color: #0d6efd; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: 'Segoe UI', Tahoma, Arial, sans-serif;
+    margin: 0;
+    padding: 24px 16px 48px;
+    background: #f5f7fb;
+    color: #1a1a2e;
+    line-height: 1.7;
+  }
+  .wrap { max-width: 640px; margin: 0 auto; }
+  h1 { text-align: center; color: #0d6efd; margin-bottom: 24px; font-size: 1.75rem; }
+  .card {
+    background: #fff;
+    border-radius: 12px;
+    padding: 24px;
+    box-shadow: 0 4px 24px rgba(0,0,0,.06);
+  }
+  label { display: block; font-weight: 600; margin-bottom: 6px; }
+  input[type="email"], input[type="tel"], textarea {
+    width: 100%;
+    padding: 12px;
+    border: 1px solid #d0d7e2;
+    border-radius: 8px;
+    font-size: 1rem;
+    margin-bottom: 16px;
+  }
+  textarea { min-height: 96px; resize: vertical; }
+  .check { display: flex; gap: 10px; align-items: flex-start; margin: 16px 0 20px; }
+  .check input { margin-top: 4px; }
+  button {
+    width: 100%;
+    padding: 14px;
+    border: none;
+    border-radius: 8px;
+    background: #dc3545;
+    color: #fff;
+    font-size: 1rem;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  button:hover { background: #bb2d3b; }
+  .success { text-align: center; padding: 24px 8px; }
+  .success-icon { font-size: 3rem; color: #198754; margin-bottom: 12px; }
+  ul { margin: 8px 24px 16px 0; }
+  .muted { color: #5c667a; font-size: .95rem; }
+  .footer { text-align: center; margin-top: 24px; font-size: .9rem; color: #5c667a; }
+  a { color: #0d6efd; }
 </style>
 </head>
 <body>
-<h1>Delete Your Account – MulhimIQ</h1>
+<div class="wrap">
+  <h1>حذف الحساب</h1>
+  <div class="card">
 
-<p>You can delete your account directly from within the MulhimIQ app.</p>
+    <div class="success" style="display:{{SUCCESS_DISPLAY}}">
+      <div class="success-icon">✓</div>
+      <h2>تم استلام طلبك بنجاح</h2>
+      <p>ستتم مراجعة الحساب وحذفه خلال مدة أقصاها <strong>30 يومًا</strong> من تاريخ الطلب.
+         سنراسلك على بريدك الإلكتروني عند اكتمال العملية.</p>
+    </div>
 
-<h3>How to Delete Your Account:</h3>
-<ol>
-  <li>Open the MulhimIQ mobile application.</li>
-  <li>Go to your Profile screen (Student: <em>My Profile</em> / Teacher: <em>Profile</em> in the teacher dashboard).</li>
-  <li>Scroll down and tap <strong>"Delete Account"</strong> (حذف الحساب).</li>
-  <li>Confirm the deletion when prompted.</li>
-</ol>
+    <div style="display:{{FORM_DISPLAY}}">
+      <p class="muted">
+        لطلب حذف حسابك وبياناتك في تطبيق <strong>MulhimIQ</strong> («ملهم»)، يرجى تعبئة النموذج التالي.
+        سيتم مراجعة الطلب وحذف الحساب والبيانات المرتبطة به خلال مدة لا تتجاوز <strong>30 يوماً</strong>.
+        <strong>لن يُحذف حسابك فوراً</strong> من التطبيق.
+      </p>
 
-<p>Once confirmed, your account will be removed from active use. This delete process performs a soft delete which prevents access to your profile and associated data.</p>
+      <form method="POST" action="/api/public/account-deletion-requests">
+        <label for="email">البريد الإلكتروني المرتبط بالحساب</label>
+        <input id="email" name="email" type="email" required value="{{EMAIL}}" autocomplete="email">
 
-<p>If you cannot access your account or need assistance, please contact us:</p>
-<p>Email: <strong>support@mulhimiq.com</strong></p>
+        <label for="phone">رقم الهاتف (اختياري)</label>
+        <input id="phone" name="phone" type="tel" autocomplete="tel">
 
+        <label for="reason">سبب الحذف (اختياري)</label>
+        <textarea id="reason" name="reason" placeholder="اختياري"></textarea>
+
+        <label class="check">
+          <input type="checkbox" name="confirm" value="true" required>
+          <span>أؤكد رغبتي في حذف حسابي وبياناتي بشكل دائم.</span>
+        </label>
+
+        <button type="submit">تقديم طلب حذف الحساب</button>
+      </form>
+
+      <h3>ما الذي سيُحذف؟</h3>
+      <ul>
+        <li>معلومات الحساب: الاسم، البريد الإلكتروني، رقم الهاتف.</li>
+        <li>الملف الشخصي والصورة الشخصية.</li>
+        <li>بيانات الاستخدام: الحجوزات، الواجبات، الاختبارات، التقييمات، الرسائل.</li>
+      </ul>
+      <p class="muted">للاستفسار: <strong>mulhim@lamassu-iq.com</strong></p>
+    </div>
+
+  </div>
+  <p class="footer">
+    <a href="https://mulhimiq.com/privacy-policy" target="_blank" rel="noopener">سياسة الخصوصية</a>
+    · © 2026 MulhimIQ
+  </p>
+</div>
 </body>
 </html>

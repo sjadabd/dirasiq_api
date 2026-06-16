@@ -52,14 +52,12 @@ describe('Student API envelope (Phase 1.B-2)', () => {
         '/api/student/bookings',
         '/api/student/attendance/check-in',
       ];
-      const deletePaths = ['/api/student/account'];
 
       const getResults = await Promise.all(getPaths.map((p) => request(app).get(p)));
       const postResults = await Promise.all(postPaths.map((p) => request(app).post(p).send({})));
-      const deleteResults = await Promise.all(deletePaths.map((p) => request(app).delete(p)));
-      const failed = [...getResults, ...postResults, ...deleteResults]
+      const failed = [...getResults, ...postResults]
         .map((res, i) => ({
-          path: [...getPaths, ...postPaths, ...deletePaths][i],
+          path: [...getPaths, ...postPaths][i],
           status: res.status,
         }))
         .filter((r) => r.status !== 401);
