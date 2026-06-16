@@ -8,6 +8,19 @@ export type AccountDeletionRequestInput = {
   userType: string | null;
 };
 
+export type AccountDeletionRequestStatus = 'pending' | 'completed' | 'cancelled';
+
+export type AccountDeletionRequestRow = {
+  id: string;
+  email: string;
+  phone: string | null;
+  reason: string | null;
+  user_type: string | null;
+  status: AccountDeletionRequestStatus;
+  created_at: Date;
+  updated_at: Date;
+};
+
 const ENSURE_TABLE_SQL = `
 CREATE TABLE IF NOT EXISTS account_deletion_requests (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -58,5 +71,53 @@ export class AccountDeletionRequestModel {
       [input.email, input.phone, input.reason, input.userType],
     );
     return result.rows[0].id as string;
+  }
+
+  static async listForAdmin(args: {
+    status?: AccountDeletionRequestStatus;
+    limit: number;
+    offset: number;
+  }): Promise<AccountDeletionRequestRow[]> {
+    await ensureTableOnce();
+
+    const conds: string[] = [];
+    const params: unknown[] = [];
+    let p = 1;
+
+    if (args.status) {
+      conds.push(`status = $${p++}`);
+      params.push(args.status);
+    }
+
+    const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
+    params.push(args.limit, args.offset);
+
+    const { rows } = await pool.query<AccountDeletionRequestRow>(
+      `SELECT id, email, phone, reason, user_type, status, created_at, updated_at
+         FROM account_deletion_requests
+         ${where}
+        ORDER BY created_at DESC
+        LIMIT $${p++} OFFSET $${p++}`,
+      params,
+    );
+
+    return rows;
+  }
+
+  static async countForAdmin(
+    status?: AccountDeletionRequestStatus,
+  ): Promise<number> {
+    await ensureTableOnce();
+
+    const params: unknown[] = [];
+    const where = status ? 'WHERE status = $1' : '';
+    if (status) params.push(status);
+
+    const { rows } = await pool.query<{ count: string }>(
+      `SELECT COUNT(*)::int AS count FROM account_deletion_requests ${where}`,
+      params,
+    );
+
+    return Number(rows[0]?.count ?? 0);
   }
 }
