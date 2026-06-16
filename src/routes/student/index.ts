@@ -38,6 +38,25 @@ const router = Router();
 // /variants/:quality/video.m3u8 only).
 router.use('/video-courses', videoCourseProxyRoutes);
 
+// Self-service account deletion for students AND teachers — mounted before the
+// student-only role gate so both roles share DELETE /api/student/account.
+router.delete(
+  '/account',
+  authenticateToken,
+  asyncHandler(async (req, res) => {
+    const role = req.user.userType;
+    if (role !== UserType.STUDENT && role !== UserType.TEACHER) {
+      throw new ApiError(403, 'غير مصرح', ErrorCodes.FORBIDDEN);
+    }
+    const userId = req.user.id as string;
+    const success = await UserModel.delete(userId);
+    if (!success) {
+      throw new ApiError(400, 'تعذر حذف الحساب', ErrorCodes.INVALID_REQUEST);
+    }
+    res.status(200).json(okEmpty('تم حذف الحساب بنجاح'));
+  }),
+);
+
 router.use(authenticateToken, requireRole(UserType.STUDENT));
 
 router.use('/assignments', assignmentRoutes);
@@ -54,20 +73,5 @@ router.use('/teachers', teacherRoutes);
 router.use('/dashboard', dashboardRoutes);
 router.use('/search', searchRoutes);
 router.use('/video-courses', videoCourseRoutes);
-
-// Self-service account deletion (student only — enforced by the router-level
-// requireRole above). The legacy inline handler used to live here; migrated to
-// the Phase 1 envelope.
-router.delete(
-  '/account',
-  asyncHandler(async (req, res) => {
-    const studentId = req.user.id as string;
-    const success = await UserModel.delete(studentId);
-    if (!success) {
-      throw new ApiError(400, 'تعذر حذف الحساب', ErrorCodes.INVALID_REQUEST);
-    }
-    res.status(200).json(okEmpty('تم حذف الحساب بنجاح'));
-  })
-);
 
 export default router;
