@@ -96,6 +96,18 @@
     height: 22px;
     margin-top: 1px;
   }
+  .error-banner {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    background: var(--danger-soft);
+    border: 1px solid #fecaca;
+    border-radius: var(--radius-sm);
+    padding: 14px 16px;
+    margin-bottom: 20px;
+    font-size: 0.9375rem;
+    color: #991b1b;
+  }
 
   /* Cards */
   .card {
@@ -312,6 +324,11 @@
 
   <!-- Main content + form -->
   <div style="display:{{FORM_DISPLAY}}">
+
+    <div class="error-banner" style="display:{{ERROR_DISPLAY}}">
+      <span aria-hidden="true">⚠</span>
+      <p>We could not submit your deletion request. Please try again or contact <a class="support-link" href="mailto:support@mulhimiq.com">support@mulhimiq.com</a>.</p>
+    </div>
 
     <div class="card">
       <h2><span class="num">1</span> Account Deletion Overview</h2>

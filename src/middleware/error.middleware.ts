@@ -58,9 +58,23 @@ const normalizeError = (err: unknown): ApiError => {
     ]);
   }
 
-  // Postgres unique violation (code 23505) — surface as 409.
+  // Postgres errors — surface with stable codes where possible.
   const pgErr = err as { code?: string; message?: string };
-  if (pgErr && pgErr.code === '23505') {
+
+  // undefined_table (42P01) — usually a missing migration.
+  if (pgErr?.code === '42P01') {
+    return new ApiError(
+      503,
+      isProduction
+        ? 'حدث خطأ في الخادم'
+        : `Database table missing (${pgErr.message ?? '42P01'}) — run npm run db:init`,
+      ErrorCodes.INTERNAL_ERROR,
+      { pgCode: pgErr.code },
+    );
+  }
+
+  // unique violation (23505) — surface as 409.
+  if (pgErr?.code === '23505') {
     return new ApiError(409, 'هذا السجل موجود بالفعل', ErrorCodes.ALREADY_EXISTS, {
       pgCode: pgErr.code,
     });

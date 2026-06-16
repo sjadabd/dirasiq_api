@@ -250,6 +250,7 @@ app.use(
 // =====================================================
 app.get('/delete-account', (req, res) => {
   const submitted = req.query['submitted'] === '1';
+  const hasError = req.query['error'] === '1';
   const rawEmail = typeof req.query['email'] === 'string' ? req.query['email'] : '';
   const safeEmail = rawEmail.replace(/[<>"']/g, '').slice(0, 254);
   const lastUpdated = new Date().toISOString().slice(0, 10);
@@ -259,6 +260,7 @@ app.get('/delete-account', (req, res) => {
     .replace(/\{\{EMAIL\}\}/g, safeEmail)
     .replace(/\{\{LAST_UPDATED\}\}/g, lastUpdated)
     .replace(/\{\{SUCCESS_DISPLAY\}\}/g, submitted ? 'block' : 'none')
+    .replace(/\{\{ERROR_DISPLAY\}\}/g, hasError && !submitted ? 'block' : 'none')
     .replace(/\{\{FORM_DISPLAY\}\}/g, submitted ? 'none' : 'block');
   res.type('html').send(html);
 });

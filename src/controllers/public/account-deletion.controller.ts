@@ -22,35 +22,50 @@ function normalizeUserType(userType: UserType | null | undefined): string | null
   return null;
 }
 
+function isHtmlFormPost(req: Request): boolean {
+  const contentType = String(req.headers['content-type'] || '').toLowerCase();
+  return contentType.includes('application/x-www-form-urlencoded');
+}
+
 export class PublicAccountDeletionController {
   // POST /api/public/account-deletion-requests
   static async submit(req: Request, res: Response): Promise<void> {
-    const body = req.body as AccountDeletionRequestBody;
-    const user = await UserModel.findByEmail(body.email);
+    const htmlForm = isHtmlFormPost(req);
 
-    const input: AccountDeletionRequestInput = {
-      email: body.email,
-      phone: optionalTrimmed(body.phone),
-      reason: optionalTrimmed(body.reason),
-      userType: normalizeUserType(user?.userType),
-    };
+    try {
+      const body = req.body as AccountDeletionRequestBody;
+      const user = await UserModel.findByEmail(body.email);
 
-    await AccountDeletionRequestModel.create(input);
+      const input: AccountDeletionRequestInput = {
+        email: body.email,
+        phone: optionalTrimmed(body.phone),
+        reason: optionalTrimmed(body.reason),
+        userType: normalizeUserType(user?.userType),
+      };
 
-    const wantsHtml =
-      req.accepts(['html', 'json']) === 'html' ||
-      String(req.headers['content-type'] || '').includes('application/x-www-form-urlencoded');
+      await AccountDeletionRequestModel.create(input);
 
-    if (wantsHtml) {
-      const encodedEmail = encodeURIComponent(body.email);
-      res.redirect(302, `/delete-account?submitted=1&email=${encodedEmail}`);
-      return;
+      if (htmlForm) {
+        const encodedEmail = encodeURIComponent(body.email);
+        res.redirect(302, `/delete-account?submitted=1&email=${encodedEmail}`);
+        return;
+      }
+
+      res.status(201).json(
+        okEmpty(
+          'Your account deletion request has been received. Deletion will be completed within 30 days.',
+        ),
+      );
+    } catch (err) {
+      if (htmlForm) {
+        const encodedEmail = encodeURIComponent(
+          optionalTrimmed((req.body as AccountDeletionRequestBody)?.email) ?? '',
+        );
+        const suffix = encodedEmail ? `&email=${encodedEmail}` : '';
+        res.redirect(302, `/delete-account?error=1${suffix}`);
+        return;
+      }
+      throw err;
     }
-
-    res.status(201).json(
-      okEmpty(
-        'Your account deletion request has been received. Deletion will be completed within 30 days.',
-      ),
-    );
   }
 }
