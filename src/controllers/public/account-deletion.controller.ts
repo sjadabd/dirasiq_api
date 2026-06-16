@@ -10,13 +10,12 @@ export class PublicAccountDeletionController {
   static submit = asyncHandler(async (req: Request, res: Response) => {
     const body = accountDeletionRequestSchema.parse(req.body);
     const user = await UserModel.findByEmail(body.email);
-    const userType = user?.userType ?? null;
 
     await AccountDeletionRequestModel.create({
       email: body.email,
       phone: body.phone,
       reason: body.reason,
-      userType,
+      userType: user?.userType ?? null,
     });
 
     const wantsHtml =
@@ -29,6 +28,8 @@ export class PublicAccountDeletionController {
       return;
     }
 
-    res.status(201).json(okEmpty('تم استلام طلبك بنجاح'));
+    res.status(201).json(
+      okEmpty('Your account deletion request has been received. Deletion will be completed within 30 days.'),
+    );
   });
 }

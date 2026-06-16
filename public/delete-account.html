@@ -1,110 +1,414 @@
 <!DOCTYPE html>
-<html lang="ar" dir="rtl">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>حذف الحساب – MulhimIQ</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Delete your MulhimIQ student or teacher account. Account deletion can be initiated directly from the MulhimIQ mobile app.">
+<title>Delete Your MulhimIQ Account</title>
 <style>
-  * { box-sizing: border-box; }
+  :root {
+    --brand: #2563eb;
+    --brand-dark: #1d4ed8;
+    --brand-soft: #eff6ff;
+    --danger: #dc2626;
+    --danger-soft: #fef2f2;
+    --success: #16a34a;
+    --success-soft: #f0fdf4;
+    --ink: #0f172a;
+    --ink-2: #475569;
+    --ink-3: #64748b;
+    --line: #e2e8f0;
+    --card: #ffffff;
+    --page: #f1f5f9;
+    --radius: 16px;
+    --radius-sm: 10px;
+    --shadow: 0 4px 24px rgba(15, 23, 42, 0.06);
+    --max: 720px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
   body {
-    font-family: 'Segoe UI', Tahoma, Arial, sans-serif;
-    margin: 0;
-    padding: 24px 16px 48px;
-    background: #f5f7fb;
-    color: #1a1a2e;
-    line-height: 1.7;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--page);
+    color: var(--ink);
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+    padding: max(20px, env(safe-area-inset-top)) 16px max(40px, env(safe-area-inset-bottom));
   }
-  .wrap { max-width: 640px; margin: 0 auto; }
-  h1 { text-align: center; color: #0d6efd; margin-bottom: 24px; font-size: 1.75rem; }
+
+  .container { max-width: var(--max); margin: 0 auto; }
+
+  /* Header */
+  .header {
+    text-align: center;
+    margin-bottom: 28px;
+    padding-top: 8px;
+  }
+  .logo-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 56px;
+    height: 56px;
+    border-radius: 14px;
+    background: linear-gradient(135deg, var(--brand), var(--brand-dark));
+    color: #fff;
+    font-weight: 800;
+    font-size: 1.25rem;
+    margin-bottom: 16px;
+    box-shadow: 0 8px 20px rgba(37, 99, 235, 0.25);
+  }
+  .header h1 {
+    font-size: clamp(1.5rem, 4vw, 2rem);
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    margin-bottom: 8px;
+  }
+  .header p {
+    color: var(--ink-2);
+    font-size: 1rem;
+    max-width: 36em;
+    margin: 0 auto;
+  }
+  .updated {
+    margin-top: 12px;
+    font-size: 0.8125rem;
+    color: var(--ink-3);
+  }
+
+  /* Notice banner */
+  .notice {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    background: var(--brand-soft);
+    border: 1px solid #bfdbfe;
+    border-radius: var(--radius-sm);
+    padding: 14px 16px;
+    margin-bottom: 20px;
+    font-size: 0.9375rem;
+    color: #1e40af;
+  }
+  .notice-icon {
+    flex-shrink: 0;
+    width: 22px;
+    height: 22px;
+    margin-top: 1px;
+  }
+
+  /* Cards */
   .card {
-    background: #fff;
-    border-radius: 12px;
-    padding: 24px;
-    box-shadow: 0 4px 24px rgba(0,0,0,.06);
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: clamp(20px, 4vw, 28px);
+    margin-bottom: 16px;
+    box-shadow: var(--shadow);
   }
-  label { display: block; font-weight: 600; margin-bottom: 6px; }
+  .card h2 {
+    font-size: 1.125rem;
+    font-weight: 700;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .card h2 .num {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    background: var(--brand-soft);
+    color: var(--brand);
+    font-size: 0.8125rem;
+    font-weight: 800;
+    flex-shrink: 0;
+  }
+  .card p, .card li { color: var(--ink-2); font-size: 0.9375rem; }
+  .card ul, .card ol { padding-left: 1.25rem; margin-top: 8px; }
+  .card li + li { margin-top: 6px; }
+  .card p + p { margin-top: 10px; }
+
+  /* Steps */
+  .steps { list-style: none; padding: 0; counter-reset: step; }
+  .steps li {
+    counter-increment: step;
+    position: relative;
+    padding-left: 36px;
+    margin-bottom: 12px;
+    color: var(--ink-2);
+    font-size: 0.9375rem;
+  }
+  .steps li::before {
+    content: counter(step);
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: var(--brand);
+    color: #fff;
+    font-size: 0.75rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* FAQ */
+  .faq-item {
+    border-top: 1px solid var(--line);
+    padding: 16px 0;
+  }
+  .faq-item:first-child { border-top: none; padding-top: 0; }
+  .faq-item:last-child { padding-bottom: 0; }
+  .faq-q {
+    font-weight: 700;
+    font-size: 0.9375rem;
+    color: var(--ink);
+    margin-bottom: 6px;
+  }
+  .faq-a { font-size: 0.9375rem; color: var(--ink-2); }
+
+  /* Form */
+  .form-card { border-color: #fecaca; background: linear-gradient(180deg, #fff 0%, #fffbfb 100%); }
+  .form-card h2 { color: var(--danger); }
+  label {
+    display: block;
+    font-weight: 600;
+    font-size: 0.875rem;
+    margin-bottom: 6px;
+    color: var(--ink);
+  }
   input[type="email"], input[type="tel"], textarea {
     width: 100%;
-    padding: 12px;
-    border: 1px solid #d0d7e2;
-    border-radius: 8px;
+    padding: 12px 14px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
     font-size: 1rem;
+    font-family: inherit;
     margin-bottom: 16px;
+    background: #fff;
+    transition: border-color 0.15s, box-shadow 0.15s;
   }
-  textarea { min-height: 96px; resize: vertical; }
-  .check { display: flex; gap: 10px; align-items: flex-start; margin: 16px 0 20px; }
-  .check input { margin-top: 4px; }
-  button {
+  input:focus, textarea:focus {
+    outline: none;
+    border-color: var(--brand);
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+  }
+  textarea { min-height: 88px; resize: vertical; }
+  .checkbox-row {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    margin: 4px 0 20px;
+    font-size: 0.875rem;
+    color: var(--ink-2);
+  }
+  .checkbox-row input { margin-top: 3px; flex-shrink: 0; }
+  .btn-delete {
     width: 100%;
-    padding: 14px;
+    padding: 14px 20px;
     border: none;
-    border-radius: 8px;
-    background: #dc3545;
+    border-radius: var(--radius-sm);
+    background: var(--danger);
     color: #fff;
     font-size: 1rem;
     font-weight: 700;
     cursor: pointer;
+    transition: background 0.15s, transform 0.1s;
   }
-  button:hover { background: #bb2d3b; }
-  .success { text-align: center; padding: 24px 8px; }
-  .success-icon { font-size: 3rem; color: #198754; margin-bottom: 12px; }
-  ul { margin: 8px 24px 16px 0; }
-  .muted { color: #5c667a; font-size: .95rem; }
-  .footer { text-align: center; margin-top: 24px; font-size: .9rem; color: #5c667a; }
-  a { color: #0d6efd; }
+  .btn-delete:hover { background: #b91c1c; }
+  .btn-delete:active { transform: scale(0.99); }
+
+  /* Success */
+  .success-panel {
+    text-align: center;
+    padding: 12px 4px 4px;
+  }
+  .success-icon {
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    background: var(--success-soft);
+    color: var(--success);
+    font-size: 2rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 16px;
+    border: 2px solid #bbf7d0;
+  }
+  .success-panel h2 {
+    font-size: 1.375rem;
+    font-weight: 800;
+    margin-bottom: 10px;
+    justify-content: center;
+  }
+  .success-panel p { max-width: 32em; margin: 0 auto; }
+
+  /* Support */
+  .support-link {
+    color: var(--brand);
+    font-weight: 600;
+    text-decoration: none;
+  }
+  .support-link:hover { text-decoration: underline; }
+
+  /* Footer */
+  .footer {
+    text-align: center;
+    margin-top: 28px;
+    padding-top: 20px;
+    border-top: 1px solid var(--line);
+    font-size: 0.875rem;
+    color: var(--ink-3);
+  }
+  .footer a { color: var(--brand); text-decoration: none; font-weight: 600; }
+  .footer a:hover { text-decoration: underline; }
+  .footer-links { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 20px; margin-bottom: 10px; }
+
+  /* iPad / large screens */
+  @media (min-width: 768px) {
+    body { padding-left: 32px; padding-right: 32px; }
+    .two-col {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+    .two-col .card { margin-bottom: 0; }
+    .span-full { grid-column: 1 / -1; }
+  }
 </style>
 </head>
 <body>
-<div class="wrap">
-  <h1>حذف الحساب</h1>
-  <div class="card">
+<div class="container">
 
-    <div class="success" style="display:{{SUCCESS_DISPLAY}}">
-      <div class="success-icon">✓</div>
-      <h2>تم استلام طلبك بنجاح</h2>
-      <p>ستتم مراجعة الحساب وحذفه خلال مدة أقصاها <strong>30 يومًا</strong> من تاريخ الطلب.
-         سنراسلك على بريدك الإلكتروني عند اكتمال العملية.</p>
+  <header class="header">
+    <div class="logo-badge" aria-hidden="true">MQ</div>
+    <h1>Delete Your MulhimIQ Account</h1>
+    <p>Account deletion for student and teacher accounts on the MulhimIQ educational platform.</p>
+    <p class="updated">Last updated: {{LAST_UPDATED}}</p>
+  </header>
+
+  <div class="notice" role="status">
+    <svg class="notice-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+      <circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/>
+    </svg>
+    <p><strong>Account deletion can be initiated directly from within the MulhimIQ application.</strong></p>
+  </div>
+
+  <!-- Success state (after request submitted) -->
+  <div class="card success-panel" style="display:{{SUCCESS_DISPLAY}}">
+    <div class="success-icon" aria-hidden="true">✓</div>
+    <h2>Deletion Request Received</h2>
+    <p>We have received your account deletion request. Your account and associated personal data will be reviewed and deleted within <strong>30 days</strong> of this submission.</p>
+    <p style="margin-top:12px">You will receive a confirmation email when the process is complete. Some records may be retained only where required by law or our <a class="support-link" href="https://mulhimiq.com/privacy-policy" target="_blank" rel="noopener">Privacy Policy</a>.</p>
+  </div>
+
+  <!-- Main content + form -->
+  <div style="display:{{FORM_DISPLAY}}">
+
+    <div class="card">
+      <h2><span class="num">1</span> Account Deletion Overview</h2>
+      <p>MulhimIQ allows users to initiate account deletion directly from within the mobile application. Both <strong>student</strong> and <strong>teacher</strong> accounts support account deletion.</p>
+      <p style="margin-top:10px">When you submit a deletion request, your information is recorded and your account is scheduled for permanent deletion within <strong>30 days</strong>, subject to legal and regulatory retention requirements.</p>
     </div>
 
-    <div style="display:{{FORM_DISPLAY}}">
-      <p class="muted">
-        لطلب حذف حسابك وبياناتك في تطبيق <strong>MulhimIQ</strong> («ملهم»)، يرجى تعبئة النموذج التالي.
-        سيتم مراجعة الطلب وحذف الحساب والبيانات المرتبطة به خلال مدة لا تتجاوز <strong>30 يوماً</strong>.
-        <strong>لن يُحذف حسابك فوراً</strong> من التطبيق.
-      </p>
+    <div class="card">
+      <h2><span class="num">2</span> How to Delete Your Account</h2>
+      <ol class="steps">
+        <li>Sign in to the MulhimIQ app.</li>
+        <li>Open your <strong>Profile</strong> page (Student: <em>My Profile</em> · Teacher: <em>Profile</em> in the teacher dashboard).</li>
+        <li>Tap <strong>Delete Account</strong>.</li>
+        <li>Submit your deletion request on this page with your account details.</li>
+        <li>Your request is reviewed and your account is deleted within <strong>30 days</strong>.</li>
+      </ol>
+    </div>
+
+    <div class="two-col">
+      <div class="card">
+        <h2><span class="num">3</span> What Happens After You Submit</h2>
+        <ul>
+          <li>Your deletion request is recorded securely.</li>
+          <li>Your account and personal data are scheduled for deletion within <strong>30 days</strong>.</li>
+          <li>You may continue using the app until deletion is processed, unless otherwise required by policy.</li>
+          <li>Your profile will be removed from active use once deletion is completed.</li>
+          <li>Educational or financial records required by law may be retained for a limited period.</li>
+          <li>Remaining personal data is deleted or anonymized according to our privacy policy.</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <h2><span class="num">4</span> Data Retention Policy</h2>
+        <p>Some records may be retained when required by legal, accounting, fraud-prevention, educational, or regulatory obligations.</p>
+        <p style="margin-top:10px">After the required retention period, retained data is deleted or anonymized in accordance with our <a class="support-link" href="https://mulhimiq.com/privacy-policy" target="_blank" rel="noopener">Privacy Policy</a>.</p>
+      </div>
+    </div>
+
+    <div class="card form-card span-full" style="margin-top:16px">
+      <h2>Submit Account Deletion Request</h2>
+      <p style="margin-bottom:18px">If you opened this page from the app, complete the form below to submit your deletion request. Deletion will be completed within <strong>30 days</strong>.</p>
 
       <form method="POST" action="/api/public/account-deletion-requests">
-        <label for="email">البريد الإلكتروني المرتبط بالحساب</label>
-        <input id="email" name="email" type="email" required value="{{EMAIL}}" autocomplete="email">
+        <label for="email">Email address linked to your account</label>
+        <input id="email" name="email" type="email" required value="{{EMAIL}}" autocomplete="email" inputmode="email">
 
-        <label for="phone">رقم الهاتف (اختياري)</label>
-        <input id="phone" name="phone" type="tel" autocomplete="tel">
+        <label for="phone">Phone number (optional)</label>
+        <input id="phone" name="phone" type="tel" autocomplete="tel" inputmode="tel">
 
-        <label for="reason">سبب الحذف (اختياري)</label>
-        <textarea id="reason" name="reason" placeholder="اختياري"></textarea>
+        <label for="reason">Reason for leaving (optional)</label>
+        <textarea id="reason" name="reason" placeholder="Optional"></textarea>
 
-        <label class="check">
+        <label class="checkbox-row">
           <input type="checkbox" name="confirm" value="true" required>
-          <span>أؤكد رغبتي في حذف حسابي وبياناتي بشكل دائم.</span>
+          <span>I confirm that I want to delete my MulhimIQ account and understand that deletion will be processed within 30 days according to the platform's data retention policy.</span>
         </label>
 
-        <button type="submit">تقديم طلب حذف الحساب</button>
+        <button type="submit" class="btn-delete">Submit Deletion Request</button>
       </form>
+    </div>
 
-      <h3>ما الذي سيُحذف؟</h3>
-      <ul>
-        <li>معلومات الحساب: الاسم، البريد الإلكتروني، رقم الهاتف.</li>
-        <li>الملف الشخصي والصورة الشخصية.</li>
-        <li>بيانات الاستخدام: الحجوزات، الواجبات، الاختبارات، التقييمات، الرسائل.</li>
-      </ul>
-      <p class="muted">للاستفسار: <strong>mulhim@lamassu-iq.com</strong></p>
+    <div class="card">
+      <h2><span class="num">5</span> Frequently Asked Questions</h2>
+      <div class="faq-item">
+        <p class="faq-q">Q: Can I continue using the app after submitting a request?</p>
+        <p class="faq-a">A: Yes. Your account remains available until the deletion request is processed, within 30 days.</p>
+      </div>
+      <div class="faq-item">
+        <p class="faq-q">Q: When will my account be deleted?</p>
+        <p class="faq-a">A: Within 30 days of submitting your deletion request.</p>
+      </div>
+      <div class="faq-item">
+        <p class="faq-q">Q: Can I restore a deleted account?</p>
+        <p class="faq-a">A: Once deletion is completed, accounts may not be recoverable.</p>
+      </div>
+      <div class="faq-item">
+        <p class="faq-q">Q: Does this apply to teachers and students?</p>
+        <p class="faq-a">A: Yes. Both account types are supported.</p>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2><span class="num">6</span> Support Contact</h2>
+      <p>Need help with account deletion? Contact our support team:</p>
+      <p style="margin-top:10px"><a class="support-link" href="mailto:support@mulhimiq.com">support@mulhimiq.com</a></p>
     </div>
 
   </div>
-  <p class="footer">
-    <a href="https://mulhimiq.com/privacy-policy" target="_blank" rel="noopener">سياسة الخصوصية</a>
-    · © 2026 MulhimIQ
-  </p>
+
+  <footer class="footer">
+    <div class="footer-links">
+      <a href="https://mulhimiq.com/privacy-policy" target="_blank" rel="noopener">Privacy Policy</a>
+      <a href="mailto:support@mulhimiq.com">Support</a>
+    </div>
+    <p>© 2026 MulhimIQ. All rights reserved.</p>
+  </footer>
+
 </div>
 </body>
 </html>

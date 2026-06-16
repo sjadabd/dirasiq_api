@@ -252,10 +252,12 @@ app.get('/delete-account', (req, res) => {
   const submitted = req.query['submitted'] === '1';
   const rawEmail = typeof req.query['email'] === 'string' ? req.query['email'] : '';
   const safeEmail = rawEmail.replace(/[<>"']/g, '').slice(0, 254);
+  const lastUpdated = new Date().toISOString().slice(0, 10);
   const templatePath = path.join(__dirname, '../public/delete-account.html');
   let html = fs.readFileSync(templatePath, 'utf8');
   html = html
     .replace(/\{\{EMAIL\}\}/g, safeEmail)
+    .replace(/\{\{LAST_UPDATED\}\}/g, lastUpdated)
     .replace(/\{\{SUCCESS_DISPLAY\}\}/g, submitted ? 'block' : 'none')
     .replace(/\{\{FORM_DISPLAY\}\}/g, submitted ? 'none' : 'block');
   res.type('html').send(html);
