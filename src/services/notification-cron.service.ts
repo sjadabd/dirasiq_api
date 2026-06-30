@@ -70,18 +70,17 @@ export class NotificationCronService {
       { timezone: 'Asia/Baghdad' }
     );
 
-    // Daily at 03:00 Asia/Baghdad time: purge all teacher tokens and clean expired tokens
+    // Daily at 03:00 Asia/Baghdad time: remove expired tokens only.
     cron.schedule(
       '0 3 * * *',
       async () => {
         try {
-          const deletedTeachers = await TokenModel.deleteAllTeacherTokens();
           const cleaned = await TokenModel.cleanExpiredTokens();
           console.log(
-            `🧹 Purged ${deletedTeachers} teacher tokens and cleaned ${cleaned} expired tokens at 03:00 Asia/Baghdad`
+            `🧹 Cleaned ${cleaned} expired tokens at 03:00 Asia/Baghdad`
           );
         } catch (error) {
-          console.error('❌ Error purging teacher tokens:', error);
+          console.error('❌ Error cleaning expired tokens:', error);
         }
       },
       { timezone: 'Asia/Baghdad' }

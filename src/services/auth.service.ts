@@ -37,6 +37,20 @@ export type OAuthResult = {
 };
 
 export class AuthService {
+  private static teacherTokenTtlDays(): number {
+    const parsed = parseInt(process.env['TEACHER_TOKEN_TTL_DAYS'] || '30', 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 30;
+  }
+
+  private static teacherTokenExpiry(now = new Date()): {
+    expiresAt: Date;
+    expiresInSeconds: number;
+  } {
+    const days = AuthService.teacherTokenTtlDays();
+    const expiresAt = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
+    return { expiresAt, expiresInSeconds: days * 24 * 60 * 60 };
+  }
+
   /**
    * Phase 8 — block login / OAuth-provisioning for an email that already
    * has a teacher application on file. Without this, a Google sign-in by
@@ -505,12 +519,7 @@ export class AuthService {
     let expiresAt: Date;
     let expiresInSeconds: number;
     if (user.userType === UserType.TEACHER) {
-      // Teacher: token expires at 4am the next morning.
-      const tomorrow = new Date(now);
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      tomorrow.setHours(4, 0, 0, 0);
-      expiresAt = tomorrow;
-      expiresInSeconds = Math.max(60, Math.floor((expiresAt.getTime() - now.getTime()) / 1000));
+      ({ expiresAt, expiresInSeconds } = AuthService.teacherTokenExpiry(now));
     } else {
       // Student: very long TTL by default (env-configurable).
       const days = parseInt(process.env['STUDENT_TOKEN_TTL_DAYS'] || '36500', 10);
@@ -656,8 +665,8 @@ export class AuthService {
   /**
    * Shared session-build path for OAuth flows (Google + Apple). Handles the
    * active-academic-year lookup, enhanced user payload, token TTL policy
-   * (students get a multi-year token; everyone else gets 7 days), JWT
-   * signing, and persistence of the token row with the OneSignal player id.
+   * (students: multi-year; teachers: TEACHER_TOKEN_TTL_DAYS; others: 7 days),
+   * JWT signing, and persistence of the token row with the OneSignal player id.
    */
   private static async buildOAuthSession(
     user: User,
@@ -683,6 +692,10 @@ export class AuthService {
         process.env['STUDENT_TOKEN_TTL_DAYS'] || '36500',
         10
       );
+      expiresAt = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+      signOptions = { expiresIn: `${days}d` } as jwt.SignOptions;
+    } else if (user.userType === UserType.TEACHER) {
+      const days = AuthService.teacherTokenTtlDays();
       expiresAt = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
       signOptions = { expiresIn: `${days}d` } as jwt.SignOptions;
     } else {
