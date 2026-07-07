@@ -17,7 +17,9 @@
     "seed:apple-review": "node dist/scripts/seed_apple_review_accounts.js",
     "seed:apple-review:src": "ts-node -r tsconfig-paths/register src/scripts/seed_apple_review_accounts.ts",
     "restore:apple-review-teacher": "ts-node -r tsconfig-paths/register src/scripts/restore_apple_review_teacher.ts",
-    "restore:apple-review-teacher:dist": "node dist/scripts/restore_apple_review_teacher.js"
+    "restore:apple-review-teacher:dist": "node dist/scripts/restore_apple_review_teacher.js",
+    "credit:teacher-wallet": "ts-node -r tsconfig-paths/register src/scripts/credit_teacher_wallet.ts",
+    "credit:teacher-wallet:dist": "node dist/scripts/credit_teacher_wallet.js"
   },
   "keywords": [
     "api",
