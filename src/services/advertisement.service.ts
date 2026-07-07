@@ -521,7 +521,6 @@ export class AdvertisementService {
       pending: string;
       rejected: string;
       clicks: string;
-      spent: string;
       remaining: string;
     }>(
       `SELECT
@@ -530,7 +529,6 @@ export class AdvertisementService {
          COUNT(*) FILTER (WHERE status = 'pending_review')::int AS pending,
          COUNT(*) FILTER (WHERE status = 'rejected')::int AS rejected,
          COALESCE(SUM(unique_clicks), 0)::int AS clicks,
-         COALESCE(SUM(budget_total - budget_remaining), 0)::decimal AS spent,
          COALESCE(SUM(budget_remaining) FILTER (WHERE status IN ('running','approved','pending_review')), 0)::decimal AS remaining
        FROM advertisements
        WHERE teacher_id = $1 AND deleted_at IS NULL`,
@@ -538,7 +536,7 @@ export class AdvertisementService {
     );
     const r = rows[0]!;
     const clicks = Number(r.clicks);
-    const spent = Number(r.spent);
+    const spent = await AdvertisementWalletTransactionModel.sumClickChargesByTeacher(teacherId);
     return {
       totalAdvertisements: Number(r.total),
       runningAdvertisements: Number(r.running),

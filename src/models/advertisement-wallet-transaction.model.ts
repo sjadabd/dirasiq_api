@@ -41,6 +41,16 @@ export class AdvertisementWalletTransactionModel {
     return Number(rows[0]?.total ?? 0);
   }
 
+  static async sumClickChargesByTeacher(teacherId: string): Promise<number> {
+    const { rows } = await pool.query<{ total: string }>(
+      `SELECT COALESCE(SUM(ABS(amount)), 0)::decimal AS total
+         FROM advertisement_wallet_transactions
+        WHERE teacher_id = $1 AND txn_type = 'click_charge'`,
+      [teacherId],
+    );
+    return Number(rows[0]?.total ?? 0);
+  }
+
   static async sumTotalRevenue(): Promise<number> {
     const { rows } = await pool.query<{ total: string }>(
       `SELECT COALESCE(SUM(ABS(amount)), 0)::decimal AS total
