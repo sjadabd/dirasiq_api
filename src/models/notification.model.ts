@@ -18,6 +18,11 @@ export enum NotificationType {
   NEW_COURSE_AVAILABLE = 'new_course_available',
   COURSE_COMPLETION = 'course_completion',
   FEEDBACK_REQUEST = 'feedback_request',
+  ADVERTISEMENT_SUBMITTED = 'advertisement_submitted',
+  ADVERTISEMENT_APPROVED = 'advertisement_approved',
+  ADVERTISEMENT_REJECTED = 'advertisement_rejected',
+  ADVERTISEMENT_BUDGET_EXHAUSTED = 'advertisement_budget_exhausted',
+  ADVERTISEMENT_FINISHED = 'advertisement_finished',
 }
 
 export enum NotificationPriority {

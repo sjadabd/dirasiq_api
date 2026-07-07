@@ -1,9 +1,15 @@
 import { Client as OneSignalClient } from 'onesignal-node';
 
 import pool from '../config/database';
+import {
+  NotificationPriority,
+  NotificationType,
+  RecipientType,
+} from '../models/notification.model';
 import type { Advertisement } from '../types';
 import { logger } from '../utils/logger';
 import { RealtimeService } from './realtime.service';
+import { getNotificationService } from './services-registry';
 
 let cachedClient: OneSignalClient | null | undefined;
 
@@ -19,25 +25,36 @@ function oneSignal(): OneSignalClient | null {
   return cachedClient;
 }
 
-async function notifyUser(args: {
-  userId: string;
+/**
+ * Inbox row + OneSignal push to a single teacher. Never throws — callers are
+ * fire-and-forget lifecycle hooks.
+ */
+async function notifyTeacher(args: {
+  teacherId: string;
   title: string;
   message: string;
-  type: string;
+  type: NotificationType;
   data?: Record<string, unknown>;
 }): Promise<void> {
+  const notif = getNotificationService();
+  if (!notif) return;
+
   try {
-    const client = oneSignal();
-    if (client) {
-      await client.createNotification({
-        headings: { en: args.title, ar: args.title },
-        contents: { en: args.message, ar: args.message },
-        include_external_user_ids: [args.userId],
-        data: { type: args.type, route: '/teacher/advertisements', ...args.data },
-      });
-    }
+    await notif.createAndSendNotification({
+      title: args.title,
+      message: args.message,
+      type: args.type,
+      priority: NotificationPriority.HIGH,
+      recipientType: RecipientType.SPECIFIC_TEACHERS,
+      recipientIds: [args.teacherId],
+      data: {
+        route: '/teacher/advertisements',
+        ...args.data,
+      },
+      createdBy: args.teacherId,
+    });
   } catch (err) {
-    logger.warn({ err, userId: args.userId }, 'advertisement notify push failed');
+    logger.warn({ err, teacherId: args.teacherId, type: args.type }, 'advertisement teacher notify failed');
   }
 }
 
@@ -86,41 +103,42 @@ export class AdvertisementNotifyService {
   }
 
   static async onApproved(ad: Advertisement): Promise<void> {
-    await notifyUser({
-      userId: ad.teacherId,
+    await notifyTeacher({
+      teacherId: ad.teacherId,
       title: 'تمت الموافقة على إعلانك',
       message: `إعلانك "${ad.title}" أصبح جاهزاً للنشر.`,
-      type: 'advertisement_approved',
+      type: NotificationType.ADVERTISEMENT_APPROVED,
       data: { advertisementId: ad.id },
     });
   }
 
   static async onRejected(ad: Advertisement, reason: string): Promise<void> {
-    await notifyUser({
-      userId: ad.teacherId,
+    await notifyTeacher({
+      teacherId: ad.teacherId,
       title: 'تم رفض إعلانك',
       message: reason || `تم رفض إعلان "${ad.title}" واسترداد الميزانية.`,
-      type: 'advertisement_rejected',
+      type: NotificationType.ADVERTISEMENT_REJECTED,
       data: { advertisementId: ad.id },
     });
   }
 
   static async onBudgetExhausted(ad: Advertisement): Promise<void> {
-    await notifyUser({
-      userId: ad.teacherId,
+    await this.emitStatusChanged(ad);
+    await notifyTeacher({
+      teacherId: ad.teacherId,
       title: 'نفدت ميزانية الإعلان',
       message: `إعلان "${ad.title}" توقف لانتهاء الميزانية.`,
-      type: 'advertisement_budget_exhausted',
+      type: NotificationType.ADVERTISEMENT_BUDGET_EXHAUSTED,
       data: { advertisementId: ad.id },
     });
   }
 
   static async onFinished(ad: Advertisement): Promise<void> {
-    await notifyUser({
-      userId: ad.teacherId,
+    await notifyTeacher({
+      teacherId: ad.teacherId,
       title: 'انتهى الإعلان',
       message: `انتهت مدة إعلان "${ad.title}".`,
-      type: 'advertisement_finished',
+      type: NotificationType.ADVERTISEMENT_FINISHED,
       data: { advertisementId: ad.id },
     });
   }

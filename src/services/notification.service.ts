@@ -323,6 +323,8 @@ export class NotificationService {
           url = '/teacher/notifications/show-notifications';
         } else if (t === 'system_announcement') {
           url = '/teacher/notifications/show-notifications';
+        } else if (t.startsWith('advertisement_')) {
+          url = '/teacher/advertisements';
         }
         if (url) {
           enrichedData['url'] = url;
