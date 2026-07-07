@@ -66,6 +66,7 @@ export class TeacherWalletController {
     const advertisementSpent = Number(adSpentRes.rows[0]?.total ?? 0);
     const advertisementRemainingBudget = Number(adRemainingRes.rows[0]?.total ?? 0);
     const total = Math.round((topupBalance + videoEarningsAvailable) * 100) / 100;
+    const totalFunds = Math.round((total + advertisementRemainingBudget) * 100) / 100;
 
     res.status(200).json(
       ok(
@@ -77,8 +78,12 @@ export class TeacherWalletController {
           videoEarningsAvailable,
           advertisementReport: {
             spent: advertisementSpent,
+            spentOnClicks: advertisementSpent,
             remainingBudget: advertisementRemainingBudget,
+            lockedInAdvertisements: advertisementRemainingBudget,
+            walletAvailable: total,
             netWalletAvailable: total,
+            totalFunds,
           },
           videoReport: {
             lifetimeEarned,
