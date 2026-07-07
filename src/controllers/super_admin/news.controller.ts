@@ -6,8 +6,9 @@ import pool from '../../config/database';
 import { NewsService } from '../../services/news.service';
 import { type CreateNewsRequest, NewsType, type UpdateNewsRequest } from '../../types';
 import { NotificationController } from '../notification.controller';
-import { NotificationType, RecipientType } from '../../models/notification.model';
+import { NotificationType } from '../../models/notification.model';
 import { ApiError, ErrorCodes } from '../../utils/api-error';
+import { expandNewsTypeListFilter, recipientTypeForNews } from '../../utils/news-targeting.util';
 import { ok } from '../../utils/response.util';
 
 const UPLOAD_DIR = path.resolve(process.cwd(), 'public', 'uploads', 'news');
@@ -71,20 +72,6 @@ const deleteLocalImageIfExists = async (publicPath: string | null | undefined): 
   }
 };
 
-const recipientTypeForNews = (newsType?: NewsType): RecipientType => {
-  switch (newsType) {
-    case NewsType.WEB:
-      return RecipientType.TEACHERS;
-    case NewsType.MOBILE:
-      return RecipientType.STUDENTS;
-    case NewsType.TEACHER_MOBILE:
-      return RecipientType.TEACHERS;
-    case NewsType.WEB_AND_MOBILE:
-    default:
-      return RecipientType.ALL;
-  }
-};
-
 export class NewsController {
   // POST /api/news
   static async create(req: Request, res: Response): Promise<void> {
@@ -144,10 +131,9 @@ export class NewsController {
     const limit = query.limit ?? 10;
 
     let newsTypes: NewsType[] | undefined;
-    if (query.newsType === NewsType.WEB) newsTypes = [NewsType.WEB, NewsType.WEB_AND_MOBILE];
-    else if (query.newsType === NewsType.MOBILE) newsTypes = [NewsType.MOBILE, NewsType.WEB_AND_MOBILE];
-    else if (query.newsType === NewsType.WEB_AND_MOBILE) newsTypes = [NewsType.WEB_AND_MOBILE];
-    else if (query.newsType === NewsType.TEACHER_MOBILE) newsTypes = [NewsType.TEACHER_MOBILE];
+    if (query.newsType) {
+      newsTypes = expandNewsTypeListFilter(query.newsType);
+    }
 
     const result = await NewsService.getAllNews(page, limit, query.search, query.isActive, newsTypes);
     // Preserve the legacy contract — the dashboard reads `data: <result>` with

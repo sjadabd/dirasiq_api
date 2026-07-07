@@ -62,7 +62,14 @@ export const userGradesQuerySchema = z.object({
 // News
 // =============================================================================
 
-const newsTypeSchema = z.enum(['web', 'mobile', 'web_and_mobile', 'teacher_mobile']);
+const newsTypeSchema = z.enum([
+  'web',
+  'mobile',
+  'web_and_mobile',
+  'teacher_mobile',
+  'web_and_teacher_mobile',
+  'all_platforms',
+]);
 
 // Reject obviously-unsupported image formats at the validator boundary. Same
 // allowlist as the controller's `ALLOWED_IMAGE_MIME_TO_EXT` (jpg/png/webp).

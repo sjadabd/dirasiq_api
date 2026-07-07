@@ -1004,6 +1004,10 @@ export enum NewsType {
   MOBILE = 'mobile',
   WEB_AND_MOBILE = 'web_and_mobile',
   TEACHER_MOBILE = 'teacher_mobile',
+  /** Website + teacher mobile app (not student app). */
+  WEB_AND_TEACHER_MOBILE = 'web_and_teacher_mobile',
+  /** Website + student app + teacher app. */
+  ALL_PLATFORMS = 'all_platforms',
 }
 
 export interface News {

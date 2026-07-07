@@ -1,12 +1,15 @@
 import type { Request, Response } from 'express';
 
 import { NewsService } from '../../services/news.service';
-import { NewsType } from '../../types';
+import {
+  TEACHER_MOBILE_VISIBLE_NEWS_TYPES,
+  isTeacherMobileNewsType,
+} from '../../utils/news-targeting.util';
 import { ApiError, ErrorCodes } from '../../utils/api-error';
 import { buildPaginationMeta, parsePagination } from '../../utils/pagination';
 import { ok, paginated } from '../../utils/response.util';
 
-const TEACHER_APP_NEWS_TYPES = [NewsType.TEACHER_MOBILE];
+const TEACHER_APP_NEWS_TYPES = [...TEACHER_MOBILE_VISIBLE_NEWS_TYPES];
 
 export class TeacherAnnouncementController {
   static async list(req: Request, res: Response): Promise<void> {
@@ -23,7 +26,7 @@ export class TeacherAnnouncementController {
     if (!item || !item.isActive || item.deletedAt) {
       throw new ApiError(404, 'الإعلان غير موجود', ErrorCodes.NOT_FOUND);
     }
-    if (!TEACHER_APP_NEWS_TYPES.includes(item.newsType)) {
+    if (!isTeacherMobileNewsType(item.newsType)) {
       throw new ApiError(404, 'الإعلان غير متاح', ErrorCodes.NOT_FOUND);
     }
     res.status(200).json(ok(item, 'تفاصيل الإعلان'));

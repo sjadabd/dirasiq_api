@@ -1,5 +1,6 @@
 import pool from '../config/database';
 import type { ContentFeedItem } from '../types';
+import { STUDENT_MOBILE_VISIBLE_NEWS_TYPES } from '../utils/news-targeting.util';
 
 type FeedRow = {
   id: string;
@@ -20,12 +21,13 @@ export class ContentFeedService {
     offset: number;
   }): Promise<{ items: ContentFeedItem[]; total: number }> {
     const studentState = args.studentState?.trim() ?? null;
+    const studentNewsTypes = [...STUDENT_MOBILE_VISIBLE_NEWS_TYPES];
 
     const countSql = `
       SELECT COUNT(*)::int AS count FROM (
         SELECT n.id FROM news n
          WHERE n.deleted_at IS NULL AND n.is_active = TRUE
-           AND n.news_type IN ('mobile', 'web_and_mobile')
+           AND n.news_type = ANY($2::text[])
         UNION ALL
         SELECT a.id FROM advertisements a
          WHERE a.deleted_at IS NULL AND a.status = 'running'
@@ -55,7 +57,7 @@ export class ContentFeedService {
           NULL::text AS governorate
         FROM news n
         WHERE n.deleted_at IS NULL AND n.is_active = TRUE
-          AND n.news_type IN ('mobile', 'web_and_mobile')
+          AND n.news_type = ANY($2::text[])
         UNION ALL
         SELECT
           a.id,
@@ -82,11 +84,11 @@ export class ContentFeedService {
           )
       ) feed
       ORDER BY published_at DESC
-      LIMIT $2 OFFSET $3`;
+      LIMIT $3 OFFSET $4`;
 
     const [countR, dataR] = await Promise.all([
-      pool.query<{ count: number }>(countSql, [studentState]),
-      pool.query<FeedRow>(dataSql, [studentState, args.limit, args.offset]),
+      pool.query<{ count: number }>(countSql, [studentState, studentNewsTypes]),
+      pool.query<FeedRow>(dataSql, [studentState, studentNewsTypes, args.limit, args.offset]),
     ]);
 
     const items: ContentFeedItem[] = dataR.rows.map((r) => {
@@ -108,12 +110,14 @@ export class ContentFeedService {
   }
 
   static async getNewsDetail(id: string) {
+    const studentNewsTypes = [...STUDENT_MOBILE_VISIBLE_NEWS_TYPES];
     const { rows } = await pool.query(
       `SELECT id, title, details AS description, image_url AS cover_image_url,
               COALESCE(published_at, created_at) AS published_at
          FROM news
-        WHERE id = $1 AND deleted_at IS NULL AND is_active = TRUE`,
-      [id],
+        WHERE id = $1 AND deleted_at IS NULL AND is_active = TRUE
+          AND news_type = ANY($2::text[])`,
+      [id, studentNewsTypes],
     );
     return rows[0] ?? null;
   }

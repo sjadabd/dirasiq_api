@@ -4,7 +4,7 @@
 import type { Request, Response } from 'express';
 
 import { NewsService } from '../../services/news.service';
-import { NewsType } from '../../types';
+import { WEB_VISIBLE_NEWS_TYPES } from '../../utils/news-targeting.util';
 import { ok } from '../../utils/response.util';
 
 const DEFAULT_LIMIT = 10;
@@ -16,7 +16,7 @@ export class PublicNewsController {
     const query = req.query as unknown as { limit?: number };
     const limit = Math.min(Math.max(1, query.limit ?? DEFAULT_LIMIT), MAX_LIMIT);
     const page = 1;
-    const newsTypes: NewsType[] = [NewsType.WEB, NewsType.WEB_AND_MOBILE];
+    const newsTypes = [...WEB_VISIBLE_NEWS_TYPES];
 
     const result = await NewsService.getAllNews(page, limit, undefined, true, newsTypes);
     res.status(200).json(ok(result.data, 'الأخبار العامة'));
