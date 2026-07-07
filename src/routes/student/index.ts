@@ -20,6 +20,7 @@ import studentEvaluationRoutes from './student-evaluation.routes';
 import teacherRoutes from './teacher.routes';
 import videoCourseRoutes from './video-course.routes';
 import videoCourseProxyRoutes from './video-course-proxy.routes';
+import contentFeedRoutes from './content-feed.routes';
 
 import { authenticateToken, requireRole } from '../../middleware/auth.middleware';
 import { UserType } from '../../types';
@@ -49,6 +50,7 @@ router.use('/invoices', invoiceRoutes);
 router.use('/teachers', teacherRoutes);
 router.use('/dashboard', dashboardRoutes);
 router.use('/search', searchRoutes);
+router.use('/', contentFeedRoutes);
 router.use('/video-courses', videoCourseRoutes);
 
 export default router;

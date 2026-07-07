@@ -86,6 +86,16 @@ export class NotificationCronService {
       { timezone: 'Asia/Baghdad' }
     );
 
+    // Hourly: advertisement status transitions (approved→running, running→finished)
+    cron.schedule('0 * * * *', async () => {
+      try {
+        const { AdvertisementService } = await import('./advertisement.service');
+        await AdvertisementService.processCronTransitions();
+      } catch (error) {
+        console.error('❌ Error processing advertisement cron:', error);
+      }
+    });
+
     this.isRunning = true;
   }
 

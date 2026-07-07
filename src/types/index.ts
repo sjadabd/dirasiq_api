@@ -1034,6 +1034,84 @@ export interface UpdateNewsRequest {
 }
 
 // ===========================================================================
+// Teacher Advertisements
+// ===========================================================================
+
+export enum AdvertisementStatus {
+  DRAFT = 'draft',
+  PENDING_REVIEW = 'pending_review',
+  APPROVED = 'approved',
+  REJECTED = 'rejected',
+  RUNNING = 'running',
+  FINISHED = 'finished',
+  BUDGET_EXHAUSTED = 'budget_exhausted',
+}
+
+export enum AdvertisementVisibility {
+  PUBLIC = 'public',
+  GOVERNORATE_ONLY = 'governorate_only',
+}
+
+export interface Advertisement {
+  id: string;
+  teacherId: string;
+  title: string;
+  description: string;
+  coverImageUrl?: string | null;
+  visibility: AdvertisementVisibility;
+  teacherGovernorate?: string | null;
+  status: AdvertisementStatus;
+  budgetTotal: number;
+  budgetRemaining: number;
+  reservedFromBalance: number;
+  reservedFromPending: number;
+  costPerClick?: number | null;
+  uniqueClicks: number;
+  rejectionReason?: string | null;
+  adminNotes?: string | null;
+  startDate?: Date | null;
+  endDate?: Date | null;
+  submittedAt?: Date | null;
+  approvedAt?: Date | null;
+  rejectedAt?: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+  deletedAt?: Date | null;
+  teacherName?: string;
+}
+
+export interface AdvertisementSettings {
+  id: string;
+  costPerClick: number;
+  minBudget: number;
+  maxBudget: number;
+  maxDurationDays: number;
+  autoEndDurationDays: number;
+  allowPublic: boolean;
+  allowGovernorate: boolean;
+  requireApproval: boolean;
+  maxActivePerTeacher: number;
+  imageSizeLimitBytes: number;
+  maxTitleLength: number;
+  maxDescriptionLength: number;
+  refundUnusedBudget: boolean;
+  updatedAt: Date;
+  updatedBy?: string | null;
+}
+
+export interface ContentFeedItem {
+  id: string;
+  itemType: 'news' | 'advertisement';
+  title: string;
+  description?: string;
+  coverImageUrl?: string | null;
+  publisherName: string;
+  badge: 'news' | 'ad';
+  publishedAt: Date;
+  governorate?: string | null;
+}
+
+// ===========================================================================
 // Teacher Applications (onboarding — Phase 1)
 // ===========================================================================
 

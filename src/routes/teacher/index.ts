@@ -33,6 +33,7 @@ import studentEvaluationRoutes from './student-evaluation.routes';
 import subjectRoutes from './subject.routes';
 import videoCourseRoutes from './video-course.routes';
 import walletRoutes from './wallet.routes';
+import advertisementRoutes from './advertisement.routes';
 
 import { authenticateToken, requireRole } from '../../middleware/auth.middleware';
 import { UserType } from '../../types';
@@ -62,6 +63,7 @@ router.use('/profile', profileRoutes);
 router.use('/my-grades', myGradesRoutes);
 router.use('/commission-preview', commissionPreviewRoutes);
 router.use('/wallet', walletRoutes);
+router.use('/advertisements', advertisementRoutes);
 router.use('/video-courses', videoCourseRoutes);
 
 export default router;
