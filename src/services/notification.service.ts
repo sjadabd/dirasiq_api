@@ -308,9 +308,16 @@ export class NotificationService {
         } else if (t === 'grade_update') {
           url = '/teacher/exams/manage-exams';
         } else if (t === 'class_reminder' || t === 'course_update') {
-          url = d['courseId']
-            ? '/teacher/course/show-course'
-            : '/teacher/sessions/manage-sessions';
+          const sub = String(d['subType'] ?? d['sub_type'] ?? '').toLowerCase();
+          if (sub.startsWith('video_course') || sub.startsWith('video_lesson')) {
+            url =
+              withId('/teacher/video-courses/:courseId', 'courseId') ||
+              '/teacher/video-courses';
+          } else {
+            url = d['courseId']
+              ? '/teacher/course/show-course'
+              : '/teacher/sessions/manage-sessions';
+          }
         } else if (t === 'payment_reminder') {
           url =
             withId('/teacher/invoices/:invoiceId', 'invoiceId') ||
