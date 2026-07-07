@@ -23,7 +23,7 @@ export class TeacherWalletController {
       [teacherId]
     );
 
-    const [walletRes, earnedRes, withdrawnVideo, inFlightVideo, pendingTotalRes] =
+    const [walletRes, earnedRes, withdrawnVideo, inFlightVideo, pendingTotalRes, adSpentRes, adRemainingRes] =
       await Promise.all([
         pool.query<{ balance: string; pending_balance: string }>(
           `SELECT balance, pending_balance FROM teacher_wallets WHERE teacher_id = $1`,
@@ -44,11 +44,27 @@ export class TeacherWalletController {
             WHERE teacher_id = $1 AND status IN ('pending','approved')`,
           [teacherId]
         ),
+        pool.query<{ total: string }>(
+          `SELECT COALESCE(SUM(ABS(amount)), 0)::decimal AS total
+             FROM advertisement_wallet_transactions
+            WHERE teacher_id = $1 AND txn_type = 'click_charge'`,
+          [teacherId]
+        ),
+        pool.query<{ total: string }>(
+          `SELECT COALESCE(SUM(budget_remaining), 0)::decimal AS total
+             FROM advertisements
+            WHERE teacher_id = $1
+              AND deleted_at IS NULL
+              AND status IN ('running', 'approved', 'pending_review')`,
+          [teacherId]
+        ),
       ]);
 
     const topupBalance = Number(walletRes.rows[0]?.balance ?? 0);
     const videoEarningsAvailable = Number(walletRes.rows[0]?.pending_balance ?? 0);
     const lifetimeEarned = Number(earnedRes.rows[0]?.total ?? 0);
+    const advertisementSpent = Number(adSpentRes.rows[0]?.total ?? 0);
+    const advertisementRemainingBudget = Number(adRemainingRes.rows[0]?.total ?? 0);
     const total = Math.round((topupBalance + videoEarningsAvailable) * 100) / 100;
 
     res.status(200).json(
@@ -59,6 +75,11 @@ export class TeacherWalletController {
           total,
           topupBalance,
           videoEarningsAvailable,
+          advertisementReport: {
+            spent: advertisementSpent,
+            remainingBudget: advertisementRemainingBudget,
+            netWalletAvailable: total,
+          },
           videoReport: {
             lifetimeEarned,
             withdrawn: withdrawnVideo,
