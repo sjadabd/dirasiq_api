@@ -77,6 +77,8 @@ const recipientTypeForNews = (newsType?: NewsType): RecipientType => {
       return RecipientType.TEACHERS;
     case NewsType.MOBILE:
       return RecipientType.STUDENTS;
+    case NewsType.TEACHER_MOBILE:
+      return RecipientType.TEACHERS;
     case NewsType.WEB_AND_MOBILE:
     default:
       return RecipientType.ALL;
@@ -145,6 +147,7 @@ export class NewsController {
     if (query.newsType === NewsType.WEB) newsTypes = [NewsType.WEB, NewsType.WEB_AND_MOBILE];
     else if (query.newsType === NewsType.MOBILE) newsTypes = [NewsType.MOBILE, NewsType.WEB_AND_MOBILE];
     else if (query.newsType === NewsType.WEB_AND_MOBILE) newsTypes = [NewsType.WEB_AND_MOBILE];
+    else if (query.newsType === NewsType.TEACHER_MOBILE) newsTypes = [NewsType.TEACHER_MOBILE];
 
     const result = await NewsService.getAllNews(page, limit, query.search, query.isActive, newsTypes);
     // Preserve the legacy contract — the dashboard reads `data: <result>` with

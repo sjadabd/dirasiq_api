@@ -113,4 +113,11 @@ export class TeacherAdvertisementController {
     const ad = await AdvertisementService.submit(teacherId, id);
     res.status(200).json(ok(ad, 'تم تقديم الإعلان للمراجعة'));
   }
+
+  static async cancel(req: Request, res: Response): Promise<void> {
+    const teacherId = req.user!.id as string;
+    const id = req.params['id'] as string;
+    const ad = await AdvertisementService.cancelByTeacher(teacherId, id);
+    res.status(200).json(ok(ad, 'تم إيقاف الإعلان'));
+  }
 }

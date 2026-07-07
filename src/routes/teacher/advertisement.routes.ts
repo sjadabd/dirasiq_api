@@ -53,4 +53,10 @@ router.post(
   asyncHandler(TeacherAdvertisementController.submit),
 );
 
+router.post(
+  '/:id/cancel',
+  validate({ params: idParamSchema }),
+  asyncHandler(TeacherAdvertisementController.cancel),
+);
+
 export default router;

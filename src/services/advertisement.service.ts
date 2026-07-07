@@ -205,6 +205,7 @@ export class AdvertisementService {
     if (!updated) throw new ApiError(500, 'خطأ داخلي', ErrorCodes.INTERNAL_ERROR);
 
     void AdvertisementNotifyService.onSubmitted(updated, teacher?.name ?? '');
+    void AdvertisementNotifyService.emitStatusChanged(updated);
     if (result === AdvertisementStatus.APPROVED) {
       await this.promoteApprovedToRunning(id);
     }
@@ -241,7 +242,10 @@ export class AdvertisementService {
 
     await this.promoteApprovedToRunning(id);
     const updated = await AdvertisementModel.findById(id);
-    if (updated) void AdvertisementNotifyService.onApproved(updated);
+    if (updated) {
+      void AdvertisementNotifyService.onApproved(updated);
+      void AdvertisementNotifyService.emitStatusChanged(updated);
+    }
     return updated!;
   }
 
@@ -261,8 +265,46 @@ export class AdvertisementService {
     });
 
     const updated = await AdvertisementModel.findById(id);
-    if (updated) void AdvertisementNotifyService.onRejected(updated, reason);
+    if (updated) {
+      void AdvertisementNotifyService.onRejected(updated, reason);
+      void AdvertisementNotifyService.emitStatusChanged(updated);
+    }
     return updated!;
+  }
+
+  static async cancelByTeacher(teacherId: string, id: string): Promise<Advertisement> {
+    const ad = await AdvertisementModel.findByIdForTeacher(id, teacherId);
+    if (!ad) throw new ApiError(404, 'الإعلان غير موجود', ErrorCodes.NOT_FOUND);
+
+    if (![AdvertisementStatus.APPROVED, AdvertisementStatus.RUNNING].includes(ad.status)) {
+      throw new ApiError(400, 'لا يمكن إيقاف الإعلان في حالته الحالية', ErrorCodes.BUSINESS_RULE);
+    }
+
+    await AdvertisementWalletService.withTransaction(async (client) => {
+      const refreshed = await AdvertisementModel.findById(id, client);
+      if (!refreshed || refreshed.teacherId !== teacherId) {
+        throw new ApiError(404, 'الإعلان غير موجود', ErrorCodes.NOT_FOUND);
+      }
+      if (
+        refreshed.status !== AdvertisementStatus.APPROVED &&
+        refreshed.status !== AdvertisementStatus.RUNNING
+      ) {
+        throw new ApiError(400, 'لا يمكن إيقاف الإعلان في حالته الحالية', ErrorCodes.BUSINESS_RULE);
+      }
+      if (refreshed.budgetRemaining > 0) {
+        await this.refundRemaining(refreshed, 'refund_unused', client);
+      }
+      await AdvertisementModel.adminUpdate(
+        id,
+        { status: AdvertisementStatus.FINISHED, budgetRemaining: 0 },
+        client,
+      );
+    });
+
+    const updated = await AdvertisementModel.findByIdForTeacher(id, teacherId);
+    if (!updated) throw new ApiError(404, 'الإعلان غير موجود', ErrorCodes.NOT_FOUND);
+    void AdvertisementNotifyService.emitStatusChanged(updated);
+    return updated;
   }
 
   static async adminDelete(id: string): Promise<void> {
@@ -397,6 +439,8 @@ export class AdvertisementService {
     const start = ad.startDate ?? new Date();
     if (start > new Date()) return;
     await AdvertisementModel.adminUpdate(id, { status: AdvertisementStatus.RUNNING });
+    const updated = await AdvertisementModel.findById(id);
+    if (updated) void AdvertisementNotifyService.emitStatusChanged(updated);
   }
 
   static async processCronTransitions(): Promise<void> {
@@ -404,6 +448,8 @@ export class AdvertisementService {
       const toStart = await AdvertisementModel.findDueToStart(client);
       for (const ad of toStart) {
         await AdvertisementModel.adminUpdate(ad.id, { status: AdvertisementStatus.RUNNING }, client);
+        const updated = await AdvertisementModel.findById(ad.id, client);
+        if (updated) void AdvertisementNotifyService.emitStatusChanged(updated);
       }
 
       const toFinish = await AdvertisementModel.findDueToFinish(client);
@@ -424,7 +470,10 @@ export class AdvertisementService {
       client,
     );
     const updated = await AdvertisementModel.findById(ad.id, client);
-    if (updated) void AdvertisementNotifyService.onFinished(updated);
+    if (updated) {
+      void AdvertisementNotifyService.onFinished(updated);
+      void AdvertisementNotifyService.emitStatusChanged(updated);
+    }
   }
 
   private static async refundFull(ad: Advertisement): Promise<void> {
@@ -477,7 +526,7 @@ export class AdvertisementService {
     }>(
       `SELECT
          COUNT(*)::int AS total,
-         COUNT(*) FILTER (WHERE status = 'running')::int AS running,
+         COUNT(*) FILTER (WHERE status IN ('running','approved'))::int AS running,
          COUNT(*) FILTER (WHERE status = 'pending_review')::int AS pending,
          COUNT(*) FILTER (WHERE status = 'rejected')::int AS rejected,
          COALESCE(SUM(unique_clicks), 0)::int AS clicks,

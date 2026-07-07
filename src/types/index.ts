@@ -1003,6 +1003,7 @@ export enum NewsType {
   WEB = 'web',
   MOBILE = 'mobile',
   WEB_AND_MOBILE = 'web_and_mobile',
+  TEACHER_MOBILE = 'teacher_mobile',
 }
 
 export interface News {

@@ -3,6 +3,7 @@ import { Client as OneSignalClient } from 'onesignal-node';
 import pool from '../config/database';
 import type { Advertisement } from '../types';
 import { logger } from '../utils/logger';
+import { RealtimeService } from './realtime.service';
 
 let cachedClient: OneSignalClient | null | undefined;
 
@@ -59,6 +60,23 @@ async function notifyAdmins(title: string, message: string, data?: Record<string
 }
 
 export class AdvertisementNotifyService {
+  static async emitStatusChanged(ad: Advertisement): Promise<void> {
+    try {
+      await RealtimeService.emitToUser(ad.teacherId, 'advertisement:status_changed', {
+        advertisement: {
+          id: ad.id,
+          status: ad.status,
+          budgetRemaining: ad.budgetRemaining,
+          uniqueClicks: ad.uniqueClicks,
+          updatedAt: ad.updatedAt,
+        },
+        at: new Date().toISOString(),
+      });
+    } catch (err) {
+      logger.warn({ err, advertisementId: ad.id }, 'advertisement socket emit failed');
+    }
+  }
+
   static async onSubmitted(ad: Advertisement, teacherName: string): Promise<void> {
     await notifyAdmins(
       'طلب إعلان جديد',
