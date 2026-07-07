@@ -328,6 +328,9 @@ export class NotificationService {
         }
         if (url) {
           enrichedData['url'] = url;
+          if (!enrichedData['route']) {
+            enrichedData['route'] = url;
+          }
         }
       }
 
