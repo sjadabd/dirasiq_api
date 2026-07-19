@@ -245,30 +245,48 @@ export class SuperAdminIntroVideoController {
       throw new ApiError(404, 'لا يوجد فيديو Bunny لهذا الأستاذ', ErrorCodes.NOT_FOUND);
     }
 
-    const details = await BunnyStreamService.getVideo(bunnyVideoId);
-    const hit = await UserModel.applyIntroVideoBunnyState({
-      bunnyVideoId,
-      status: details.status as 'pending' | 'uploaded' | 'processing' | 'ready' | 'failed',
-      thumbnailUrl: details.thumbnailUrl,
-      playbackUrl: details.playbackUrl,
-      durationSeconds: details.durationSeconds,
-    });
-    if (!hit) {
-      throw new ApiError(404, 'تعذر تحديث صف الفيديو', ErrorCodes.NOT_FOUND);
-    }
+    try {
+      const details = await BunnyStreamService.getVideo(bunnyVideoId);
+      const hit = await UserModel.applyIntroVideoBunnyState({
+        bunnyVideoId,
+        status: details.status as 'pending' | 'uploaded' | 'processing' | 'ready' | 'failed',
+        thumbnailUrl: details.thumbnailUrl,
+        playbackUrl: details.playbackUrl,
+        durationSeconds: details.durationSeconds,
+      });
+      if (!hit) {
+        throw new ApiError(404, 'تعذر تحديث صف الفيديو', ErrorCodes.NOT_FOUND);
+      }
 
-    const refreshed = await UserModel.findById(teacherId);
-    const view = buildIntroVideoViewForAdmin(refreshed as any, req.ip);
-    res.status(200).json(
-      ok(
-        {
-          teacherId,
-          bunnyStatus: details.status,
-          durationSeconds: details.durationSeconds,
-          introVideo: view,
-        },
-        'تمت مزامنة الفيديو من Bunny'
-      )
-    );
+      const refreshed = await UserModel.findById(teacherId);
+      const view = buildIntroVideoViewForAdmin(refreshed as any, req.ip);
+      res.status(200).json(
+        ok(
+          {
+            teacherId,
+            bunnyStatus: details.status,
+            durationSeconds: details.durationSeconds,
+            dbStatus: hit.status,
+            introVideo: view,
+          },
+          'تمت مزامنة الفيديو من Bunny'
+        )
+      );
+    } catch (err: unknown) {
+      if (err instanceof ApiError) throw err;
+      const e = err as { code?: string; message?: string } | null;
+      const detail = [e?.message, e?.code ? `pg:${e.code}` : null]
+        .filter(Boolean)
+        .join(' — ');
+      logger.error({ err, teacherId, bunnyVideoId }, 'intro-video admin sync failed');
+      throw new ApiError(
+        500,
+        detail
+          ? `فشل مزامنة الفيديو التعريفي: ${detail}`
+          : 'فشل مزامنة الفيديو التعريفي',
+        ErrorCodes.INTERNAL_ERROR,
+        { bunnyVideoId }
+      );
+    }
   }
 }

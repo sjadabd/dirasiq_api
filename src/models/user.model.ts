@@ -909,18 +909,17 @@ export class UserModel {
     libraryId: string;
     videoId: string;
   }): Promise<void> {
+    // Do not touch intro_video_reviewed_* here — those columns only exist
+    // after migration 061; clearing them here 500s sync/upload on older DBs.
     await pool.query(
       `UPDATE users
-          SET intro_video_status              = 'pending',
-              intro_video_bunny_library_id    = $2,
-              intro_video_bunny_video_id      = $3,
-              intro_video_bunny_playback_url  = NULL,
-              intro_video_bunny_thumbnail_url = NULL,
+          SET intro_video_status               = 'pending',
+              intro_video_bunny_library_id     = $2,
+              intro_video_bunny_video_id       = $3,
+              intro_video_bunny_playback_url   = NULL,
+              intro_video_bunny_thumbnail_url  = NULL,
               intro_video_bunny_last_synced_at = NULL,
-              intro_video_duration_seconds    = NULL,
-              intro_video_reviewed_by         = NULL,
-              intro_video_reviewed_at         = NULL,
-              intro_video_review_notes        = NULL
+              intro_video_duration_seconds     = NULL
         WHERE id = $1`,
       [args.userId, args.libraryId, args.videoId]
     );
@@ -943,31 +942,61 @@ export class UserModel {
     let nextStatus: string = args.status;
     if (args.status === 'ready') {
       const dur = args.durationSeconds ?? null;
-      if (dur != null && dur > UserModel.INTRO_VIDEO_MAX_DURATION_SECONDS) {
+      // Bunny sometimes reports length=0 before metadata settles — don't fail.
+      if (dur != null && dur > 0 && dur > UserModel.INTRO_VIDEO_MAX_DURATION_SECONDS) {
         nextStatus = 'failed';
       } else {
-        nextStatus = 'awaiting_review';
+        // Prefer awaiting_review, but default write uses `ready` first so sync
+        // works even when migration 061 CHECK is not applied. Then upgrade.
+        nextStatus = 'ready';
       }
     }
 
-    try {
-      return await UserModel.writeIntroVideoBunnyState({
-        ...args,
-        status: nextStatus,
-      });
-    } catch (err: unknown) {
-      // CHECK constraint missing awaiting_review / rejected — keep pipeline alive.
-      const code = (err as { code?: string } | null)?.code;
-      if (code === '23514' && nextStatus === 'awaiting_review') {
-        return UserModel.writeIntroVideoBunnyState({
-          ...args,
-          status: 'ready',
+    const written = await UserModel.writeIntroVideoBunnyState({
+      bunnyVideoId: args.bunnyVideoId,
+      status: nextStatus,
+      thumbnailUrl: args.thumbnailUrl,
+      playbackUrl: args.playbackUrl,
+      durationSeconds: args.durationSeconds,
+    });
+
+    // Best-effort upgrade ready → awaiting_review when CHECK allows it.
+    if (written && nextStatus === 'ready') {
+      try {
+        const upgraded = await UserModel.writeIntroVideoBunnyState({
+          bunnyVideoId: args.bunnyVideoId,
+          status: 'awaiting_review',
+          thumbnailUrl: args.thumbnailUrl,
+          playbackUrl: args.playbackUrl,
+          durationSeconds: args.durationSeconds,
         });
+        return upgraded ?? written;
+      } catch (err: unknown) {
+        if (UserModel.isIntroStatusConstraintError(err)) return written;
+        // Non-constraint errors on upgrade are non-fatal — row is already ready.
+        return written;
       }
-      throw err;
     }
+
+    return written;
   }
 
+  private static isIntroStatusConstraintError(err: unknown): boolean {
+    const e = err as {
+      code?: string;
+      message?: string;
+      cause?: { code?: string; message?: string };
+    } | null;
+    if (!e) return false;
+    if (e.code === '23514' || e.cause?.code === '23514') return true;
+    const msg = `${e.message || ''} ${e.cause?.message || ''}`.toLowerCase();
+    return msg.includes('intro_video_status') || msg.includes('check constraint');
+  }
+
+  /**
+   * Bunny reconcile write — only columns from migration 044 (no review_*).
+   * Keeps sync alive when 061 is missing or partial.
+   */
   private static async writeIntroVideoBunnyState(args: {
     bunnyVideoId: string;
     status: string;
@@ -977,19 +1006,11 @@ export class UserModel {
   }): Promise<{ userId: string; status: string } | null> {
     const { rows } = await pool.query<{ id: string; intro_video_status: string }>(
       `UPDATE users
-          SET intro_video_status              = $2,
-              intro_video_bunny_thumbnail_url = COALESCE($3, intro_video_bunny_thumbnail_url),
-              intro_video_bunny_playback_url  = COALESCE($4, intro_video_bunny_playback_url),
-              intro_video_duration_seconds    = COALESCE($5, intro_video_duration_seconds),
-              intro_video_bunny_last_synced_at = NOW(),
-              intro_video_reviewed_by         = CASE WHEN $2 IN ('awaiting_review','ready','failed') THEN NULL ELSE intro_video_reviewed_by END,
-              intro_video_reviewed_at         = CASE WHEN $2 IN ('awaiting_review','ready','failed') THEN NULL ELSE intro_video_reviewed_at END,
-              intro_video_review_notes        = CASE
-                WHEN $2 = 'failed' AND $5 IS NOT NULL AND $5 > ${UserModel.INTRO_VIDEO_MAX_DURATION_SECONDS}
-                  THEN 'تجاوز المدة القصوى (60 ثانية)'
-                WHEN $2 IN ('awaiting_review','ready') THEN NULL
-                ELSE intro_video_review_notes
-              END
+          SET intro_video_status               = $2,
+              intro_video_bunny_thumbnail_url  = COALESCE($3, intro_video_bunny_thumbnail_url),
+              intro_video_bunny_playback_url   = COALESCE($4, intro_video_bunny_playback_url),
+              intro_video_duration_seconds     = COALESCE($5, intro_video_duration_seconds),
+              intro_video_bunny_last_synced_at = NOW()
         WHERE intro_video_bunny_video_id = $1
           AND deleted_at IS NULL
         RETURNING id, intro_video_status`,
@@ -1042,7 +1063,7 @@ export class UserModel {
         `u.intro_video_status IN ('pending','uploaded','processing','awaiting_review','ready')`
       );
     } else if (args.status === 'awaiting_review') {
-      // Treat legacy Bunny-ready rows as reviewable when migration not applied.
+      // ready = reviewable when migration 061 CHECK is not applied yet.
       where.push(`u.intro_video_status IN ('awaiting_review','ready')`);
     } else if (args.status) {
       where.push(`u.intro_video_status = $${i++}`);
@@ -1052,6 +1073,9 @@ export class UserModel {
         `u.intro_video_status IN ('awaiting_review','ready','approved','rejected','processing','uploaded','pending','failed')`
       );
     }
+
+    // Prefer columns that always exist; review_* are selected with NULL
+    // fallbacks so a missing-061 DB still lists rows.
 
     if (args.search?.trim()) {
       where.push(`(u.name ILIKE $${i} OR u.email ILIKE $${i})`);
