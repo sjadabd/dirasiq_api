@@ -705,4 +705,8 @@ export class NotificationService {
   ): Promise<boolean> {
     return await NotificationModel.markAsRead(notificationId, userId);
   }
+
+  async markAllNotificationsAsRead(userId: string): Promise<number> {
+    return await NotificationModel.markAllAsRead(userId);
+  }
 }

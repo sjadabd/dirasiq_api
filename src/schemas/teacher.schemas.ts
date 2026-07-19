@@ -138,6 +138,10 @@ export const courseUpdateSchema = z.object({
   reservation_amount: positiveMoneySchema.nullable().optional(),
 });
 
+export const courseRegistrationSchema = z.object({
+  registration_open: z.boolean(),
+});
+
 export const courseListQuerySchema = paginationQuerySchema.extend({
   search: optionalString,
   study_year: optionalStudyYear,

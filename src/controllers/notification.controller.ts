@@ -349,6 +349,15 @@ export class NotificationController {
   };
 
   // ---------------------------------------------------------------------------
+  // PUT /api/notifications/user/mark-all-read
+  // ---------------------------------------------------------------------------
+  markAllAsRead = async (req: Request, res: Response): Promise<void> => {
+    const userId = req.user.id as string;
+    const marked = await this.notificationService.markAllNotificationsAsRead(userId);
+    res.status(200).json(ok({ marked }, 'تم تعليم كل الإشعارات كمقروءة'));
+  };
+
+  // ---------------------------------------------------------------------------
   // GET /api/notifications/statistics  (super-admin)
   // ---------------------------------------------------------------------------
   getStatistics = async (_req: Request, res: Response): Promise<void> => {

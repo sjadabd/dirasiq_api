@@ -23,12 +23,19 @@ export class CourseBookingModel {
       await client.query('BEGIN');
 
       // First, get the course details to extract teacher_id, study_year and grade_id
-      const courseQuery =
-        'SELECT teacher_id, study_year, grade_id FROM courses WHERE id = $1 AND is_deleted = false';
+      const courseQuery = `
+        SELECT teacher_id, study_year, grade_id, registration_open
+          FROM courses
+         WHERE id = $1 AND is_deleted = false
+         FOR SHARE
+      `;
       const courseResult = await client.query(courseQuery, [data.courseId]);
 
       if (courseResult.rows.length === 0) {
         throw new Error('Course not found');
+      }
+      if (courseResult.rows[0].registration_open === false) {
+        throw new Error('Course registration is closed');
       }
 
       const teacherId = courseResult.rows[0].teacher_id;
@@ -728,15 +735,19 @@ export class CourseBookingModel {
 
       // Check if course is still available
       const courseQuery = `
-        SELECT id, is_deleted, end_date
+        SELECT id, is_deleted, end_date, registration_open
         FROM courses
         WHERE id = $1
+        FOR SHARE
       `;
 
       const courseResult = await client.query(courseQuery, [booking.course_id]);
 
       if (courseResult.rows.length === 0 || courseResult.rows[0].is_deleted) {
         throw new Error('Course is no longer available');
+      }
+      if (courseResult.rows[0].registration_open === false) {
+        throw new Error('Course registration is closed');
       }
 
       // Check if course end date hasn't passed

@@ -7,6 +7,7 @@ import { idParamSchema, paginationQuerySchema } from '../../schemas/common.schem
 import {
   courseCreateSchema,
   courseListQuerySchema,
+  courseRegistrationSchema,
   courseUpdateSchema,
 } from '../../schemas/teacher.schemas';
 
@@ -37,6 +38,11 @@ router.put(
   '/:id',
   validate({ params: idParamSchema, body: courseUpdateSchema }),
   asyncHandler(CourseController.update)
+);
+router.patch(
+  '/:id/registration',
+  validate({ params: idParamSchema, body: courseRegistrationSchema }),
+  asyncHandler(CourseController.setRegistration)
 );
 router.delete(
   '/:id',

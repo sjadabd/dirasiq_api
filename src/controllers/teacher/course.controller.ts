@@ -60,6 +60,27 @@ export class CourseController {
     res.status(200).json(ok(data, 'تم تحديث الدورة'));
   }
 
+  static async setRegistration(req: Request, res: Response): Promise<void> {
+    const teacherId = req.user.id as string;
+    const id = req.params['id'] as string;
+    const registrationOpen = req.body.registration_open as boolean;
+    const data = await CourseService.setRegistrationOpen(
+      id,
+      teacherId,
+      registrationOpen
+    );
+    res
+      .status(200)
+      .json(
+        ok(
+          data,
+          registrationOpen
+            ? 'تم فتح باب التسجيل'
+            : 'تم غلق باب التسجيل'
+        )
+      );
+  }
+
   static async delete(req: Request, res: Response): Promise<void> {
     const teacherId = req.user.id as string;
     const id = req.params['id'] as string;

@@ -32,6 +32,16 @@ describe('Teacher API envelope (Phase 1.B-1)', () => {
       expect(['TOKEN_INVALID', 'UNAUTHORIZED']).toContain(res.body.errors?.[0]?.code);
     });
 
+    it('protects the course registration-control endpoint', async () => {
+      const res = await request(app)
+        .patch(
+          '/api/teacher/courses/00000000-0000-0000-0000-000000000000/registration'
+        )
+        .send({ registration_open: false });
+      expect(res.status).toBe(401);
+      expect(res.body.success).toBe(false);
+    });
+
     it('returns 401 for every teacher sub-route without a token', async () => {
       const subRoutes = [
         '/api/teacher/courses',

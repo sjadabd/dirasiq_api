@@ -18,6 +18,13 @@ const mapCreateBookingError = (err: any): ApiError => {
   if (message === 'Course not found') {
     return new ApiError(404, 'الدورة غير موجودة', ErrorCodes.NOT_FOUND);
   }
+  if (message === 'Course registration is closed') {
+    return new ApiError(
+      409,
+      'تم غلق باب التسجيل في هذه الدورة',
+      ErrorCodes.BUSINESS_RULE
+    );
+  }
   if (
     message === 'Student grade not eligible for this course' ||
     err?.code === 'STUDENT_GRADE_MISMATCH'
@@ -80,6 +87,13 @@ const mapReactivateError = (err: any): ApiError => {
   }
   if (message === 'Course is no longer available') {
     return new ApiError(400, 'الدورة غير موجودة', ErrorCodes.BUSINESS_RULE);
+  }
+  if (message === 'Course registration is closed') {
+    return new ApiError(
+      409,
+      'تم غلق باب التسجيل في هذه الدورة',
+      ErrorCodes.BUSINESS_RULE
+    );
   }
   if (message === 'Course has already ended') {
     return new ApiError(400, 'الدورة ختمت', ErrorCodes.BUSINESS_RULE, {

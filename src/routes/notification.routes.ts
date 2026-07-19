@@ -12,6 +12,7 @@
 //     (controller-side ownership is owed in Phase 1.C; for now any authed
 //      user can fetch any notification by id, matching legacy behaviour)
 //   - GET  /user/my-notifications                     → any authenticated user
+//   - PUT  /user/mark-all-read                        → any authenticated user
 //   - PUT  /:id/read                                  → any authenticated user
 
 import { Router } from 'express';
@@ -102,6 +103,11 @@ router.get(
   '/user/my-notifications',
   validate({ query: myNotificationsQuerySchema }),
   asyncHandler(notificationController.getUserNotifications)
+);
+
+router.put(
+  '/user/mark-all-read',
+  asyncHandler(notificationController.markAllAsRead)
 );
 
 router.put(

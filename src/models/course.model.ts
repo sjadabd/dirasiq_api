@@ -262,6 +262,23 @@ export class CourseModel {
     return result.rows[0] || null;
   }
 
+  static async setRegistrationOpen(
+    id: string,
+    teacherId: string,
+    registrationOpen: boolean
+  ): Promise<Course | null> {
+    const result = await pool.query(
+      `UPDATE courses
+          SET registration_open = $3, updated_at = CURRENT_TIMESTAMP
+        WHERE id = $1
+          AND teacher_id = $2
+          AND is_deleted = false
+        RETURNING *`,
+      [id, teacherId, registrationOpen]
+    );
+    return result.rows[0] || null;
+  }
+
   // Soft delete course
   static async softDelete(id: string, teacherId: string): Promise<boolean> {
     const query = `

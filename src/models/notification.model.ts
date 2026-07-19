@@ -615,6 +615,47 @@ export class NotificationModel {
     return true;
   }
 
+  /** Mark every inbox notification as read for this user (user_notifications only). */
+  static async markAllAsRead(userId: string): Promise<number> {
+    const activeYear = await AcademicYearModel.getActive();
+    const params: unknown[] = [userId];
+    let yearClause = '';
+    if (activeYear?.year) {
+      params.push(activeYear.year);
+      yearClause = `AND n.study_year = $${params.length}`;
+    }
+
+    const query = `
+      INSERT INTO user_notifications (user_id, notification_id, read_at)
+      SELECT $1, n.id, NOW()
+      FROM notifications n
+      INNER JOIN users u ON u.id = $1
+      LEFT JOIN user_notifications un
+        ON un.notification_id = n.id AND un.user_id = $1
+      WHERE (
+        n.recipient_type = 'all' OR
+        (n.recipient_type = 'teachers' AND u.user_type = 'teacher') OR
+        (n.recipient_type = 'students' AND u.user_type = 'student') OR
+        (n.recipient_type = 'specific_teachers' AND u.user_type = 'teacher' AND $1 = ANY(
+          SELECT jsonb_array_elements_text(n.recipient_ids::jsonb)::uuid
+        )) OR
+        (n.recipient_type = 'specific_students' AND u.user_type = 'student' AND $1 = ANY(
+          SELECT jsonb_array_elements_text(n.recipient_ids::jsonb)::uuid
+        ))
+      )
+      AND n.status IN ('sent', 'delivered', 'read')
+      AND n.deleted_at IS NULL
+      AND un.read_at IS NULL
+      ${yearClause}
+      ON CONFLICT (user_id, notification_id)
+      DO UPDATE SET read_at = COALESCE(user_notifications.read_at, EXCLUDED.read_at)
+      WHERE user_notifications.read_at IS NULL
+      RETURNING notification_id
+    `;
+    const result = await pool.query(query, params);
+    return result.rowCount || 0;
+  }
+
   // Delete notification
   static async delete(id: string): Promise<boolean> {
     const query = 'DELETE FROM notifications WHERE id = $1';

@@ -427,6 +427,22 @@ export class CourseService {
     }
   }
 
+  static async setRegistrationOpen(
+    id: string,
+    teacherId: string,
+    registrationOpen: boolean
+  ): Promise<{ course: Course }> {
+    const course = await CourseModel.setRegistrationOpen(
+      id,
+      teacherId,
+      registrationOpen
+    );
+    if (!course) {
+      throw new ApiError(404, 'الدورة غير موجودة', ErrorCodes.NOT_FOUND);
+    }
+    return { course };
+  }
+
   static async getDeletedNotExpired(
     teacherId: string,
     page = 1,
