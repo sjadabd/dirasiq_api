@@ -955,9 +955,11 @@ export class UserModel {
     const written = await UserModel.writeIntroVideoBunnyState({
       bunnyVideoId: args.bunnyVideoId,
       status: nextStatus,
-      thumbnailUrl: args.thumbnailUrl,
-      playbackUrl: args.playbackUrl,
-      durationSeconds: args.durationSeconds,
+      ...(args.thumbnailUrl !== undefined ? { thumbnailUrl: args.thumbnailUrl } : {}),
+      ...(args.playbackUrl !== undefined ? { playbackUrl: args.playbackUrl } : {}),
+      ...(args.durationSeconds !== undefined
+        ? { durationSeconds: args.durationSeconds }
+        : {}),
     });
 
     // Best-effort upgrade ready → awaiting_review when CHECK allows it.
@@ -966,9 +968,11 @@ export class UserModel {
         const upgraded = await UserModel.writeIntroVideoBunnyState({
           bunnyVideoId: args.bunnyVideoId,
           status: 'awaiting_review',
-          thumbnailUrl: args.thumbnailUrl,
-          playbackUrl: args.playbackUrl,
-          durationSeconds: args.durationSeconds,
+          ...(args.thumbnailUrl !== undefined ? { thumbnailUrl: args.thumbnailUrl } : {}),
+          ...(args.playbackUrl !== undefined ? { playbackUrl: args.playbackUrl } : {}),
+          ...(args.durationSeconds !== undefined
+            ? { durationSeconds: args.durationSeconds }
+            : {}),
         });
         return upgraded ?? written;
       } catch (err: unknown) {
