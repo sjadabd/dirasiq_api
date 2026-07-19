@@ -9,6 +9,7 @@ import {
 import { NotificationService } from '../../services/notification.service';
 import { ApiError, ErrorCodes } from '../../utils/api-error';
 import { ok } from '../../utils/response.util';
+import { formatTime12Arabic } from '../../utils/time-format.util';
 
 const notificationService = new NotificationService({
   appId: process.env['ONESIGNAL_APP_ID'] || '',
@@ -17,14 +18,8 @@ const notificationService = new NotificationService({
 
 const to12hFromISO = (iso: string | null | undefined): string | null => {
   if (!iso) return null;
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return null;
-  let h = d.getHours();
-  const m = d.getMinutes();
-  const am = h < 12;
-  h = h % 12;
-  if (h === 0) h = 12;
-  return `${h}:${m.toString().padStart(2, '0')} ${am ? 'صباحاً' : 'مساءً'}`;
+  const formatted = formatTime12Arabic(iso);
+  return formatted || null;
 };
 
 export class StudentAttendanceController {

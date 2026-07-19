@@ -13,6 +13,7 @@ import { NotificationService } from '../../services/notification.service';
 import { ApiError, ErrorCodes } from '../../utils/api-error';
 import { ok, paginated } from '../../utils/response.util';
 import { buildPaginationMeta, parsePagination } from '../../utils/pagination';
+import { formatTime12Arabic } from '../../utils/time-format.util';
 
 // One shared OneSignal client for all session-side notifications.
 const notificationService = new NotificationService({
@@ -23,27 +24,12 @@ const notificationService = new NotificationService({
 const WEEKDAY_NAMES_AR = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
 const weekdayName = (d: number): string => WEEKDAY_NAMES_AR[d] ?? String(d);
 
-const to12h = (time: string | undefined | null): string => {
-  if (!time) return '';
-  const [hStr, mStr] = String(time).split(':');
-  let h = parseInt(hStr || '0', 10);
-  const m = parseInt(mStr || '0', 10);
-  const am = h < 12;
-  h = h % 12;
-  if (h === 0) h = 12;
-  return `${h}:${m.toString().padStart(2, '0')} ${am ? 'صباحاً' : 'مساءً'}`;
-};
+const to12h = (time: string | undefined | null): string => formatTime12Arabic(time);
 
 const to12hFromISO = (iso: string | null | undefined): string | null => {
   if (!iso) return null;
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return null;
-  let h = d.getHours();
-  const m = d.getMinutes();
-  const am = h < 12;
-  h = h % 12;
-  if (h === 0) h = 12;
-  return `${h}:${m.toString().padStart(2, '0')} ${am ? 'صباحاً' : 'مساءً'}`;
+  const formatted = formatTime12Arabic(iso);
+  return formatted || null;
 };
 
 const ensureOwnership = async (sessionId: string, teacherId: string) => {
@@ -64,9 +50,17 @@ export class TeacherSessionController {
   static async createSession(req: Request, res: Response): Promise<void> {
     const teacher = req.user;
     const payload = req.body as Record<string, any>;
+    const teacherId = String(teacher.id);
+    const courseId = String(payload['course_id']);
 
-    if (payload['teacher_id'] !== teacher.id) {
+    // Always bind the session to the authenticated teacher (ignore spoofed body ids).
+    if (payload['teacher_id'] && String(payload['teacher_id']) !== teacherId) {
       throw new ApiError(403, 'صلاحيات غير كافية', ErrorCodes.FORBIDDEN);
+    }
+
+    const ownedCourse = await CourseModel.findByIdAndTeacher(courseId, teacherId);
+    if (!ownedCourse) {
+      throw new ApiError(404, 'الدورة غير موجودة أو لا تملك صلاحية عليها', ErrorCodes.NOT_FOUND);
     }
 
     const hasWeekdaysArray =
@@ -78,7 +72,7 @@ export class TeacherSessionController {
       for (const dRaw of payload['weekdays']) {
         const d = Number(dRaw);
         const conflict = await SessionModel.hasConflict({
-          teacherId: payload['teacher_id'],
+          teacherId,
           weekday: d,
           startTime: payload['start_time'],
           endTime: payload['end_time'],
@@ -88,8 +82,8 @@ export class TeacherSessionController {
           continue;
         }
         const s = await SessionModel.createSession({
-          course_id: payload['course_id'],
-          teacher_id: payload['teacher_id'],
+          course_id: courseId,
+          teacher_id: teacherId,
           title: payload['title'],
           weekday: d,
           start_time: payload['start_time'],
@@ -102,7 +96,7 @@ export class TeacherSessionController {
           soft_constraints: payload['soft_constraints'],
           state: payload['state'],
         });
-        const confirmed = await CourseBookingModel.getConfirmedStudentIdsByCourse(payload['course_id']);
+        const confirmed = await CourseBookingModel.getConfirmedStudentIdsByCourse(courseId);
         const provided = Array.isArray(payload['studentIds']) ? payload['studentIds'] : [];
         const unique = Array.from(new Set([...confirmed, ...provided].map(String)));
         if (unique.length > 0) {
@@ -113,7 +107,7 @@ export class TeacherSessionController {
 
       if (created.length > 0) {
         try {
-          const studentIds = await CourseBookingModel.getConfirmedStudentIdsByCourse(payload['course_id']);
+          const studentIds = await CourseBookingModel.getConfirmedStudentIdsByCourse(courseId);
           if (studentIds.length > 0) {
             const dayNames = created.map((s) => weekdayName(Number(s.weekday))).join(', ');
             await notificationService.createAndSendNotification({
@@ -124,10 +118,10 @@ export class TeacherSessionController {
               recipientType: RecipientType.SPECIFIC_STUDENTS,
               recipientIds: studentIds,
               data: {
-                courseId: payload['course_id'],
+                courseId,
                 sessionIds: created.map((s) => s.id),
               },
-              createdBy: String(teacher.id),
+              createdBy: teacherId,
             });
           }
         } catch (err) {
@@ -142,7 +136,7 @@ export class TeacherSessionController {
     // Single-day path
     const weekday = Number(payload['weekday']);
     const conflict = await SessionModel.hasConflict({
-      teacherId: payload['teacher_id'],
+      teacherId,
       weekday,
       startTime: payload['start_time'],
       endTime: payload['end_time'],
@@ -156,8 +150,8 @@ export class TeacherSessionController {
     }
 
     const session = await SessionModel.createSession({
-      course_id: payload['course_id'],
-      teacher_id: payload['teacher_id'],
+      course_id: courseId,
+      teacher_id: teacherId,
       title: payload['title'],
       weekday,
       start_time: payload['start_time'],
@@ -171,7 +165,7 @@ export class TeacherSessionController {
       state: payload['state'],
     });
 
-    const confirmed = await CourseBookingModel.getConfirmedStudentIdsByCourse(payload['course_id']);
+    const confirmed = await CourseBookingModel.getConfirmedStudentIdsByCourse(courseId);
     const provided = Array.isArray(payload['studentIds']) ? payload['studentIds'] : [];
     const unique = Array.from(new Set([...confirmed, ...provided].map(String)));
     if (unique.length > 0) {
@@ -179,7 +173,7 @@ export class TeacherSessionController {
     }
 
     try {
-      const studentIds = await CourseBookingModel.getConfirmedStudentIdsByCourse(payload['course_id']);
+      const studentIds = await CourseBookingModel.getConfirmedStudentIdsByCourse(courseId);
       if (studentIds.length > 0) {
         const dayName = weekdayName(weekday);
         await notificationService.createAndSendNotification({
@@ -189,8 +183,8 @@ export class TeacherSessionController {
           priority: NotificationPriority.HIGH,
           recipientType: RecipientType.SPECIFIC_STUDENTS,
           recipientIds: studentIds,
-          data: { courseId: session.course_id, sessionId: session.id },
-          createdBy: String(teacher.id),
+          data: { courseId, sessionId: session.id },
+          createdBy: teacherId,
         });
       }
     } catch (err) {

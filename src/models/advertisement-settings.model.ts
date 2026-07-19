@@ -16,6 +16,7 @@ type SettingsRow = {
   max_title_length: number;
   max_description_length: number;
   refund_unused_budget: boolean;
+  free_clicks_enabled: boolean;
   updated_at: Date;
   updated_by: string | null;
 };
@@ -36,6 +37,7 @@ function mapRow(row: SettingsRow): AdvertisementSettings {
     maxTitleLength: row.max_title_length,
     maxDescriptionLength: row.max_description_length,
     refundUnusedBudget: row.refund_unused_budget,
+    freeClicksEnabled: row.free_clicks_enabled,
     updatedAt: row.updated_at,
     updatedBy: row.updated_by,
   };
@@ -67,6 +69,7 @@ export class AdvertisementSettingsModel {
       maxTitleLength: number;
       maxDescriptionLength: number;
       refundUnusedBudget: boolean;
+      freeClicksEnabled: boolean;
       updatedBy: string | null;
     }>,
   ): Promise<AdvertisementSettings> {
@@ -85,6 +88,7 @@ export class AdvertisementSettingsModel {
       ['maxTitleLength', 'max_title_length'],
       ['maxDescriptionLength', 'max_description_length'],
       ['refundUnusedBudget', 'refund_unused_budget'],
+      ['freeClicksEnabled', 'free_clicks_enabled'],
       ['updatedBy', 'updated_by'],
     ];
     const sets: string[] = [];

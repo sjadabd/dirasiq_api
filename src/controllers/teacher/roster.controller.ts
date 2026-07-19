@@ -5,6 +5,7 @@ import { CourseModel } from '../../models/course.model';
 import { ApiError, ErrorCodes } from '../../utils/api-error';
 import { ok, paginated } from '../../utils/response.util';
 import { buildPaginationMeta, parsePagination } from '../../utils/pagination';
+import { formatTime12Arabic } from '../../utils/time-format.util';
 
 export class TeacherRosterController {
   // GET /api/teacher/students
@@ -154,7 +155,13 @@ export class TeacherRosterController {
           ORDER BY weekday, start_time`,
         params
       )
-    ).rows;
+    ).rows.map((row: any) => ({
+      ...row,
+      start_time_24h: row.start_time,
+      end_time_24h: row.end_time,
+      start_time: formatTime12Arabic(row.start_time),
+      end_time: formatTime12Arabic(row.end_time),
+    }));
     res.status(200).json(ok(rows, 'جلسات المعلم'));
   }
 

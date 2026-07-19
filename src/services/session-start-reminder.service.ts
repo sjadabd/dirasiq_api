@@ -5,6 +5,7 @@ import {
   RecipientType,
 } from '../models/notification.model';
 import { NotificationService } from './notification.service';
+import { formatTimeRange12Arabic } from '../utils/time-format.util';
 
 export class SessionStartReminderService {
   private notif: NotificationService;
@@ -63,7 +64,7 @@ export class SessionStartReminderService {
             : 'محاضرة';
         await this.notif.createAndSendNotification({
           title: 'تذكير بدء المحاضرة',
-          message: `ستبدأ ${title} بعد 5 دقائق (اليوم: ${dayName}، ${s.start_time} - ${s.end_time})`,
+          message: `ستبدأ ${title} بعد 5 دقائق (اليوم: ${dayName}، ${formatTimeRange12Arabic(s.start_time, s.end_time)})`,
           type: NotificationType.COURSE_UPDATE,
           priority: NotificationPriority.HIGH,
           recipientType: RecipientType.SPECIFIC_TEACHERS,
@@ -132,7 +133,7 @@ export class SessionStartReminderService {
             : 'محاضرة';
         await this.notif.createAndSendNotification({
           title: 'تذكير للطلاب ببدء المحاضرة',
-          message: `لديك ${title} بعد 30 دقيقة (اليوم: ${dayName}، ${row.start_time} - ${row.end_time})`,
+          message: `لديك ${title} بعد 30 دقيقة (اليوم: ${dayName}، ${formatTimeRange12Arabic(row.start_time, row.end_time)})`,
           type: NotificationType.CLASS_REMINDER,
           priority: NotificationPriority.HIGH,
           recipientType: RecipientType.SPECIFIC_STUDENTS,

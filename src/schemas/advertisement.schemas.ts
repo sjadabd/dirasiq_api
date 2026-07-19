@@ -19,7 +19,7 @@ export const advertisementCreateSchema = z.object({
   description: z.string().trim().min(1),
   coverImageUrl: z.string().optional().nullable(),
   visibility: advertisementVisibilitySchema.default('public'),
-  budgetTotal: z.coerce.number().positive(),
+  budgetTotal: z.coerce.number().nonnegative().optional(),
 });
 
 export const advertisementUpdateSchema = advertisementCreateSchema.partial();
@@ -57,6 +57,7 @@ export const advertisementSettingsUpdateSchema = z.object({
   maxTitleLength: z.coerce.number().int().positive().optional(),
   maxDescriptionLength: z.coerce.number().int().positive().optional(),
   refundUnusedBudget: z.coerce.boolean().optional(),
+  freeClicksEnabled: z.coerce.boolean().optional(),
 });
 
 export const contentFeedQuerySchema = paginationQuerySchema;

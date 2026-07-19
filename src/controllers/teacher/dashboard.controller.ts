@@ -3,6 +3,7 @@ import type { Request, Response } from 'express';
 import pool from '../../config/database';
 import { BookingStatus } from '../../types';
 import { ok } from '../../utils/response.util';
+import { formatTime12Arabic } from '../../utils/time-format.util';
 
 export class TeacherDashboardController {
   // GET /api/teacher/dashboard
@@ -148,8 +149,8 @@ export class TeacherDashboardController {
         courseId: String(row.course_id),
         courseName: String(row.course_name),
         title: row.title || null,
-        startTime: row.start_time,
-        endTime: row.end_time,
+        startTime: formatTime12Arabic(row.start_time),
+        endTime: formatTime12Arabic(row.end_time),
         startAt: startAt.toISOString(),
         endAt: endAt.toISOString(),
         state: row.state,

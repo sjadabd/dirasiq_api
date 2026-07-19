@@ -1100,6 +1100,7 @@ export interface AdvertisementSettings {
   maxTitleLength: number;
   maxDescriptionLength: number;
   refundUnusedBudget: boolean;
+  freeClicksEnabled: boolean;
   updatedAt: Date;
   updatedBy?: string | null;
 }

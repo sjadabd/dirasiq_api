@@ -8,6 +8,7 @@ import { NotificationService } from '../../services/notification.service';
 import { ApiError, ErrorCodes } from '../../utils/api-error';
 import { ok, paginated } from '../../utils/response.util';
 import { buildPaginationMeta, parsePagination } from '../../utils/pagination';
+import { formatDateTime12Arabic } from '../../utils/time-format.util';
 
 const getService = (): ExamService => new ExamService();
 
@@ -60,7 +61,7 @@ export class TeacherExamController {
         const activeYear = await AcademicYearModel.getActive();
         await notif.createAndSendNotification({
           title: 'امتحان جديد',
-          message: `تمت إضافة امتحان جديد بتاريخ ${exam.exam_date}`,
+          message: `تمت إضافة امتحان جديد بتاريخ ${formatDateTime12Arabic(exam.exam_date)}`,
           type: 'class_reminder' as any,
           priority: 'medium',
           recipientType: 'specific_students' as any,
@@ -213,7 +214,7 @@ export class TeacherExamController {
       const notif = req.app.get('notificationService') as NotificationService;
       await notif.createAndSendNotification({
         title: 'تم تحديث درجتك في الامتحان',
-        message: `تم تسجيل/تحديث درجتك (${numericScore}) لامتحان بتاريخ ${exam.exam_date}`,
+        message: `تم تسجيل/تحديث درجتك (${numericScore}) لامتحان بتاريخ ${formatDateTime12Arabic(exam.exam_date)}`,
         type: 'grade_update' as any,
         priority: 'medium',
         recipientType: 'specific_students' as any,

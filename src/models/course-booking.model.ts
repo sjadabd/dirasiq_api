@@ -1,6 +1,7 @@
 import pool from '../config/database';
 import { AppSettingService } from '../services/app-setting.service';
 import { TeacherWalletService } from '../services/teacher-wallet.service';
+import { TeacherCommissionFreeStudentModel } from './teacher-commission-free-student.model';
 import {
   BookingStatus,
   CourseBooking,
@@ -268,6 +269,7 @@ export class CourseBookingModel {
 
       const currentBooking = verifyResult.rows[0];
       const currentStatus = currentBooking.status;
+      let isCommissionFreeStudent = false;
 
       // التحقق من وجود student_id
       if (!currentBooking.student_id) {
@@ -286,9 +288,18 @@ export class CourseBookingModel {
           throw new Error(capacityCheck.message || 'لا يمكن تأكيد الحجز');
         }
 
-        // التحقق من رصيد المحفظة ورسوم التأكيد (قابلة للتعديل من السوبر أدمن)
+        // A teacher's first 20 unique confirmed students are permanently
+        // commission/confirmation-fee free, regardless of course or retries.
+        isCommissionFreeStudent =
+          await TeacherCommissionFreeStudentModel.claimIfEligible(client, {
+            teacherId,
+            studentId: String(currentBooking.student_id),
+            bookingId: id,
+          });
+
+        // التحقق من رصيد المحفظة ورسوم التأكيد (بعد أول 20 طالباً)
         const confirmFee = await AppSettingService.getBookingConfirmFeeIqd();
-        if (confirmFee > 0) {
+        if (!isCommissionFreeStudent && confirmFee > 0) {
           const balance = await TeacherWalletService.getBalance(teacherId);
           if (balance < confirmFee) {
             throw new Error('رصيد المحفظة غير كافي لتأكيد الطلب');
@@ -376,7 +387,7 @@ export class CourseBookingModel {
       ) {
         // خصم رسوم تأكيد الطلب من المحفظة عند التأكيد (ضمن نفس المعاملة)
         const confirmFee = await AppSettingService.getBookingConfirmFeeIqd();
-        if (confirmFee > 0) {
+        if (!isCommissionFreeStudent && confirmFee > 0) {
           await TeacherWalletService.debit({
             teacherId,
             amount: confirmFee,

@@ -6,6 +6,7 @@ import { SubjectModel } from '../../models/subject.model';
 import { UserModel } from '../../models/user.model';
 import type { StudentGrade } from '../../types';
 import { ApiError, ErrorCodes } from '../../utils/api-error';
+import { formatTime12Arabic } from '../../utils/time-format.util';
 
 export interface StudentLocation {
   latitude: number;
@@ -243,20 +244,6 @@ export namespace StudentService {
   export async function getWeeklySchedule(
     studentId: string
   ): Promise<{ schedule: any[]; scheduleByDay: Record<string, any[]>; count: number }> {
-    const to12Hour = (time: any): string | null => {
-      if (time === null || time === undefined) return null;
-      const s = String(time);
-      const parts = s.split(':');
-      if (parts.length < 2) return s;
-      const h24 = Number(parts[0]);
-      const m = Number(parts[1]);
-      if (!Number.isFinite(h24) || !Number.isFinite(m)) return s;
-      const suffix = h24 >= 12 ? 'PM' : 'AM';
-      const h12 = h24 % 12 || 12;
-      const mm = String(m).padStart(2, '0');
-      return `${h12}:${mm} ${suffix}`;
-    };
-
     const r = await pool.query(
       `SELECT
         s.id,
@@ -286,8 +273,8 @@ export namespace StudentService {
     const items = r.rows.map((row: any) => ({
       id: String(row.id),
       weekday: Number(row.weekday),
-      startTime: to12Hour(row.start_time),
-      endTime: to12Hour(row.end_time),
+      startTime: formatTime12Arabic(row.start_time),
+      endTime: formatTime12Arabic(row.end_time),
       course: { id: String(row.course_id), name: row.course_name },
       subject: { id: row.subject_id || null, name: row.subject_name || null },
       teacher: {
@@ -487,8 +474,8 @@ export namespace StudentService {
           courseId: String(nextSessionRes.rows[0].course_id),
           teacherId: String(nextSessionRes.rows[0].teacher_id),
           weekday: Number(nextSessionRes.rows[0].weekday),
-          startTime: nextSessionRes.rows[0].start_time,
-          endTime: nextSessionRes.rows[0].end_time,
+          startTime: formatTime12Arabic(nextSessionRes.rows[0].start_time),
+          endTime: formatTime12Arabic(nextSessionRes.rows[0].end_time),
           nextOccurrence: new Date(nextSessionRes.rows[0].next_occurrence).toISOString(),
           endAt: new Date(nextSessionRes.rows[0].next_occurrence_end).toISOString(),
           courseName: nextSessionRes.rows[0].course_name,

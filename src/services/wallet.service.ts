@@ -87,6 +87,7 @@ export class WalletService {
    */
   static async creditEnrollment(args: {
     teacherId: string;
+    studentId?: string;
     enrollmentId?: string;
     waylLinkId?: string;
     grossSalePriceIqd: number;
@@ -100,6 +101,7 @@ export class WalletService {
   }> {
     const breakdown = await CommissionService.computeFor({
       teacherId: args.teacherId,
+      ...(args.studentId ? { studentId: args.studentId } : {}),
       grossSalePriceIqd: args.grossSalePriceIqd,
     });
 

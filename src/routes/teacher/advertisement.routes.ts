@@ -18,6 +18,11 @@ router.get(
 );
 
 router.get(
+  '/settings',
+  asyncHandler(TeacherAdvertisementController.settings),
+);
+
+router.get(
   '/',
   validate({ query: advertisementListQuerySchema }),
   asyncHandler(TeacherAdvertisementController.list),

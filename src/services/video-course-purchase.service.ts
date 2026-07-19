@@ -291,6 +291,7 @@ export class VideoCoursePurchaseService {
     }
     const breakdown = await CommissionService.computeFor({
       teacherId: course.teacherId,
+      studentId: args.studentId,
       grossSalePriceIqd: grossPriceIqd,
     });
 

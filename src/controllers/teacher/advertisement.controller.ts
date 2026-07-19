@@ -18,6 +18,11 @@ type CreateBody = z.infer<typeof advertisementCreateSchema>;
 type UpdateBody = z.infer<typeof advertisementUpdateSchema>;
 
 export class TeacherAdvertisementController {
+  static async settings(_req: Request, res: Response): Promise<void> {
+    const settings = await AdvertisementService.getSettings();
+    res.status(200).json(ok(settings, 'إعدادات الإعلانات'));
+  }
+
   static async list(req: Request, res: Response): Promise<void> {
     const teacherId = req.user!.id as string;
     const { page, limit, offset } = parsePagination(req.query);
@@ -69,7 +74,7 @@ export class TeacherAdvertisementController {
       description: body.description,
       coverImageUrl: coverImageUrl ?? null,
       visibility: body.visibility as AdvertisementVisibility,
-      budgetTotal: body.budgetTotal,
+      budgetTotal: body.budgetTotal ?? 0,
     });
     res.status(201).json(ok(ad, 'تم إنشاء الإعلان'));
   }

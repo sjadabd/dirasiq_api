@@ -24,6 +24,7 @@
 // owned by WalletService — this module computes numbers, never mutates state.
 
 import pool from '../config/database';
+import { TeacherCommissionFreeStudentModel } from '../models/teacher-commission-free-student.model';
 import { logger } from '../utils/logger';
 
 const SAFE_DEFAULT_COMMISSION_PERCENT = 15;
@@ -45,7 +46,7 @@ export interface CommissionBreakdown {
   gatewayFeeIqd: number;
   platformRevenueIqd: number;         // commission - gatewayFee
   // Source
-  source: 'override' | 'tier' | 'fallback';
+  source: 'free_student' | 'override' | 'tier' | 'fallback';
   appliedTierId: string | null;
   appliedTierName: string | null;
 }
@@ -58,6 +59,7 @@ export class CommissionService {
    */
   static async computeFor(args: {
     teacherId: string;
+    studentId?: string;
     grossSalePriceIqd: number;
     gatewayFeePercent?: number;
     gatewayFlatFeeIqd?: number;
@@ -72,6 +74,19 @@ export class CommissionService {
     let appliedTierId: string | null = null;
     let appliedTierName: string | null = null;
 
+    // The first 20 unique students confirmed by this teacher pay no platform
+    // commission. This entitlement takes precedence over tiers and overrides.
+    if (
+      args.studentId &&
+      await TeacherCommissionFreeStudentModel.isEligible(
+        args.teacherId,
+        args.studentId,
+      )
+    ) {
+      percent = 0;
+      source = 'free_student';
+    }
+
     // 1. per-teacher override?
     const override = await pool.query<{ commission_percent: string }>(
       `SELECT commission_percent
@@ -80,7 +95,9 @@ export class CommissionService {
         LIMIT 1`,
       [args.teacherId],
     );
-    if (override.rows.length > 0) {
+    if (source === 'free_student') {
+      // Keep the zero-percent entitlement.
+    } else if (override.rows.length > 0) {
       percent = Number(override.rows[0]!.commission_percent);
       source = 'override';
     } else {

@@ -121,6 +121,7 @@ export class SuperAdminAdvertisementController {
       'maxTitleLength',
       'maxDescriptionLength',
       'refundUnusedBudget',
+      'freeClicksEnabled',
     ] as const;
     for (const key of keys) {
       if (body[key] !== undefined) {

@@ -58,7 +58,8 @@ export class AdvertisementService {
   ): Promise<Advertisement> {
     const settings = await AdvertisementSettingsModel.get();
     this.validateContent(input.title, input.description, settings);
-    this.validateBudget(input.budgetTotal, settings);
+    const budget = settings.freeClicksEnabled ? 0 : input.budgetTotal;
+    this.validateBudget(budget, settings);
     this.validateVisibility(input.visibility, settings);
 
     if (input.visibility === AdvertisementVisibility.GOVERNORATE_ONLY) {
@@ -78,7 +79,7 @@ export class AdvertisementService {
       description: input.description.trim(),
       coverImageUrl: input.coverImageUrl ?? null,
       visibility: input.visibility,
-      budgetTotal: round2(input.budgetTotal),
+      budgetTotal: round2(budget),
     });
   }
 
@@ -102,7 +103,12 @@ export class AdvertisementService {
     const settings = await AdvertisementSettingsModel.get();
     if (input.title) this.validateTitle(input.title, settings);
     if (input.description) this.validateDescription(input.description, settings);
-    if (input.budgetTotal !== undefined) this.validateBudget(input.budgetTotal, settings);
+    // Never rewrite budget on pending_review: wallet funds may already be
+    // reserved and must stay consistent with budget_remaining / reservations.
+    const mayEditBudget = ad.status === AdvertisementStatus.DRAFT;
+    if (mayEditBudget && input.budgetTotal !== undefined) {
+      this.validateBudget(settings.freeClicksEnabled ? 0 : input.budgetTotal, settings);
+    }
     if (input.visibility) this.validateVisibility(input.visibility, settings);
 
     const patch: Parameters<typeof AdvertisementModel.update>[2] = {};
@@ -110,7 +116,11 @@ export class AdvertisementService {
     if (input.description !== undefined) patch.description = input.description.trim();
     if (input.coverImageUrl !== undefined) patch.coverImageUrl = input.coverImageUrl;
     if (input.visibility !== undefined) patch.visibility = input.visibility;
-    if (input.budgetTotal !== undefined) patch.budgetTotal = round2(input.budgetTotal);
+    if (mayEditBudget && (input.budgetTotal !== undefined || settings.freeClicksEnabled)) {
+      patch.budgetTotal = settings.freeClicksEnabled
+        ? 0
+        : round2(input.budgetTotal ?? ad.budgetTotal);
+    }
 
     const updated = await AdvertisementModel.update(id, teacherId, patch);
     if (!updated) throw new ApiError(404, 'الإعلان غير موجود', ErrorCodes.NOT_FOUND);
@@ -152,17 +162,21 @@ export class AdvertisementService {
         ? teacher?.state?.trim() ?? null
         : null;
 
-    const budget = round2(ad.budgetTotal);
+    const freeClicks = settings.freeClicksEnabled;
+    const budget = freeClicks ? 0 : round2(ad.budgetTotal);
+    this.validateBudget(budget, settings);
     const now = new Date();
     const endDate = new Date(now.getTime() + settings.autoEndDurationDays * 86400000);
 
     const result = await AdvertisementWalletService.withTransaction(async (client) => {
-      const reserve = await AdvertisementWalletService.reserveBudget(client, {
-        teacherId,
-        amount: budget,
-        advertisementId: id,
-        budgetBefore: 0,
-      });
+      const reserve = freeClicks
+        ? { fromBalance: 0, fromPending: 0 }
+        : await AdvertisementWalletService.reserveBudget(client, {
+            teacherId,
+            amount: budget,
+            advertisementId: id,
+            budgetBefore: 0,
+          });
 
       const nextStatus = settings.requireApproval
         ? AdvertisementStatus.PENDING_REVIEW
@@ -171,6 +185,7 @@ export class AdvertisementService {
       const { rows } = await client.query(
         `UPDATE advertisements SET
            status = $2,
+           budget_total = $3,
            budget_remaining = $3,
            reserved_from_balance = $4,
            reserved_from_pending = $5,
@@ -189,7 +204,7 @@ export class AdvertisementService {
           reserve.fromBalance,
           reserve.fromPending,
           governorate,
-          settings.costPerClick,
+          freeClicks ? 0 : settings.costPerClick,
           !settings.requireApproval,
           endDate,
           teacherId,
@@ -232,7 +247,9 @@ export class AdvertisementService {
 
     const approvePatch: Parameters<typeof AdvertisementModel.adminUpdate>[1] = {
       status: AdvertisementStatus.APPROVED,
-      costPerClick: settings.costPerClick,
+      // Pricing is snapshotted at submit time; changing global settings must
+      // not strand a reserved budget or turn an existing free ad into paid.
+      costPerClick: ad.costPerClick ?? (settings.freeClicksEnabled ? 0 : settings.costPerClick),
       startDate,
       endDate,
       approvedAt: now,
@@ -346,7 +363,32 @@ export class AdvertisementService {
     }
 
     const cpc = round2(ad.costPerClick ?? 0);
-    if (cpc <= 0 || ad.budgetRemaining < cpc) {
+    if (cpc <= 0) {
+      let recorded = false;
+      await AdvertisementWalletService.withTransaction(async (client) => {
+        const clickId = await AdvertisementClickModel.tryInsert({
+          advertisementId,
+          studentId,
+          amountCharged: 0,
+          client,
+        });
+        if (!clickId) return;
+        await client.query(
+          `UPDATE advertisements
+             SET unique_clicks = unique_clicks + 1
+           WHERE id = $1 AND status = 'running'`,
+          [advertisementId],
+        );
+        recorded = true;
+      });
+      const fresh = await AdvertisementModel.findById(advertisementId);
+      return {
+        charged: false,
+        alreadyViewed: !recorded,
+        advertisement: fresh!,
+      };
+    }
+    if (ad.budgetRemaining < cpc) {
       return { charged: false, alreadyViewed: false, advertisement: ad };
     }
 
@@ -624,6 +666,7 @@ export class AdvertisementService {
   }
 
   private static validateBudget(budget: number, settings: Awaited<ReturnType<typeof AdvertisementSettingsModel.get>>) {
+    if (settings.freeClicksEnabled) return;
     const b = round2(budget);
     if (b < settings.minBudget || b > settings.maxBudget) {
       throw new ApiError(

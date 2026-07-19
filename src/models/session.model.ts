@@ -1,4 +1,5 @@
 import pool from '../config/database';
+import { formatTime12Arabic } from '../utils/time-format.util';
 
 export interface Session {
   id: string;
@@ -278,21 +279,6 @@ export class SessionModel {
     weekStart.setHours(0, 0, 0, 0);
 
     const schedule = result.rows.map((row: any) => {
-      const to12Hour = (time: any): string | null => {
-        if (time === null || time === undefined) return null;
-        const s = String(time);
-        const parts = s.split(':');
-        if (parts.length < 2) return s;
-        const h24 = Number(parts[0]);
-        const m = Number(parts[1]);
-        if (!Number.isFinite(h24) || !Number.isFinite(m)) return s;
-
-        const suffix = h24 >= 12 ? 'PM' : 'AM';
-        const h12 = h24 % 12 || 12;
-        const mm = String(m).padStart(2, '0');
-        return `${h12}:${mm} ${suffix}`;
-      };
-
       const weekday: number = Number(row.weekday);
       const dayOffset = (weekday - weekStart.getDay() + 7) % 7;
       const date = new Date(
@@ -319,8 +305,8 @@ export class SessionModel {
         teacherName: row.teacher_name,
         title: row.title,
         weekday,
-        startTime: to12Hour(row.start_time),
-        endTime: to12Hour(row.end_time),
+        startTime: formatTime12Arabic(row.start_time),
+        endTime: formatTime12Arabic(row.end_time),
         startAt: startAt.toISOString(),
         endAt: endAt.toISOString(),
         state: row.state,

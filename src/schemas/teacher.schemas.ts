@@ -185,7 +185,8 @@ export const bookingReactivateBodySchema = z.object({
 
 const sessionBaseFields = z.object({
   course_id: uuidSchema,
-  teacher_id: uuidSchema,
+  // Prefer JWT identity; body teacher_id is accepted for older clients but ignored.
+  teacher_id: uuidSchema.optional(),
   title: z.string().optional(),
   start_time: hhmmTimeSchema,
   end_time: hhmmTimeSchema,
