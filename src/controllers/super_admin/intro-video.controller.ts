@@ -229,4 +229,46 @@ export class SuperAdminIntroVideoController {
       )
     );
   }
+
+  /**
+   * POST /api/super-admin/intro-videos/:teacherId/sync
+   * Force-pull Bunny status so a finished encode becomes reviewable.
+   */
+  static async sync(req: Request, res: Response): Promise<void> {
+    const { teacherId } = req.params as { teacherId: string };
+    const teacher = await UserModel.findById(teacherId);
+    if (!teacher || teacher.userType !== 'teacher') {
+      throw new ApiError(404, 'المعلم غير موجود', ErrorCodes.NOT_FOUND);
+    }
+    const bunnyVideoId = (teacher as any).introVideoBunnyVideoId as string | undefined;
+    if (!bunnyVideoId) {
+      throw new ApiError(404, 'لا يوجد فيديو Bunny لهذا الأستاذ', ErrorCodes.NOT_FOUND);
+    }
+
+    const details = await BunnyStreamService.getVideo(bunnyVideoId);
+    const hit = await UserModel.applyIntroVideoBunnyState({
+      bunnyVideoId,
+      status: details.status as 'pending' | 'uploaded' | 'processing' | 'ready' | 'failed',
+      thumbnailUrl: details.thumbnailUrl,
+      playbackUrl: details.playbackUrl,
+      durationSeconds: details.durationSeconds,
+    });
+    if (!hit) {
+      throw new ApiError(404, 'تعذر تحديث صف الفيديو', ErrorCodes.NOT_FOUND);
+    }
+
+    const refreshed = await UserModel.findById(teacherId);
+    const view = buildIntroVideoViewForAdmin(refreshed as any, req.ip);
+    res.status(200).json(
+      ok(
+        {
+          teacherId,
+          bunnyStatus: details.status,
+          durationSeconds: details.durationSeconds,
+          introVideo: view,
+        },
+        'تمت مزامنة الفيديو من Bunny'
+      )
+    );
+  }
 }

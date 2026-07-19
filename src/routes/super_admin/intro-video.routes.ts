@@ -42,4 +42,10 @@ router.post(
   asyncHandler(SuperAdminIntroVideoController.reject)
 );
 
+router.post(
+  '/:teacherId/sync',
+  validate({ params: introVideoTeacherIdParamSchema }),
+  asyncHandler(SuperAdminIntroVideoController.sync)
+);
+
 export default router;

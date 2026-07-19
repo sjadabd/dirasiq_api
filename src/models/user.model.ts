@@ -927,11 +927,11 @@ export class UserModel {
   }
 
   /**
-   * Webhook + manual reconcile path for intro videos. Mirrors the lesson
-   * equivalent on VideoLessonModel.
+   * Webhook + manual reconcile path for intro videos.
    *
-   * When Bunny reports `ready`, we move to `awaiting_review` (students must
-   * not see it yet). Over-length videos (>60s) are marked `failed`.
+   * When Bunny reports `ready`, prefer `awaiting_review` (students must not
+   * see it yet). If migration 061 is not applied yet, fall back to `ready`
+   * so sync/webhook still succeed and admins can approve.
    */
   static async applyIntroVideoBunnyState(args: {
     bunnyVideoId: string;
@@ -950,6 +950,31 @@ export class UserModel {
       }
     }
 
+    try {
+      return await UserModel.writeIntroVideoBunnyState({
+        ...args,
+        status: nextStatus,
+      });
+    } catch (err: unknown) {
+      // CHECK constraint missing awaiting_review / rejected — keep pipeline alive.
+      const code = (err as { code?: string } | null)?.code;
+      if (code === '23514' && nextStatus === 'awaiting_review') {
+        return UserModel.writeIntroVideoBunnyState({
+          ...args,
+          status: 'ready',
+        });
+      }
+      throw err;
+    }
+  }
+
+  private static async writeIntroVideoBunnyState(args: {
+    bunnyVideoId: string;
+    status: string;
+    thumbnailUrl?: string | null;
+    playbackUrl?: string | null;
+    durationSeconds?: number | null;
+  }): Promise<{ userId: string; status: string } | null> {
     const { rows } = await pool.query<{ id: string; intro_video_status: string }>(
       `UPDATE users
           SET intro_video_status              = $2,
@@ -957,12 +982,12 @@ export class UserModel {
               intro_video_bunny_playback_url  = COALESCE($4, intro_video_bunny_playback_url),
               intro_video_duration_seconds    = COALESCE($5, intro_video_duration_seconds),
               intro_video_bunny_last_synced_at = NOW(),
-              intro_video_reviewed_by         = CASE WHEN $2 IN ('awaiting_review','failed') THEN NULL ELSE intro_video_reviewed_by END,
-              intro_video_reviewed_at         = CASE WHEN $2 IN ('awaiting_review','failed') THEN NULL ELSE intro_video_reviewed_at END,
+              intro_video_reviewed_by         = CASE WHEN $2 IN ('awaiting_review','ready','failed') THEN NULL ELSE intro_video_reviewed_by END,
+              intro_video_reviewed_at         = CASE WHEN $2 IN ('awaiting_review','ready','failed') THEN NULL ELSE intro_video_reviewed_at END,
               intro_video_review_notes        = CASE
                 WHEN $2 = 'failed' AND $5 IS NOT NULL AND $5 > ${UserModel.INTRO_VIDEO_MAX_DURATION_SECONDS}
                   THEN 'تجاوز المدة القصوى (60 ثانية)'
-                WHEN $2 = 'awaiting_review' THEN NULL
+                WHEN $2 IN ('awaiting_review','ready') THEN NULL
                 ELSE intro_video_review_notes
               END
         WHERE intro_video_bunny_video_id = $1
@@ -970,7 +995,7 @@ export class UserModel {
         RETURNING id, intro_video_status`,
       [
         args.bunnyVideoId,
-        nextStatus,
+        args.status,
         args.thumbnailUrl ?? null,
         args.playbackUrl ?? null,
         args.durationSeconds ?? null,
@@ -978,6 +1003,20 @@ export class UserModel {
     );
     if (!rows[0]) return null;
     return { userId: rows[0].id, status: rows[0].intro_video_status };
+  }
+
+  /** Client finished PUT to Bunny — advance past mint-only pending. */
+  static async markIntroVideoUploaded(userId: string): Promise<void> {
+    await pool.query(
+      `UPDATE users
+          SET intro_video_status = 'uploaded',
+              intro_video_bunny_last_synced_at = COALESCE(intro_video_bunny_last_synced_at, NOW())
+        WHERE id = $1
+          AND deleted_at IS NULL
+          AND intro_video_bunny_video_id IS NOT NULL
+          AND intro_video_status IN ('pending', 'uploaded')`,
+      [userId]
+    );
   }
 
   static async listIntroVideosForAdmin(args: {
@@ -995,21 +1034,22 @@ export class UserModel {
     let i = 1;
 
     if (args.status === 'in_progress') {
-      // Bunny still encoding — not reviewable yet, but visible in admin queue.
       where.push(
         `u.intro_video_status IN ('pending','uploaded','processing')`
       );
     } else if (args.status === 'queue') {
-      // Default moderation inbox: encoding + waiting for admin decision.
       where.push(
-        `u.intro_video_status IN ('pending','uploaded','processing','awaiting_review')`
+        `u.intro_video_status IN ('pending','uploaded','processing','awaiting_review','ready')`
       );
+    } else if (args.status === 'awaiting_review') {
+      // Treat legacy Bunny-ready rows as reviewable when migration not applied.
+      where.push(`u.intro_video_status IN ('awaiting_review','ready')`);
     } else if (args.status) {
       where.push(`u.intro_video_status = $${i++}`);
       params.push(args.status);
     } else {
       where.push(
-        `u.intro_video_status IN ('awaiting_review','approved','rejected','processing','uploaded','pending','failed')`
+        `u.intro_video_status IN ('awaiting_review','ready','approved','rejected','processing','uploaded','pending','failed')`
       );
     }
 

@@ -304,7 +304,7 @@ export class TeacherProfileController {
     const details = await BunnyStreamService.getVideo(bunnyVideoId);
     await UserModel.applyIntroVideoBunnyState({
       bunnyVideoId,
-      status: details.status,
+      status: details.status as 'pending' | 'uploaded' | 'processing' | 'ready' | 'failed',
       thumbnailUrl: details.thumbnailUrl,
       playbackUrl: details.playbackUrl,
       durationSeconds: details.durationSeconds,
@@ -316,6 +316,21 @@ export class TeacherProfileController {
       ...(req.ip ? { clientIp: req.ip } : {}),
     });
     res.status(200).json(ok(view, 'تم تحديث حالة الفيديو التعريفي من Bunny'));
+  }
+
+  /**
+   * POST /api/teacher/profile/intro-video/confirm-upload
+   * Called right after the client finishes PUT to Bunny so the row leaves
+   * mint-only `pending` even before the first webhook/sync.
+   */
+  static async confirmIntroVideoUpload(req: Request, res: Response): Promise<void> {
+    await UserModel.markIntroVideoUploaded(req.user.id);
+    const me = await UserModel.findById(req.user.id);
+    const view = buildIntroVideoView(me as any, {
+      audience: 'owner',
+      ...(req.ip ? { clientIp: req.ip } : {}),
+    });
+    res.status(200).json(ok(view, 'تم تأكيد رفع الفيديو'));
   }
 
   static async getMyIntroVideo(req: Request, res: Response): Promise<void> {

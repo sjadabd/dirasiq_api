@@ -41,6 +41,11 @@ router.post(
 );
 
 router.post(
+  '/intro-video/confirm-upload',
+  asyncHandler(TeacherProfileController.confirmIntroVideoUpload)
+);
+
+router.post(
   '/intro-video/sync',
   asyncHandler(TeacherProfileController.syncIntroVideo)
 );
