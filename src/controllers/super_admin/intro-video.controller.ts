@@ -11,6 +11,7 @@ import {
 } from '../../models/notification.model';
 import { UserModel } from '../../models/user.model';
 import { BunnyStreamService } from '../../services/bunny-stream.service';
+import { buildIntroPlaybackUrl } from '../intro-video-proxy.controller';
 import { getNotificationService } from '../../services/services-registry';
 import { ApiError, ErrorCodes } from '../../utils/api-error';
 import { parsePagination, buildPaginationMeta } from '../../utils/pagination';
@@ -97,15 +98,17 @@ export class SuperAdminIntroVideoController {
       ...(query.search ? { search: query.search } : {}),
     });
 
-    // Attach signed playback for triage preview.
+    // Attach playable URL via HLS proxy (or MP4 fallback).
     const data = result.rows.map((row) => {
       let manifestUrl: string | null = null;
-      if (row.bunnyVideoId && ['awaiting_review', 'approved', 'rejected', 'ready'].includes(row.status)) {
-        const signed = BunnyStreamService.buildSignedPlaybackUrl({
-          videoId: row.bunnyVideoId,
-          ...(req.ip ? { clientIp: req.ip } : {}),
+      if (
+        row.bunnyVideoId &&
+        ['awaiting_review', 'approved', 'rejected', 'ready'].includes(row.status)
+      ) {
+        manifestUrl = buildIntroPlaybackUrl({
+          teacherId: row.teacherId,
+          bunnyVideoId: row.bunnyVideoId,
         });
-        manifestUrl = signed?.url ?? null;
       }
       return { ...row, manifestUrl };
     });
@@ -128,7 +131,7 @@ export class SuperAdminIntroVideoController {
     if (!teacher || teacher.userType !== 'teacher') {
       throw new ApiError(404, 'المعلم غير موجود', ErrorCodes.NOT_FOUND);
     }
-    const view = buildIntroVideoViewForAdmin(teacher as any, req.ip);
+    const view = buildIntroVideoViewForAdmin(teacher as any, teacherId, req.ip);
     res.status(200).json(
       ok(
         {
@@ -259,7 +262,7 @@ export class SuperAdminIntroVideoController {
       }
 
       const refreshed = await UserModel.findById(teacherId);
-      const view = buildIntroVideoViewForAdmin(refreshed as any, req.ip);
+      const view = buildIntroVideoViewForAdmin(refreshed as any, teacherId, req.ip);
       res.status(200).json(
         ok(
           {

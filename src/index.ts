@@ -21,6 +21,7 @@ import publicVideoCourseRoutes from './routes/public/video-course.routes';
 import superAdminVideoCourseRoutes from './routes/super_admin/video-course.routes';
 import superAdminVideoCoursePurchaseRoutes from './routes/super_admin/video-course-purchase.routes';
 import superAdminIntroVideoRoutes from './routes/super_admin/intro-video.routes';
+import introVideoProxyRoutes from './routes/intro-video-proxy.routes';
 import bunnyWebhookRoutes from './routes/webhooks/bunny.routes';
 import studentRoutes from './routes/student';
 import academicYearRoutes from './routes/super_admin/academic-year.routes';
@@ -328,6 +329,8 @@ app.use('/api/public/video-courses', publicVideoCourseRoutes);
 app.use('/api/super-admin/video-courses', superAdminVideoCourseRoutes);
 app.use('/api/super-admin/video-course-purchases', superAdminVideoCoursePurchaseRoutes);
 app.use('/api/super-admin/intro-videos', superAdminIntroVideoRoutes);
+// Ticket-auth HLS proxy for intro videos (no JWT — same pattern as lesson proxy).
+app.use('/api/intro-videos', introVideoProxyRoutes);
 app.use('/api/webhooks/bunny', bunnyWebhookRoutes);
 app.use('/api/courses', courseRoutes);
 app.use('/api/teacher-search', teacherSearchRoutes);

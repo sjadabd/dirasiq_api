@@ -17,6 +17,7 @@ import fs from 'fs';
 
 import { UserModel } from '../../models/user.model';
 import { BunnyStreamService, hydrateBunnyUrl, signBunnyAssetUrl } from '../../services/bunny-stream.service';
+import { buildIntroPlaybackUrl } from '../intro-video-proxy.controller';
 import { ApiError, ErrorCodes } from '../../utils/api-error';
 import { ok } from '../../utils/response.util';
 import { VideoService } from '../../utils/video.service';
@@ -57,6 +58,7 @@ const PLAYABLE_FOR_OWNER = new Set([
  */
 function buildIntroVideoView(
   u: {
+    id?: string;
     introVideoStatus?: string;
     introVideoManifestPath?: string;
     introVideoThumbnailPath?: string;
@@ -65,7 +67,7 @@ function buildIntroVideoView(
     introVideoBunnyThumbnailUrl?: string;
     introVideoReviewNotes?: string;
   },
-  opts: { clientIp?: string; audience: IntroAudience }
+  opts: { clientIp?: string; audience: IntroAudience; teacherId: string }
 ): IntroVideoView {
   const status = u.introVideoStatus || 'none';
   const audience = opts.audience;
@@ -80,15 +82,15 @@ function buildIntroVideoView(
 
     let manifestUrl: string | null = null;
     if (canPlay) {
-      const signed = BunnyStreamService.buildSignedPlaybackUrl({
-        videoId: u.introVideoBunnyVideoId,
-        ...(opts.clientIp ? { clientIp: opts.clientIp } : {}),
+      // Prefer HLS manifest proxy (child variants signed). Falls back to
+      // signed play_720p.mp4 when PLAYBACK_TICKET_SECRET is unset.
+      manifestUrl = buildIntroPlaybackUrl({
+        teacherId: opts.teacherId,
+        bunnyVideoId: u.introVideoBunnyVideoId,
       });
-      manifestUrl = signed?.url ?? null;
     }
 
     const cfg = BunnyStreamService.config();
-    // Students only get the thumbnail once approved (avoids leaking preview).
     let thumbnailUrl: string | null = null;
     if (audience !== 'student' || status === 'approved') {
       const thumb = hydrateBunnyUrl(u.introVideoBunnyThumbnailUrl ?? null, cfg);
@@ -313,6 +315,7 @@ export class TeacherProfileController {
     const refreshed = await UserModel.findById(user.id);
     const view = buildIntroVideoView(refreshed as any, {
       audience: 'owner',
+      teacherId: user.id,
       ...(req.ip ? { clientIp: req.ip } : {}),
     });
     res.status(200).json(ok(view, 'تم تحديث حالة الفيديو التعريفي من Bunny'));
@@ -328,6 +331,7 @@ export class TeacherProfileController {
     const me = await UserModel.findById(req.user.id);
     const view = buildIntroVideoView(me as any, {
       audience: 'owner',
+      teacherId: req.user.id,
       ...(req.ip ? { clientIp: req.ip } : {}),
     });
     res.status(200).json(ok(view, 'تم تأكيد رفع الفيديو'));
@@ -341,6 +345,7 @@ export class TeacherProfileController {
     }
     const view = buildIntroVideoView(me as any, {
       audience: 'owner',
+      teacherId: user.id,
       ...(req.ip ? { clientIp: req.ip } : {}),
     });
     res.status(200).json(ok(view, 'Intro video info'));
@@ -354,6 +359,7 @@ export class TeacherProfileController {
     }
     const view = buildIntroVideoView(teacher as any, {
       audience: 'student',
+      teacherId,
       ...(req.ip ? { clientIp: req.ip } : {}),
     });
     res.status(200).json(
@@ -365,10 +371,12 @@ export class TeacherProfileController {
 /** Exported for the super-admin controller to reuse the same view builder. */
 export function buildIntroVideoViewForAdmin(
   u: Parameters<typeof buildIntroVideoView>[0],
+  teacherId: string,
   clientIp?: string
 ): IntroVideoView {
   return buildIntroVideoView(u, {
     audience: 'admin',
+    teacherId,
     ...(clientIp ? { clientIp } : {}),
   });
 }
