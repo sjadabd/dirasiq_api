@@ -994,7 +994,17 @@ export class UserModel {
     const params: unknown[] = [];
     let i = 1;
 
-    if (args.status) {
+    if (args.status === 'in_progress') {
+      // Bunny still encoding — not reviewable yet, but visible in admin queue.
+      where.push(
+        `u.intro_video_status IN ('pending','uploaded','processing')`
+      );
+    } else if (args.status === 'queue') {
+      // Default moderation inbox: encoding + waiting for admin decision.
+      where.push(
+        `u.intro_video_status IN ('pending','uploaded','processing','awaiting_review')`
+      );
+    } else if (args.status) {
       where.push(`u.intro_video_status = $${i++}`);
       params.push(args.status);
     } else {

@@ -20,6 +20,8 @@ import { logger } from '../../utils/logger';
 export const introVideoAdminListQuerySchema = z.object({
   status: z
     .enum([
+      'queue',
+      'in_progress',
       'awaiting_review',
       'approved',
       'rejected',
@@ -90,7 +92,8 @@ export class SuperAdminIntroVideoController {
     const result = await UserModel.listIntroVideosForAdmin({
       offset,
       limit,
-      ...(query.status ? { status: query.status } : { status: 'awaiting_review' }),
+      // Default inbox = encoding + awaiting admin review (not only awaiting_review).
+      ...(query.status ? { status: query.status } : { status: 'queue' }),
       ...(query.search ? { search: query.search } : {}),
     });
 
