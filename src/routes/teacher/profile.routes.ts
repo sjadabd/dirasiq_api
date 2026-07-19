@@ -22,9 +22,8 @@ const fileFilter: multer.Options['fileFilter'] = (_req, file, cb) => {
   cb(new Error('Only video files are allowed'));
 };
 
-// 1 GB cap on intro videos. Per-route override of the global 1000 MB body limit
-// is acceptable; rationale: video upload is the only oversized payload path.
-const upload = multer({ storage, fileFilter, limits: { fileSize: 1024 * 1024 * 1024 } });
+// Spec: intro videos max 50MB (MP4, ≤60s). Bunny path streams direct to CDN.
+const upload = multer({ storage, fileFilter, limits: { fileSize: 50 * 1024 * 1024 } });
 
 router.post(
   '/intro-video',
@@ -39,6 +38,11 @@ router.get('/intro-video', asyncHandler(TeacherProfileController.getMyIntroVideo
 router.post(
   '/intro-video/bunny',
   asyncHandler(TeacherProfileController.startBunnyIntroVideoUpload)
+);
+
+router.post(
+  '/intro-video/sync',
+  asyncHandler(TeacherProfileController.syncIntroVideo)
 );
 
 export default router;

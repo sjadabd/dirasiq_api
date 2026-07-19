@@ -1,28 +1,16 @@
 // Teacher profile controller — intro-video flow.
 //
 // Phase 10.1.B.2 migrates the intro video off local VPS HLS onto Bunny
-// Stream. The migration is read-additive: rows that already carry a local
-// manifest path keep playing from there; new uploads always go to Bunny.
+// Stream. Admin review (awaiting_review → approved | rejected) gates
+// student visibility.
 //
 // Endpoints:
-//   POST /api/teacher/profile/intro-video         (LEGACY — local FFmpeg
-//                                                  upload. Kept working
-//                                                  until the dashboard
-//                                                  swaps to Bunny in
-//                                                  10.1.B.4. New code
-//                                                  should call the Bunny
-//                                                  endpoint instead.)
-//   POST /api/teacher/profile/intro-video/bunny   (NEW — mints a Bunny
-//                                                  videoId + returns the
-//                                                  upload contract the
-//                                                  client uses to PUT
-//                                                  bytes directly to
-//                                                  Bunny.)
-//   GET  /api/teacher/profile/intro-video         (read — Bunny-first,
-//                                                  legacy fallback)
-//   GET  /api/students/teachers/:teacherId/intro-video
-//                                                  (public read, same
-//                                                  precedence)
+//   POST /api/teacher/profile/intro-video         (LEGACY — local FFmpeg)
+//   POST /api/teacher/profile/intro-video/bunny   (mint Bunny upload contract)
+//   POST /api/teacher/profile/intro-video/sync    (poll Bunny status)
+//   GET  /api/teacher/profile/intro-video         (owner read — signed URL)
+//   GET  /api/student/teachers/:teacherId/intro-video
+//                                                  (student — playback only if approved)
 
 import type { Request, Response } from 'express';
 import fs from 'fs';
@@ -33,60 +21,107 @@ import { ApiError, ErrorCodes } from '../../utils/api-error';
 import { ok } from '../../utils/response.util';
 import { VideoService } from '../../utils/video.service';
 
+const INTRO_MAX_DURATION = UserModel.INTRO_VIDEO_MAX_DURATION_SECONDS;
+
 interface IntroVideoView {
   status: string;
   /**
    * The playback URL the client should use. For Bunny rows this is a signed
    * HLS manifest URL; for legacy rows it's the local relative manifest
-   * path. For the "none" state it's null.
+   * path. Null when the audience is not allowed to play (e.g. student
+   * before approval).
    */
   manifestUrl: string | null;
   thumbnailUrl: string | null;
   durationSeconds: number | null;
   /** 'bunny' when streaming from Bunny, 'local' for legacy rows, 'none' otherwise. */
   source: 'bunny' | 'local' | 'none';
+  reviewNotes?: string | null;
 }
+
+type IntroAudience = 'owner' | 'admin' | 'student';
+
+/** Statuses that may receive a signed playback URL for owner/admin. */
+const PLAYABLE_FOR_OWNER = new Set([
+  'ready',
+  'awaiting_review',
+  'approved',
+  'rejected',
+]);
 
 /**
  * Map a (possibly partially-populated) user row to the wire-shape clients
- * consume. Bunny takes precedence over the legacy local manifest — a
- * teacher who re-uploads via Bunny gets the Bunny URL immediately and the
- * old local files are no longer referenced (a future cleanup cron can GC
- * the disk bytes).
+ * consume. Bunny takes precedence over the legacy local manifest.
+ *
+ * Student audience: playback only when status === 'approved'.
  */
-function buildIntroVideoView(u: {
-  introVideoStatus?: string;
-  introVideoManifestPath?: string;
-  introVideoThumbnailPath?: string;
-  introVideoDurationSeconds?: number;
-  introVideoBunnyVideoId?: string;
-  introVideoBunnyThumbnailUrl?: string;
-}, clientIp?: string): IntroVideoView {
+function buildIntroVideoView(
+  u: {
+    introVideoStatus?: string;
+    introVideoManifestPath?: string;
+    introVideoThumbnailPath?: string;
+    introVideoDurationSeconds?: number;
+    introVideoBunnyVideoId?: string;
+    introVideoBunnyThumbnailUrl?: string;
+    introVideoReviewNotes?: string;
+  },
+  opts: { clientIp?: string; audience: IntroAudience }
+): IntroVideoView {
   const status = u.introVideoStatus || 'none';
+  const audience = opts.audience;
 
   if (u.introVideoBunnyVideoId) {
-    // Signed URL is only meaningful when Bunny has finished processing.
+    let canPlay = false;
+    if (audience === 'student') {
+      canPlay = status === 'approved';
+    } else {
+      canPlay = PLAYABLE_FOR_OWNER.has(status);
+    }
+
     let manifestUrl: string | null = null;
-    if (status === 'ready') {
+    if (canPlay) {
       const signed = BunnyStreamService.buildSignedPlaybackUrl({
         videoId: u.introVideoBunnyVideoId,
-        ...(clientIp ? { clientIp } : {}),
+        ...(opts.clientIp ? { clientIp: opts.clientIp } : {}),
       });
       manifestUrl = signed?.url ?? null;
     }
+
     const cfg = BunnyStreamService.config();
-    const thumb = hydrateBunnyUrl(u.introVideoBunnyThumbnailUrl ?? null, cfg);
+    // Students only get the thumbnail once approved (avoids leaking preview).
+    let thumbnailUrl: string | null = null;
+    if (audience !== 'student' || status === 'approved') {
+      const thumb = hydrateBunnyUrl(u.introVideoBunnyThumbnailUrl ?? null, cfg);
+      thumbnailUrl = cfg?.signAssets ? signBunnyAssetUrl(thumb, cfg) : thumb;
+    }
+
     return {
       status,
       manifestUrl,
-      thumbnailUrl: cfg?.signAssets ? signBunnyAssetUrl(thumb, cfg) : thumb,
+      thumbnailUrl,
       durationSeconds: u.introVideoDurationSeconds ?? null,
       source: 'bunny',
+      ...(audience === 'owner' || audience === 'admin'
+        ? { reviewNotes: u.introVideoReviewNotes ?? null }
+        : {}),
     };
   }
 
-  // Legacy local-HLS fallback.
+  // Legacy local-HLS fallback — still gated for students.
   if (u.introVideoManifestPath) {
+    const allow =
+      audience === 'student'
+        ? status === 'approved' || status === 'ready'
+        : true;
+    if (!allow) {
+      return {
+        status,
+        manifestUrl: null,
+        thumbnailUrl: null,
+        durationSeconds: u.introVideoDurationSeconds ?? null,
+        source: 'local',
+      };
+    }
     return {
       status,
       manifestUrl: u.introVideoManifestPath,
@@ -97,18 +132,19 @@ function buildIntroVideoView(u: {
   }
 
   return {
-    status: 'none',
+    status: status === 'none' ? 'none' : status,
     manifestUrl: null,
     thumbnailUrl: null,
     durationSeconds: u.introVideoDurationSeconds ?? null,
     source: 'none',
+    ...(audience === 'owner' || audience === 'admin'
+      ? { reviewNotes: u.introVideoReviewNotes ?? null }
+      : {}),
   };
 }
 
 export class TeacherProfileController {
   // POST /api/teacher/profile/intro-video — LEGACY local FFmpeg upload.
-  // Kept working for backward compat until the dashboard cuts over in
-  // 10.1.B.4. New clients should call the /bunny endpoint below.
   static async uploadIntroVideo(req: Request, res: Response): Promise<void> {
     const user = req.user;
     const file = req.file as Express.Multer.File | undefined;
@@ -121,18 +157,42 @@ export class TeacherProfileController {
       );
     }
 
+    if (file.size > 50 * 1024 * 1024) {
+      throw new ApiError(
+        400,
+        'حجم الفيديو يجب ألا يتجاوز 50 ميغابايت',
+        ErrorCodes.VALIDATION_ERROR
+      );
+    }
+
     await UserModel.update(user.id, { intro_video_status: 'processing' } as any);
 
     const tempPath = file.path;
     try {
       const result = await VideoService.transcodeToHLS(tempPath, user.id);
 
+      if (result.durationSeconds > INTRO_MAX_DURATION) {
+        await UserModel.update(user.id, {
+          intro_video_status: 'failed',
+          intro_video_review_notes: 'تجاوز المدة القصوى (60 ثانية)',
+        } as any);
+        throw new ApiError(
+          400,
+          'مدة الفيديو يجب ألا تتجاوز 60 ثانية',
+          ErrorCodes.VALIDATION_ERROR,
+          { durationSeconds: result.durationSeconds }
+        );
+      }
+
       const updated = await UserModel.update(user.id, {
-        intro_video_status: 'ready',
+        intro_video_status: 'awaiting_review',
         intro_video_manifest_path: result.manifestRelativePath,
         intro_video_storage_dir: result.storageDirRelative,
         intro_video_thumbnail_path: result.thumbnailRelativePath,
         intro_video_duration_seconds: result.durationSeconds,
+        intro_video_reviewed_by: null,
+        intro_video_reviewed_at: null,
+        intro_video_review_notes: null,
       } as any);
 
       res.status(200).json(
@@ -141,13 +201,14 @@ export class TeacherProfileController {
             manifestUrl: result.manifestRelativePath,
             thumbnailUrl: result.thumbnailRelativePath,
             durationSeconds: result.durationSeconds,
-            status: 'ready',
+            status: 'awaiting_review',
             user: updated,
           },
-          'تم رفع ومعالجة فيديو المقدمة بنجاح'
+          'تم رفع الفيديو وهو بانتظار مراجعة الإدارة'
         )
       );
     } catch (err) {
+      if (err instanceof ApiError) throw err;
       await UserModel.update(user.id, { intro_video_status: 'failed' } as any);
       const message = err instanceof Error ? err.message : 'ffmpeg error';
       throw new ApiError(500, 'فشل في معالجة الفيديو', ErrorCodes.INTERNAL_ERROR, {
@@ -163,21 +224,8 @@ export class TeacherProfileController {
   }
 
   /**
-   * POST /api/teacher/profile/intro-video/bunny — Phase 10.1.B.2.
-   *
-   * Mints a Bunny videoId for the calling teacher's intro video and
-   * returns the upload contract. The client streams the bytes directly
-   * to Bunny via the returned PUT URL. The Bunny webhook will then
-   * transition intro_video_status to processing → ready.
-   *
-   * Re-calling this endpoint replaces any in-flight Bunny upload (the
-   * old videoId is best-effort deleted from Bunny so we don't pay for
-   * abandoned content).
-   *
-   * Same security trade-off as the lesson upload flow: the upload
-   * contract contains the per-library AccessKey. See the doc-comment on
-   * VideoCourseService.createLessonForTeacher for the rationale + the
-   * planned TUS upgrade.
+   * POST /api/teacher/profile/intro-video/bunny
+   * Mints a Bunny videoId + upload contract. Client PUTs bytes to Bunny.
    */
   static async startBunnyIntroVideoUpload(req: Request, res: Response): Promise<void> {
     const user = req.user;
@@ -191,8 +239,6 @@ export class TeacherProfileController {
       );
     }
 
-    // Best-effort delete of any previous Bunny intro video so the user's
-    // library doesn't accumulate abandoned uploads.
     const existing = await UserModel.findById(user.id);
     const previousBunnyVideoId = (existing as any)?.introVideoBunnyVideoId as string | undefined;
     if (previousBunnyVideoId) {
@@ -215,6 +261,13 @@ export class TeacherProfileController {
           bunnyVideoId: videoId,
           bunnyLibraryId: cfg.libraryId,
           status: 'pending',
+          limits: {
+            maxDurationSeconds: INTRO_MAX_DURATION,
+            maxBytes: 50 * 1024 * 1024,
+            formats: ['mp4'],
+            minHeight: 720,
+            maxHeight: 1080,
+          },
           upload: {
             kind: 'bunny-direct-put',
             url: `${cfg.apiBaseUrl}/library/${cfg.libraryId}/videos/${videoId}`,
@@ -225,12 +278,44 @@ export class TeacherProfileController {
             },
             note:
               'Stream the video bytes as the PUT body. Bunny replies 200 on success ' +
-              'and the API webhook will move the intro video to processing → ready.',
+              'and the API webhook will move the intro video to processing → awaiting_review.',
           },
         },
         'تم إنشاء فيديو المقدمة على Bunny — قم برفع الملف'
       )
     );
+  }
+
+  /**
+   * POST /api/teacher/profile/intro-video/sync
+   * Poll Bunny for status (useful when webhook is delayed).
+   */
+  static async syncIntroVideo(req: Request, res: Response): Promise<void> {
+    const user = req.user;
+    const me = await UserModel.findById(user.id);
+    if (!me) {
+      throw new ApiError(404, 'المستخدم غير موجود', ErrorCodes.NOT_FOUND);
+    }
+    const bunnyVideoId = (me as any).introVideoBunnyVideoId as string | undefined;
+    if (!bunnyVideoId) {
+      throw new ApiError(404, 'لا يوجد فيديو تعريفي على Bunny', ErrorCodes.NOT_FOUND);
+    }
+
+    const details = await BunnyStreamService.getVideo(bunnyVideoId);
+    await UserModel.applyIntroVideoBunnyState({
+      bunnyVideoId,
+      status: details.status,
+      thumbnailUrl: details.thumbnailUrl,
+      playbackUrl: details.playbackUrl,
+      durationSeconds: details.durationSeconds,
+    });
+
+    const refreshed = await UserModel.findById(user.id);
+    const view = buildIntroVideoView(refreshed as any, {
+      audience: 'owner',
+      ...(req.ip ? { clientIp: req.ip } : {}),
+    });
+    res.status(200).json(ok(view, 'تم تحديث حالة الفيديو التعريفي من Bunny'));
   }
 
   static async getMyIntroVideo(req: Request, res: Response): Promise<void> {
@@ -239,7 +324,10 @@ export class TeacherProfileController {
     if (!me) {
       throw new ApiError(404, 'المستخدم غير موجود', ErrorCodes.NOT_FOUND);
     }
-    const view = buildIntroVideoView(me as any, req.ip);
+    const view = buildIntroVideoView(me as any, {
+      audience: 'owner',
+      ...(req.ip ? { clientIp: req.ip } : {}),
+    });
     res.status(200).json(ok(view, 'Intro video info'));
   }
 
@@ -249,9 +337,23 @@ export class TeacherProfileController {
     if (!teacher || teacher.userType !== 'teacher') {
       throw new ApiError(404, 'المعلم غير موجود', ErrorCodes.NOT_FOUND);
     }
-    const view = buildIntroVideoView(teacher as any, req.ip);
+    const view = buildIntroVideoView(teacher as any, {
+      audience: 'student',
+      ...(req.ip ? { clientIp: req.ip } : {}),
+    });
     res.status(200).json(
       ok({ ...view, teacher: { id: teacher.id, name: teacher.name } }, 'Intro video info')
     );
   }
+}
+
+/** Exported for the super-admin controller to reuse the same view builder. */
+export function buildIntroVideoViewForAdmin(
+  u: Parameters<typeof buildIntroVideoView>[0],
+  clientIp?: string
+): IntroVideoView {
+  return buildIntroVideoView(u, {
+    audience: 'admin',
+    ...(clientIp ? { clientIp } : {}),
+  });
 }

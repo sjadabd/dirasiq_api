@@ -529,6 +529,9 @@ export class UserModel {
       'intro_video_storage_dir',
       'intro_video_thumbnail_path',
       'intro_video_duration_seconds',
+      'intro_video_reviewed_by',
+      'intro_video_reviewed_at',
+      'intro_video_review_notes',
     ];
 
     const updates: string[] = [];
@@ -848,6 +851,9 @@ export class UserModel {
       introVideoBunnyPlaybackUrl: dbUser.intro_video_bunny_playback_url,
       introVideoBunnyThumbnailUrl: dbUser.intro_video_bunny_thumbnail_url,
       introVideoBunnyLastSyncedAt: dbUser.intro_video_bunny_last_synced_at,
+      introVideoReviewedBy: dbUser.intro_video_reviewed_by,
+      introVideoReviewedAt: dbUser.intro_video_reviewed_at,
+      introVideoReviewNotes: dbUser.intro_video_review_notes,
       createdAt: dbUser.created_at,
       updatedAt: dbUser.updated_at,
     };
@@ -895,6 +901,9 @@ export class UserModel {
    * manifest columns are left UNTOUCHED so playback during transition
    * keeps using whatever the user already had.
    */
+  /** Max duration for teacher intro videos (seconds). */
+  static readonly INTRO_VIDEO_MAX_DURATION_SECONDS = 60;
+
   static async setIntroVideoBunnyIds(args: {
     userId: string;
     libraryId: string;
@@ -907,7 +916,11 @@ export class UserModel {
               intro_video_bunny_video_id      = $3,
               intro_video_bunny_playback_url  = NULL,
               intro_video_bunny_thumbnail_url = NULL,
-              intro_video_bunny_last_synced_at = NULL
+              intro_video_bunny_last_synced_at = NULL,
+              intro_video_duration_seconds    = NULL,
+              intro_video_reviewed_by         = NULL,
+              intro_video_reviewed_at         = NULL,
+              intro_video_review_notes        = NULL
         WHERE id = $1`,
       [args.userId, args.libraryId, args.videoId]
     );
@@ -916,6 +929,9 @@ export class UserModel {
   /**
    * Webhook + manual reconcile path for intro videos. Mirrors the lesson
    * equivalent on VideoLessonModel.
+   *
+   * When Bunny reports `ready`, we move to `awaiting_review` (students must
+   * not see it yet). Over-length videos (>60s) are marked `failed`.
    */
   static async applyIntroVideoBunnyState(args: {
     bunnyVideoId: string;
@@ -923,26 +939,167 @@ export class UserModel {
     thumbnailUrl?: string | null;
     playbackUrl?: string | null;
     durationSeconds?: number | null;
-  }): Promise<{ userId: string } | null> {
-    const { rows } = await pool.query<{ id: string }>(
+  }): Promise<{ userId: string; status: string } | null> {
+    let nextStatus: string = args.status;
+    if (args.status === 'ready') {
+      const dur = args.durationSeconds ?? null;
+      if (dur != null && dur > UserModel.INTRO_VIDEO_MAX_DURATION_SECONDS) {
+        nextStatus = 'failed';
+      } else {
+        nextStatus = 'awaiting_review';
+      }
+    }
+
+    const { rows } = await pool.query<{ id: string; intro_video_status: string }>(
       `UPDATE users
           SET intro_video_status              = $2,
               intro_video_bunny_thumbnail_url = COALESCE($3, intro_video_bunny_thumbnail_url),
               intro_video_bunny_playback_url  = COALESCE($4, intro_video_bunny_playback_url),
               intro_video_duration_seconds    = COALESCE($5, intro_video_duration_seconds),
-              intro_video_bunny_last_synced_at = NOW()
+              intro_video_bunny_last_synced_at = NOW(),
+              intro_video_reviewed_by         = CASE WHEN $2 IN ('awaiting_review','failed') THEN NULL ELSE intro_video_reviewed_by END,
+              intro_video_reviewed_at         = CASE WHEN $2 IN ('awaiting_review','failed') THEN NULL ELSE intro_video_reviewed_at END,
+              intro_video_review_notes        = CASE
+                WHEN $2 = 'failed' AND $5 IS NOT NULL AND $5 > ${UserModel.INTRO_VIDEO_MAX_DURATION_SECONDS}
+                  THEN 'تجاوز المدة القصوى (60 ثانية)'
+                WHEN $2 = 'awaiting_review' THEN NULL
+                ELSE intro_video_review_notes
+              END
         WHERE intro_video_bunny_video_id = $1
           AND deleted_at IS NULL
-        RETURNING id`,
+        RETURNING id, intro_video_status`,
       [
         args.bunnyVideoId,
-        args.status,
+        nextStatus,
         args.thumbnailUrl ?? null,
         args.playbackUrl ?? null,
         args.durationSeconds ?? null,
       ]
     );
     if (!rows[0]) return null;
-    return { userId: rows[0].id };
+    return { userId: rows[0].id, status: rows[0].intro_video_status };
+  }
+
+  static async listIntroVideosForAdmin(args: {
+    status?: string;
+    search?: string;
+    offset: number;
+    limit: number;
+  }): Promise<{ rows: any[]; total: number }> {
+    const where: string[] = [
+      `u.deleted_at IS NULL`,
+      `u.user_type = 'teacher'`,
+      `u.intro_video_bunny_video_id IS NOT NULL`,
+    ];
+    const params: unknown[] = [];
+    let i = 1;
+
+    if (args.status) {
+      where.push(`u.intro_video_status = $${i++}`);
+      params.push(args.status);
+    } else {
+      where.push(
+        `u.intro_video_status IN ('awaiting_review','approved','rejected','processing','uploaded','pending','failed')`
+      );
+    }
+
+    if (args.search?.trim()) {
+      where.push(`(u.name ILIKE $${i} OR u.email ILIKE $${i})`);
+      params.push(`%${args.search.trim()}%`);
+      i++;
+    }
+
+    const whereSql = where.join(' AND ');
+    const countRes = await pool.query<{ count: string }>(
+      `SELECT COUNT(*)::text AS count FROM users u WHERE ${whereSql}`,
+      params
+    );
+
+    const listParams = [...params, args.limit, args.offset];
+    const { rows } = await pool.query(
+      `SELECT
+          u.id AS teacher_id,
+          u.name AS teacher_name,
+          u.email AS teacher_email,
+          u.profile_image_path,
+          u.intro_video_status,
+          u.intro_video_duration_seconds,
+          u.intro_video_bunny_library_id,
+          u.intro_video_bunny_video_id,
+          u.intro_video_bunny_playback_url,
+          u.intro_video_bunny_thumbnail_url,
+          u.intro_video_bunny_last_synced_at,
+          u.intro_video_reviewed_by,
+          u.intro_video_reviewed_at,
+          u.intro_video_review_notes,
+          u.updated_at
+        FROM users u
+        WHERE ${whereSql}
+        ORDER BY
+          CASE u.intro_video_status
+            WHEN 'awaiting_review' THEN 0
+            WHEN 'processing' THEN 1
+            WHEN 'uploaded' THEN 2
+            WHEN 'pending' THEN 3
+            WHEN 'rejected' THEN 4
+            WHEN 'failed' THEN 5
+            ELSE 6
+          END,
+          u.updated_at DESC
+        LIMIT $${i++} OFFSET $${i}
+      `,
+      listParams
+    );
+
+    return {
+      rows: rows.map((r) => ({
+        teacherId: r.teacher_id,
+        teacherName: r.teacher_name,
+        teacherEmail: r.teacher_email,
+        profileImagePath: r.profile_image_path,
+        status: r.intro_video_status,
+        durationSeconds: r.intro_video_duration_seconds,
+        bunnyLibraryId: r.intro_video_bunny_library_id,
+        bunnyVideoId: r.intro_video_bunny_video_id,
+        playbackUrl: r.intro_video_bunny_playback_url,
+        thumbnailUrl: r.intro_video_bunny_thumbnail_url,
+        lastSyncedAt: r.intro_video_bunny_last_synced_at,
+        reviewedBy: r.intro_video_reviewed_by,
+        reviewedAt: r.intro_video_reviewed_at,
+        reviewNotes: r.intro_video_review_notes,
+        updatedAt: r.updated_at,
+      })),
+      total: Number(countRes.rows[0]?.count ?? 0),
+    };
+  }
+
+  static async reviewIntroVideo(args: {
+    teacherId: string;
+    reviewerId: string;
+    decision: 'approved' | 'rejected';
+    notes?: string | null;
+  }): Promise<any | null> {
+    const { rows } = await pool.query(
+      `UPDATE users
+          SET intro_video_status       = $2,
+              intro_video_reviewed_by  = $3,
+              intro_video_reviewed_at  = NOW(),
+              intro_video_review_notes = $4
+        WHERE id = $1
+          AND user_type = 'teacher'
+          AND deleted_at IS NULL
+          AND intro_video_bunny_video_id IS NOT NULL
+          AND intro_video_status IN ('awaiting_review','approved','rejected','ready')
+        RETURNING id, name, email, intro_video_status, intro_video_review_notes,
+                  intro_video_reviewed_at, intro_video_bunny_video_id,
+                  intro_video_duration_seconds, intro_video_bunny_thumbnail_url`,
+      [
+        args.teacherId,
+        args.decision,
+        args.reviewerId,
+        args.notes ?? null,
+      ]
+    );
+    return rows[0] ?? null;
   }
 }

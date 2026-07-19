@@ -53,10 +53,19 @@ export interface BaseUser {
   suburb?: string;
   locationConfidence?: number;
   profileImagePath?: string;
-  // Phase 10.1.B.2 extends the status enum: pending + uploaded join the
-  // legacy {none, processing, ready, failed} set so the same column drives
-  // the full Bunny pipeline.
-  introVideoStatus?: 'none' | 'pending' | 'uploaded' | 'processing' | 'ready' | 'failed';
+  // Bunny pipeline + admin review:
+  // none → pending → uploaded → processing → awaiting_review → approved | rejected | failed
+  // (legacy `ready` still accepted in DB but webhook maps it to awaiting_review)
+  introVideoStatus?:
+    | 'none'
+    | 'pending'
+    | 'uploaded'
+    | 'processing'
+    | 'ready'
+    | 'awaiting_review'
+    | 'approved'
+    | 'rejected'
+    | 'failed';
   introVideoManifestPath?: string;
   introVideoStorageDir?: string;
   introVideoThumbnailPath?: string;
@@ -69,6 +78,9 @@ export interface BaseUser {
   introVideoBunnyPlaybackUrl?: string;
   introVideoBunnyThumbnailUrl?: string;
   introVideoBunnyLastSyncedAt?: string;
+  introVideoReviewedBy?: string;
+  introVideoReviewedAt?: string;
+  introVideoReviewNotes?: string;
   createdAt: Date;
   updatedAt: Date;
 }
