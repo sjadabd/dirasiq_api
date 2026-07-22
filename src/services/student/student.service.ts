@@ -135,7 +135,9 @@ export class StudentService {
     courseId: string,
     studentId: string
   ): Promise<{ course: any }> {
-    const course = await CourseModel.findById(courseId);
+    // Include soft-deleted: enrolled students must still open course hub / archive
+    // for courses deleted before delete-protection rules existed.
+    const course = await CourseModel.findByIdIncludingDeleted(courseId);
     if (!course) {
       throw new ApiError(404, 'الدورة غير موجودة', ErrorCodes.NOT_FOUND);
     }
@@ -154,8 +156,10 @@ export class StudentService {
       | undefined;
 
     const isEnded = CourseModel.isEnded(course);
-    // Non-enrolled students must not see finished (archive) courses.
-    if (isEnded && !latestBooking) {
+    const isDeleted = course.is_deleted === true;
+
+    // Soft-deleted or finished courses are only visible to enrolled students.
+    if ((isDeleted || isEnded) && !latestBooking) {
       throw new ApiError(404, 'الدورة غير موجودة', ErrorCodes.NOT_FOUND);
     }
 
@@ -189,7 +193,8 @@ export class StudentService {
       course: {
         ...course,
         is_ended: isEnded,
-        is_archived: isEnded,
+        is_archived: isEnded || isDeleted,
+        is_deleted: isDeleted,
         bookingStatus: latestBooking?.status || null,
         bookingId: latestBooking?.id || null,
         isSubscribed:

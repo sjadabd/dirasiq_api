@@ -59,6 +59,12 @@ export class CourseModel {
     return result.rows[0] || null;
   }
 
+  /** Includes soft-deleted rows — for enrolled-student archive / hub access. */
+  static async findByIdIncludingDeleted(id: string): Promise<Course | null> {
+    const result = await pool.query('SELECT * FROM courses WHERE id = $1', [id]);
+    return result.rows[0] || null;
+  }
+
   // Get course by ID and teacher ID (for authorization)
   static async findByIdAndTeacher(
     id: string,
