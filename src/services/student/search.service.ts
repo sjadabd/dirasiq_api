@@ -72,10 +72,10 @@ export class StudentUnifiedSearchService {
       teacherWhere += ` AND (u.name ILIKE $${tParam}`;
       teacherValues.push(`%${q}%`);
       tParam++;
-      teacherWhere += ` OR EXISTS (SELECT 1 FROM courses c WHERE c.teacher_id = u.id AND c.is_deleted = false AND c.course_name ILIKE $${tParam})`;
+      teacherWhere += ` OR EXISTS (SELECT 1 FROM courses c WHERE c.teacher_id = u.id AND c.is_deleted = false AND c.end_date >= CURRENT_DATE AND c.course_name ILIKE $${tParam})`;
       teacherValues.push(`%${q}%`);
       tParam++;
-      teacherWhere += ` OR EXISTS (SELECT 1 FROM courses c2 JOIN subjects s2 ON s2.id = c2.subject_id WHERE c2.teacher_id = u.id AND c2.is_deleted = false AND s2.name ILIKE $${tParam}))`;
+      teacherWhere += ` OR EXISTS (SELECT 1 FROM courses c2 JOIN subjects s2 ON s2.id = c2.subject_id WHERE c2.teacher_id = u.id AND c2.is_deleted = false AND c2.end_date >= CURRENT_DATE AND s2.name ILIKE $${tParam}))`;
       teacherValues.push(`%${q}%`);
       tParam++;
     }
@@ -101,7 +101,7 @@ export class StudentUnifiedSearchService {
     // Build courses query
     const courseValues: any[] = [];
     let cParam = 1;
-    let courseWhere = `c.is_deleted = false`;
+    let courseWhere = `c.is_deleted = false AND c.end_date >= CURRENT_DATE`;
 
     if (gradeIds.length > 0) {
       courseWhere += ` AND c.grade_id = ANY($${cParam})`;

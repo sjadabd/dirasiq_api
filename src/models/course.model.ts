@@ -279,6 +279,60 @@ export class CourseModel {
     return result.rows[0] || null;
   }
 
+  /**
+   * Active student links that block deletion: any non-deleted booking that is
+   * not cancelled/rejected (even a single pending registration counts).
+   */
+  static async countBlockingStudentBookings(courseId: string): Promise<number> {
+    const result = await pool.query(
+      `SELECT COUNT(*)::int AS count
+         FROM course_bookings
+        WHERE course_id = $1
+          AND is_deleted = false
+          AND status NOT IN ('cancelled', 'rejected')`,
+      [courseId]
+    );
+    return result.rows[0]?.count ?? 0;
+  }
+
+  /** Invoices / related financial rows that count as course "data". */
+  static async countCourseInvoices(courseId: string): Promise<number> {
+    const result = await pool.query(
+      `SELECT COUNT(*)::int AS count
+         FROM course_invoices
+        WHERE course_id = $1
+          AND deleted_at IS NULL`,
+      [courseId]
+    );
+    return result.rows[0]?.count ?? 0;
+  }
+
+  static async hasBlockingData(courseId: string): Promise<{
+    students: number;
+    invoices: number;
+    blocked: boolean;
+  }> {
+    const [students, invoices] = await Promise.all([
+      CourseModel.countBlockingStudentBookings(courseId),
+      CourseModel.countCourseInvoices(courseId),
+    ]);
+    return { students, invoices, blocked: students > 0 || invoices > 0 };
+  }
+
+  static isEnded(course: { end_date?: string | Date | null }): boolean {
+    if (!course.end_date) return false;
+    const end =
+      course.end_date instanceof Date
+        ? course.end_date
+        : new Date(String(course.end_date));
+    if (Number.isNaN(end.getTime())) return false;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const endDay = new Date(end);
+    endDay.setHours(0, 0, 0, 0);
+    return endDay.getTime() < today.getTime();
+  }
+
   // Soft delete course
   static async softDelete(id: string, teacherId: string): Promise<boolean> {
     const query = `
@@ -371,7 +425,7 @@ export class CourseModel {
     return result.rows[0] || null;
   }
 
-  // Find deleted courses that are not expired (end_date > current date)
+  // Soft-deleted courses that can still be restored (not past end_date)
   static async findDeletedNotExpiredByTeacher(
     teacherId: string,
     page: number = 1,
@@ -389,7 +443,7 @@ export class CourseModel {
       LEFT JOIN subjects s ON c.subject_id = s.id
       WHERE c.teacher_id = $1
         AND c.is_deleted = true
-        AND c.end_date > CURRENT_DATE
+        AND c.end_date >= CURRENT_DATE
       ORDER BY c.updated_at DESC
       LIMIT $2 OFFSET $3
     `;
@@ -399,7 +453,7 @@ export class CourseModel {
       FROM courses c
       WHERE c.teacher_id = $1
         AND c.is_deleted = true
-        AND c.end_date > CURRENT_DATE
+        AND c.end_date >= CURRENT_DATE
     `;
 
     const [result, countResult] = await Promise.all([
@@ -413,15 +467,33 @@ export class CourseModel {
     };
   }
 
-  // Restore deleted course (only if not expired)
+  /**
+   * Restore a soft-deleted course owned by the teacher.
+   * Allowed while end_date >= today (returns to active/upcoming list).
+   */
   static async restore(id: string, teacherId: string): Promise<Course | null> {
     const query = `
       UPDATE courses
       SET is_deleted = false, updated_at = CURRENT_TIMESTAMP
-      WHERE id = $1 AND teacher_id = $2 AND is_deleted = true AND end_date > CURRENT_DATE
+      WHERE id = $1
+        AND teacher_id = $2
+        AND is_deleted = true
+        AND end_date >= CURRENT_DATE
       RETURNING *
     `;
     const result = await pool.query(query, [id, teacherId]);
+    return result.rows[0] || null;
+  }
+
+  static async findDeletedByIdAndTeacher(
+    id: string,
+    teacherId: string
+  ): Promise<Course | null> {
+    const result = await pool.query(
+      `SELECT * FROM courses
+        WHERE id = $1 AND teacher_id = $2 AND is_deleted = true`,
+      [id, teacherId]
+    );
     return result.rows[0] || null;
   }
 
@@ -465,6 +537,7 @@ export class CourseModel {
       INNER JOIN subjects s ON c.subject_id = s.id
       WHERE c.grade_id = ANY($3)
         AND c.is_deleted = false
+        AND c.end_date >= CURRENT_DATE
         AND u.user_type = 'teacher'
         AND u.status = 'active'
         AND u.latitude IS NOT NULL
@@ -522,6 +595,7 @@ export class CourseModel {
       INNER JOIN subjects s ON c.subject_id = s.id
       WHERE c.grade_id = ANY($1)
         AND c.is_deleted = false
+        AND c.end_date >= CURRENT_DATE
         AND u.user_type = 'teacher'
         AND u.status = 'active'
       ORDER BY c.created_at DESC

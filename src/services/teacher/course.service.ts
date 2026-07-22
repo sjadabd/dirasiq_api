@@ -421,6 +421,32 @@ export class CourseService {
     if (!existingCourse) {
       throw new ApiError(404, 'الدورة غير موجودة', ErrorCodes.NOT_FOUND);
     }
+
+    // Finished courses stay in archive — they are not soft-deleted.
+    if (CourseModel.isEnded(existingCourse)) {
+      throw new ApiError(
+        400,
+        'لا يمكن حذف كورس منتهٍ — يظهر في الأرشيف (المنتهية) للأستاذ والطلاب المسجلين',
+        ErrorCodes.VALIDATION_ERROR
+      );
+    }
+
+    const data = await CourseModel.hasBlockingData(id);
+    if (data.students > 0) {
+      throw new ApiError(
+        400,
+        'لا يمكن حذف الكورس لأنه يحتوي على طلاب مسجلين أو طلبات حجز نشطة',
+        ErrorCodes.VALIDATION_ERROR
+      );
+    }
+    if (data.invoices > 0) {
+      throw new ApiError(
+        400,
+        'لا يمكن حذف الكورس لأنه يحتوي على فواتير أو بيانات مالية مرتبطة',
+        ErrorCodes.VALIDATION_ERROR
+      );
+    }
+
     const deleted = await CourseModel.softDelete(id, teacherId);
     if (!deleted) {
       throw new ApiError(404, 'الدورة غير موجودة', ErrorCodes.NOT_FOUND);
@@ -455,14 +481,40 @@ export class CourseService {
 
   static async restore(id: string, teacherId: string): Promise<{ course: Course }> {
     await requireTeacher(teacherId);
-    const restoredCourse = await CourseModel.restore(id, teacherId);
-    if (!restoredCourse) {
+
+    const deleted = await CourseModel.findDeletedByIdAndTeacher(id, teacherId);
+    if (!deleted) {
+      throw new ApiError(404, 'الدورة المحذوفة غير موجودة', ErrorCodes.NOT_FOUND);
+    }
+    if (CourseModel.isEnded(deleted)) {
       throw new ApiError(
-        404,
-        'لا يمكن استرجاع الدورة - إما أنها غير موجودة أو منتهية الصلاحية',
-        ErrorCodes.NOT_FOUND
+        400,
+        'لا يمكن استرجاع كورس منتهٍ — يبقى في الأرشيف ضمن المنتهية',
+        ErrorCodes.VALIDATION_ERROR
       );
     }
-    return { course: restoredCourse };
+
+    try {
+      const restoredCourse = await CourseModel.restore(id, teacherId);
+      if (!restoredCourse) {
+        throw new ApiError(
+          400,
+          'تعذّر استرجاع الدورة — تأكد أنها محذوفة ولم ينتهِ تاريخها',
+          ErrorCodes.VALIDATION_ERROR
+        );
+      }
+      return { course: restoredCourse };
+    } catch (err: any) {
+      if (err instanceof ApiError) throw err;
+      // Unique (teacher, year, name, grade, subject) collision after recreate
+      if (err?.code === '23505') {
+        throw new ApiError(
+          409,
+          'لا يمكن الاسترجاع لوجود كورس آخر بنفس الاسم والمرحلة والمادة لنفس السنة',
+          ErrorCodes.CONFLICT
+        );
+      }
+      throw err;
+    }
   }
 }

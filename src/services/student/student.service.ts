@@ -140,6 +140,25 @@ export class StudentService {
       throw new ApiError(404, 'الدورة غير موجودة', ErrorCodes.NOT_FOUND);
     }
 
+    const bookingRes = await pool.query(
+      `SELECT id, status
+         FROM course_bookings
+        WHERE student_id = $1 AND course_id = $2 AND is_deleted = false
+          AND status NOT IN ('cancelled', 'rejected')
+        ORDER BY created_at DESC
+        LIMIT 1`,
+      [studentId, courseId]
+    );
+    const latestBooking = bookingRes.rows[0] as
+      | { id: string; status: string }
+      | undefined;
+
+    const isEnded = CourseModel.isEnded(course);
+    // Non-enrolled students must not see finished (archive) courses.
+    if (isEnded && !latestBooking) {
+      throw new ApiError(404, 'الدورة غير موجودة', ErrorCodes.NOT_FOUND);
+    }
+
     const teacher = await UserModel.findById(course.teacher_id);
     if (!teacher) {
       throw new ApiError(404, 'المعلم غير موجود', ErrorCodes.NOT_FOUND);
@@ -161,18 +180,6 @@ export class StudentService {
       );
     }
 
-    const bookingRes = await pool.query(
-      `SELECT id, status
-         FROM course_bookings
-        WHERE student_id = $1 AND course_id = $2 AND is_deleted = false
-        ORDER BY created_at DESC
-        LIMIT 1`,
-      [studentId, courseId]
-    );
-    const latestBooking = bookingRes.rows[0] as
-      | { id: string; status: string }
-      | undefined;
-
     const [grade, subject] = await Promise.all([
       GradeModel.findById(course.grade_id),
       SubjectModel.findById(course.subject_id),
@@ -181,9 +188,13 @@ export class StudentService {
     return {
       course: {
         ...course,
+        is_ended: isEnded,
+        is_archived: isEnded,
         bookingStatus: latestBooking?.status || null,
         bookingId: latestBooking?.id || null,
-        isSubscribed: latestBooking?.status === 'confirmed',
+        isSubscribed:
+          latestBooking?.status === 'confirmed' ||
+          latestBooking?.status === 'approved',
         grade: grade
           ? { id: grade.id, name: grade.name }
           : { id: course.grade_id, name: undefined },
