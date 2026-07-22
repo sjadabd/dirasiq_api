@@ -54,7 +54,11 @@ export class TeacherDashboardController {
         SELECT
           COALESCE(SUM(amount_due), 0)::float AS total_due,
           COALESCE(SUM(amount_paid), 0)::float AS amount_paid,
-          COALESCE(SUM(remaining_amount), 0)::float AS amount_remaining
+          COALESCE(SUM(CASE
+            WHEN invoice_status IN ('pending', 'partial', 'overdue')
+              THEN remaining_amount
+            ELSE 0
+          END), 0)::float AS amount_remaining
         FROM course_invoices
         WHERE teacher_id = $1 AND deleted_at IS NULL
       `,

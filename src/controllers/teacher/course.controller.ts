@@ -111,4 +111,24 @@ export class CourseController {
     const data = await CourseService.restore(id, teacherId);
     res.status(200).json(ok(data, 'تم استرجاع الدورة'));
   }
+
+  // GET /api/teacher/courses/financial-alerts
+  static async getFinancialAlerts(req: Request, res: Response): Promise<void> {
+    const teacherId = req.user.id as string;
+    const data = await CourseService.getFinancialAlerts(teacherId);
+    res
+      .status(200)
+      .json(ok(data, 'تنبيهات المستحقات والعربونات غير المسددة'));
+  }
+
+  // GET /api/teacher/courses/:id/financial-alert
+  static async getCourseFinancialAlert(
+    req: Request,
+    res: Response
+  ): Promise<void> {
+    const teacherId = req.user.id as string;
+    const id = req.params['id'] as string;
+    const data = await CourseService.getCourseFinancialAlert(id, teacherId);
+    res.status(200).json(ok(data, 'مستحقات الدورة'));
+  }
 }

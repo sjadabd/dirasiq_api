@@ -517,4 +517,218 @@ export class CourseService {
       throw err;
     }
   }
+
+  /**
+   * Unpaid student invoices + pending reservation deposits, grouped by course.
+   * Used to nag the teacher to settle accounts before/after a course ends.
+   */
+  static async getFinancialAlerts(teacherId: string): Promise<{
+    totals: {
+      unpaidInvoiceAmount: number;
+      unpaidInvoiceCount: number;
+      pendingDepositAmount: number;
+      pendingDepositCount: number;
+      coursesWithDebt: number;
+      endedCoursesWithDebt: number;
+    };
+    courses: Array<{
+      courseId: string;
+      courseName: string;
+      endDate: string | null;
+      isEnded: boolean;
+      unpaidInvoiceAmount: number;
+      unpaidInvoiceCount: number;
+      pendingDepositAmount: number;
+      pendingDepositCount: number;
+      totalOutstanding: number;
+    }>;
+  }> {
+    await requireTeacher(teacherId);
+    const { default: pool } = await import('../../config/database');
+
+    const [invR, depR] = await Promise.all([
+      pool.query(
+        `SELECT
+           c.id AS course_id,
+           c.course_name,
+           c.end_date,
+           (c.end_date < CURRENT_DATE) AS is_ended,
+           COALESCE(SUM(ci.remaining_amount), 0)::float AS unpaid_invoice_amount,
+           COUNT(*)::int AS unpaid_invoice_count
+         FROM course_invoices ci
+         JOIN courses c ON c.id = ci.course_id
+         WHERE ci.teacher_id = $1
+           AND ci.deleted_at IS NULL
+           AND ci.invoice_status IN ('pending', 'partial', 'overdue')
+           AND ci.remaining_amount > 0
+           AND c.teacher_id = $1
+         GROUP BY c.id, c.course_name, c.end_date`,
+        [teacherId]
+      ),
+      pool.query(
+        `SELECT
+           c.id AS course_id,
+           c.course_name,
+           c.end_date,
+           (c.end_date < CURRENT_DATE) AS is_ended,
+           COALESCE(SUM(rp.amount), 0)::float AS pending_deposit_amount,
+           COUNT(*)::int AS pending_deposit_count
+         FROM reservation_payments rp
+         JOIN courses c ON c.id = rp.course_id
+         WHERE rp.teacher_id = $1
+           AND rp.status = 'pending'
+           AND c.teacher_id = $1
+         GROUP BY c.id, c.course_name, c.end_date`,
+        [teacherId]
+      ),
+    ]);
+
+    type Acc = {
+      courseId: string;
+      courseName: string;
+      endDate: string | null;
+      isEnded: boolean;
+      unpaidInvoiceAmount: number;
+      unpaidInvoiceCount: number;
+      pendingDepositAmount: number;
+      pendingDepositCount: number;
+      totalOutstanding: number;
+    };
+
+    const byCourse = new Map<string, Acc>();
+
+    const upsert = (row: any, kind: 'invoice' | 'deposit') => {
+      const id = String(row.course_id);
+      let cur = byCourse.get(id);
+      if (!cur) {
+        cur = {
+          courseId: id,
+          courseName: String(row.course_name ?? ''),
+          endDate: row.end_date ? String(row.end_date).slice(0, 10) : null,
+          isEnded: row.is_ended === true,
+          unpaidInvoiceAmount: 0,
+          unpaidInvoiceCount: 0,
+          pendingDepositAmount: 0,
+          pendingDepositCount: 0,
+          totalOutstanding: 0,
+        };
+        byCourse.set(id, cur);
+      }
+      if (kind === 'invoice') {
+        cur.unpaidInvoiceAmount = Number(row.unpaid_invoice_amount ?? 0);
+        cur.unpaidInvoiceCount = Number(row.unpaid_invoice_count ?? 0);
+      } else {
+        cur.pendingDepositAmount = Number(row.pending_deposit_amount ?? 0);
+        cur.pendingDepositCount = Number(row.pending_deposit_count ?? 0);
+      }
+      cur.totalOutstanding =
+        cur.unpaidInvoiceAmount + cur.pendingDepositAmount;
+    };
+
+    for (const row of invR.rows) upsert(row, 'invoice');
+    for (const row of depR.rows) upsert(row, 'deposit');
+
+    const courses = Array.from(byCourse.values()).sort((a, b) => {
+      if (a.isEnded !== b.isEnded) return a.isEnded ? -1 : 1;
+      return b.totalOutstanding - a.totalOutstanding;
+    });
+
+    const totals = courses.reduce(
+      (acc, c) => {
+        acc.unpaidInvoiceAmount += c.unpaidInvoiceAmount;
+        acc.unpaidInvoiceCount += c.unpaidInvoiceCount;
+        acc.pendingDepositAmount += c.pendingDepositAmount;
+        acc.pendingDepositCount += c.pendingDepositCount;
+        acc.coursesWithDebt += 1;
+        if (c.isEnded) acc.endedCoursesWithDebt += 1;
+        return acc;
+      },
+      {
+        unpaidInvoiceAmount: 0,
+        unpaidInvoiceCount: 0,
+        pendingDepositAmount: 0,
+        pendingDepositCount: 0,
+        coursesWithDebt: 0,
+        endedCoursesWithDebt: 0,
+      }
+    );
+
+    return { totals, courses };
+  }
+
+  static async getCourseFinancialAlert(
+    courseId: string,
+    teacherId: string
+  ): Promise<{
+    courseId: string;
+    courseName: string;
+    endDate: string | null;
+    isEnded: boolean;
+    unpaidInvoiceAmount: number;
+    unpaidInvoiceCount: number;
+    pendingDepositAmount: number;
+    pendingDepositCount: number;
+    totalOutstanding: number;
+    hasDebt: boolean;
+  }> {
+    await requireTeacher(teacherId);
+    const course = await CourseModel.findByIdAndTeacher(courseId, teacherId);
+    if (!course) {
+      throw new ApiError(404, 'الدورة غير موجودة', ErrorCodes.NOT_FOUND);
+    }
+
+    const { default: pool } = await import('../../config/database');
+    const [invR, depR] = await Promise.all([
+      pool.query(
+        `SELECT
+           COALESCE(SUM(remaining_amount), 0)::float AS unpaid_invoice_amount,
+           COUNT(*)::int AS unpaid_invoice_count
+         FROM course_invoices
+         WHERE teacher_id = $1
+           AND course_id = $2
+           AND deleted_at IS NULL
+           AND invoice_status IN ('pending', 'partial', 'overdue')
+           AND remaining_amount > 0`,
+        [teacherId, courseId]
+      ),
+      pool.query(
+        `SELECT
+           COALESCE(SUM(amount), 0)::float AS pending_deposit_amount,
+           COUNT(*)::int AS pending_deposit_count
+         FROM reservation_payments
+         WHERE teacher_id = $1
+           AND course_id = $2
+           AND status = 'pending'`,
+        [teacherId, courseId]
+      ),
+    ]);
+
+    const unpaidInvoiceAmount = Number(
+      invR.rows[0]?.unpaid_invoice_amount ?? 0
+    );
+    const unpaidInvoiceCount = Number(invR.rows[0]?.unpaid_invoice_count ?? 0);
+    const pendingDepositAmount = Number(
+      depR.rows[0]?.pending_deposit_amount ?? 0
+    );
+    const pendingDepositCount = Number(
+      depR.rows[0]?.pending_deposit_count ?? 0
+    );
+    const totalOutstanding = unpaidInvoiceAmount + pendingDepositAmount;
+    const isEnded = CourseModel.isEnded(course);
+
+    return {
+      courseId,
+      courseName: String((course as any).course_name ?? ''),
+      endDate: course.end_date
+        ? String(course.end_date).slice(0, 10)
+        : null,
+      isEnded,
+      unpaidInvoiceAmount,
+      unpaidInvoiceCount,
+      pendingDepositAmount,
+      pendingDepositCount,
+      totalOutstanding,
+      hasDebt: totalOutstanding > 0,
+    };
+  }
 }

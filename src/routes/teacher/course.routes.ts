@@ -30,6 +30,15 @@ router.get(
   asyncHandler(CourseController.getDeletedNotExpired)
 );
 router.get(
+  '/financial-alerts',
+  asyncHandler(CourseController.getFinancialAlerts)
+);
+router.get(
+  '/:id/financial-alert',
+  validate({ params: idParamSchema }),
+  asyncHandler(CourseController.getCourseFinancialAlert)
+);
+router.get(
   '/:id',
   validate({ params: idParamSchema }),
   asyncHandler(CourseController.getById)
