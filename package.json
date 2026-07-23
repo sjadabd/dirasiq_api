@@ -19,7 +19,8 @@
     "restore:apple-review-teacher": "ts-node -r tsconfig-paths/register src/scripts/restore_apple_review_teacher.ts",
     "restore:apple-review-teacher:dist": "node dist/scripts/restore_apple_review_teacher.js",
     "credit:teacher-wallet": "ts-node -r tsconfig-paths/register src/scripts/credit_teacher_wallet.ts",
-    "credit:teacher-wallet:dist": "node dist/scripts/credit_teacher_wallet.js"
+    "credit:teacher-wallet:dist": "node dist/scripts/credit_teacher_wallet.js",
+    "wipe:test-accounts": "ts-node -r tsconfig-paths/register src/scripts/wipe_test_accounts.ts"
   },
   "keywords": [
     "api",
