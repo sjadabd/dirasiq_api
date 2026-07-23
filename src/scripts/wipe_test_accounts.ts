@@ -358,16 +358,16 @@ async function wipe(
       'session_holds',
       `DELETE FROM session_holds
         WHERE ($1::uuid IS NOT NULL AND session_id IN (SELECT id FROM sessions WHERE teacher_id = $1))
-           OR (created_by = ANY($3::uuid[]))`,
-      [tid, sid, ids]
+           OR (created_by = ANY($2::uuid[]))`,
+      [tid, ids]
     );
     await del(
       client,
       'session_audit',
       `DELETE FROM session_audit
         WHERE ($1::uuid IS NOT NULL AND session_id IN (SELECT id FROM sessions WHERE teacher_id = $1))
-           OR (created_by = ANY($3::uuid[]))`,
-      [tid, sid, ids]
+           OR (created_by = ANY($2::uuid[]))`,
+      [tid, ids]
     );
   }
   if (tid) {
