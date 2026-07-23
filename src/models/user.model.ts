@@ -9,6 +9,7 @@ import {
   UserStatus,
   UserType,
 } from '../types';
+import { TeacherVisibility } from '../utils/teacher-visibility.util';
 
 /**
  * Result of an OTP verification attempt (verifyEmail / resetPassword).
@@ -618,8 +619,15 @@ export class UserModel {
     longitude: number,
     maxDistance: number,
     limit: number,
-    offset: number
+    offset: number,
+    viewerStudentId?: string | null
   ): Promise<any[]> {
+    const hide = await TeacherVisibility.sqlHideUnlessAllowed({
+      teacherIdExpr: 'u.id',
+      viewerStudentId: viewerStudentId ?? null,
+      nextParam: 6,
+    });
+
     const query = `
       SELECT
         u.*,
@@ -643,6 +651,7 @@ export class UserModel {
             sin(radians($1)) * sin(radians(u.latitude))
           )
         ) <= $3
+        ${hide.clause}
       ORDER BY distance ASC
       LIMIT $4 OFFSET $5
     `;
@@ -653,6 +662,7 @@ export class UserModel {
       maxDistance,
       limit,
       offset,
+      ...hide.params,
     ]);
     return result.rows;
   }
@@ -663,7 +673,8 @@ export class UserModel {
     offset: number,
     state?: string,
     city?: string,
-    suburb?: string
+    suburb?: string,
+    viewerStudentId?: string | null
   ): Promise<any[]> {
     let query = `
       SELECT u.*
@@ -693,6 +704,15 @@ export class UserModel {
       values.push(suburb);
       paramCount++;
     }
+
+    const hide = await TeacherVisibility.sqlHideUnlessAllowed({
+      teacherIdExpr: 'u.id',
+      viewerStudentId: viewerStudentId ?? null,
+      nextParam: paramCount,
+    });
+    query += hide.clause;
+    values.push(...hide.params);
+    paramCount = hide.nextParam;
 
     query += ` ORDER BY u.created_at DESC LIMIT $${paramCount} OFFSET $${paramCount + 1}`;
     values.push(limit, offset);
@@ -780,6 +800,16 @@ export class UserModel {
       values.push(`%${search.trim()}%`);
       param++;
     }
+
+    const hide = await TeacherVisibility.sqlHideUnlessAllowed({
+      teacherIdExpr: 'u.id',
+      viewerStudentId: excludeStudentId ?? null,
+      nextParam: param,
+    });
+    query += hide.clause;
+    values.push(...hide.params);
+    param = hide.nextParam;
+
     query += ` ORDER BY u.name ASC LIMIT $${param} OFFSET $${param + 1}`;
     values.push(limit, offset);
     const r = await pool.query(query, values);
@@ -813,7 +843,17 @@ export class UserModel {
     if (search && search.trim() !== '') {
       query += ` AND (u.name ILIKE $${param})`;
       values.push(`%${search.trim()}%`);
+      param++;
     }
+
+    const hide = await TeacherVisibility.sqlHideUnlessAllowed({
+      teacherIdExpr: 'u.id',
+      viewerStudentId: excludeStudentId ?? null,
+      nextParam: param,
+    });
+    query += hide.clause;
+    values.push(...hide.params);
+
     const r = await pool.query(query, values);
     return r.rows[0]?.count ?? 0;
   }

@@ -16,6 +16,7 @@
 //     + the DB function, not every controller.
 
 import { ApiError, ErrorCodes } from '../utils/api-error';
+import { TeacherVisibility } from '../utils/teacher-visibility.util';
 import { VideoCourseAccessModel } from '../models/video-course-access.model';
 import { VideoCourseModel } from '../models/video-course.model';
 import {
@@ -56,6 +57,10 @@ export class VideoCourseAccessService {
     if (!course || course.status !== VideoCourseStatus.APPROVED) {
       throw new ApiError(404, 'الدورة غير موجودة', ErrorCodes.NOT_FOUND);
     }
+    await TeacherVisibility.assertStudentCanSeeTeacher(
+      studentId,
+      course.teacherId
+    );
     const allowed = await VideoCourseAccessModel.canView(
       studentId,
       videoCourseId

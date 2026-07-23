@@ -13,6 +13,7 @@ import {
   UserType,
 } from '../types';
 import { ApiError, ErrorCodes } from '../utils/api-error';
+import { TeacherVisibility } from '../utils/teacher-visibility.util';
 import { AdvertisementNotifyService } from './advertisement-notify.service';
 import { AdvertisementWalletService } from './advertisement-wallet.service';
 
@@ -338,6 +339,7 @@ export class AdvertisementService {
     if (!ad || ad.status !== AdvertisementStatus.RUNNING) {
       throw new ApiError(404, 'الإعلان غير متاح', ErrorCodes.NOT_FOUND);
     }
+    await TeacherVisibility.assertStudentCanSeeTeacher(studentId, ad.teacherId);
     const student = await UserModel.findById(studentId);
     if (!this.isVisibleToStudent(ad, student?.state ?? null)) {
       throw new ApiError(404, 'الإعلان غير متاح', ErrorCodes.NOT_FOUND);
@@ -358,6 +360,7 @@ export class AdvertisementService {
     if (!student || student.userType !== UserType.STUDENT) {
       throw new ApiError(403, 'غير مسموح', ErrorCodes.FORBIDDEN);
     }
+    await TeacherVisibility.assertStudentCanSeeTeacher(studentId, ad.teacherId);
     if (!this.isVisibleToStudent(ad, student.state ?? null)) {
       throw new ApiError(404, 'الإعلان غير متاح', ErrorCodes.NOT_FOUND);
     }

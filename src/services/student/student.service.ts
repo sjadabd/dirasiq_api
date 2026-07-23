@@ -6,6 +6,7 @@ import { SubjectModel } from '../../models/subject.model';
 import { UserModel } from '../../models/user.model';
 import type { StudentGrade } from '../../types';
 import { ApiError, ErrorCodes } from '../../utils/api-error';
+import { TeacherVisibility } from '../../utils/teacher-visibility.util';
 import { formatTime12Arabic } from '../../utils/time-format.util';
 
 export interface StudentLocation {
@@ -96,7 +97,8 @@ export class StudentService {
       studentLocation,
       maxDistance,
       limit,
-      offset
+      offset,
+      studentId
     );
     if (!courses || courses.length === 0) {
       return { courses: [], count: 0 };
@@ -161,6 +163,15 @@ export class StudentService {
     // Soft-deleted or finished courses are only visible to enrolled students.
     if ((isDeleted || isEnded) && !latestBooking) {
       throw new ApiError(404, 'الدورة غير موجودة', ErrorCodes.NOT_FOUND);
+    }
+
+    // Discovery gate: hide restricted test teacher unless already booked
+    // (relationship surface) or the viewer is the allowlisted student.
+    if (!latestBooking) {
+      await TeacherVisibility.assertStudentCanSeeTeacher(
+        studentId,
+        course.teacher_id
+      );
     }
 
     const teacher = await UserModel.findById(course.teacher_id);
@@ -555,13 +566,16 @@ export namespace StudentService {
     search?: string,
     gradeId?: string,
     subjectId?: string,
-    studyYear?: string
+    studyYear?: string,
+    studentId?: string
   ): Promise<{
     teacher: { id: string; name: string; profileImagePath: string | null; latitude: number | null; longitude: number | null };
     subjects: any[];
     courses: any[];
     count: number;
   }> {
+    await TeacherVisibility.assertStudentCanSeeTeacher(studentId, teacherId);
+
     const teacher = await UserModel.findById(teacherId);
     if (!teacher || teacher.userType !== 'teacher' || teacher.status !== 'active') {
       throw new ApiError(404, 'المعلم غير موجود', ErrorCodes.NOT_FOUND);
@@ -705,6 +719,13 @@ export namespace StudentService {
       paramIndex++;
     }
 
+    const hide = await TeacherVisibility.sqlHideUnlessAllowed({
+      teacherIdExpr: 'u.id',
+      viewerStudentId: studentId,
+      nextParam: paramIndex,
+    });
+    params.push(...hide.params);
+
     const query = `
       WITH nearby_teachers AS (
         SELECT
@@ -727,6 +748,7 @@ export namespace StudentService {
               AND cb.is_deleted = false
               AND cb.status IN ('pending','pre_approved','confirmed','approved')
           )
+          ${hide.clause}
       )
       SELECT * FROM nearby_teachers u
       WHERE u.distance <= $3 ${searchClause}
@@ -756,6 +778,13 @@ export namespace StudentService {
       countParamIndex++;
     }
 
+    const countHide = await TeacherVisibility.sqlHideUnlessAllowed({
+      teacherIdExpr: 'u.id',
+      viewerStudentId: studentId,
+      nextParam: countParamIndex,
+    });
+    countParams.push(...countHide.params);
+
     const countQuery = `
       WITH nearby_teachers AS (
         SELECT
@@ -777,6 +806,7 @@ export namespace StudentService {
               AND cb.is_deleted = false
               AND cb.status IN ('pending','pre_approved','confirmed','approved')
           )
+          ${countHide.clause}
       )
       SELECT COUNT(*)::int as count
       FROM nearby_teachers u
@@ -818,7 +848,12 @@ export namespace StudentService {
     const { grades } = await StudentService.getActiveGrades(studentId);
     const gradeIds = grades.map((g) => g.gradeId);
     const offset = (page - 1) * limit;
-    const courses = await CourseModel.findByGradesNewest(gradeIds, limit, offset);
+    const courses = await CourseModel.findByGradesNewest(
+      gradeIds,
+      limit,
+      offset,
+      studentId
+    );
     return { courses, count: courses.length };
   }
 }

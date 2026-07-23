@@ -1,6 +1,9 @@
 import { CourseBookingModel } from '../../models/course-booking.model';
+import { CourseModel } from '../../models/course.model';
 import { NotificationService } from '../../services/notification.service';
 import { BookingStatus, CourseBooking, CourseBookingWithDetails, CreateCourseBookingRequest, UpdateCourseBookingRequest } from '../../types';
+import { ApiError, ErrorCodes } from '../../utils/api-error';
+import { TeacherVisibility } from '../../utils/teacher-visibility.util';
 
 export class CourseBookingService {
   private static notificationService: NotificationService;
@@ -17,6 +20,15 @@ export class CourseBookingService {
   // Create a new course booking
   static async createBooking(studentId: string, data: CreateCourseBookingRequest): Promise<CourseBooking> {
     try {
+      const course = await CourseModel.findById(data.courseId);
+      if (!course) {
+        throw new ApiError(404, 'الدورة غير موجودة', ErrorCodes.NOT_FOUND);
+      }
+      await TeacherVisibility.assertStudentCanSeeTeacher(
+        studentId,
+        course.teacher_id
+      );
+
       const booking = await CourseBookingModel.create(studentId, data);
 
       // Send notification to teacher about new booking

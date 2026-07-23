@@ -16,6 +16,7 @@ import {
   VideoLesson,
   VideoLessonBunnyStatus,
 } from '../types';
+import { TeacherVisibility } from '../utils/teacher-visibility.util';
 
 // Shared SELECT column lists — both surfaces map snake_case columns to
 // camelCase fields at the SQL level so the controller / service layer
@@ -112,6 +113,16 @@ export class VideoCourseModel {
     if (args.teachingStage) {
       params.push(args.teachingStage);
       where.push(`teaching_stage = $${params.length}`);
+    }
+
+    const hide = await TeacherVisibility.sqlHideUnlessAllowed({
+      teacherIdExpr: 'teacher_id',
+      viewerStudentId: null,
+      nextParam: params.length + 1,
+    });
+    if (hide.clause) {
+      where.push(hide.clause.replace(/^\s*AND\s+/i, ''));
+      params.push(...hide.params);
     }
 
     const whereSql = `WHERE ${where.join(' AND ')}`;
@@ -332,6 +343,16 @@ export class VideoCourseModel {
     if (typeof args.priceMax === 'number') {
       params.push(args.priceMax);
       where.push(`vc.price <= $${params.length}`);
+    }
+
+    const hide = await TeacherVisibility.sqlHideUnlessAllowed({
+      teacherIdExpr: 'vc.teacher_id',
+      viewerStudentId: args.studentId,
+      nextParam: params.length + 1,
+    });
+    if (hide.clause) {
+      where.push(hide.clause.replace(/^\s*AND\s+/i, ''));
+      params.push(...hide.params);
     }
 
     const whereSql = `WHERE ${where.join(' AND ')}`;

@@ -1,5 +1,6 @@
 import pool from '../config/database';
 import { Course, CreateCourseRequest, UpdateCourseRequest } from '../types';
+import { TeacherVisibility } from '../utils/teacher-visibility.util';
 
 export class CourseModel {
   // Create new course
@@ -509,8 +510,15 @@ export class CourseModel {
     studentLocation: { latitude: number; longitude: number },
     maxDistance: number = 5,
     limit: number = 10,
-    offset: number = 0
+    offset: number = 0,
+    viewerStudentId?: string | null
   ): Promise<Course[]> {
+    const hide = await TeacherVisibility.sqlHideUnlessAllowed({
+      teacherIdExpr: 'u.id',
+      viewerStudentId,
+      nextParam: 7,
+    });
+
     const query = `
       SELECT
         c.*,
@@ -561,6 +569,7 @@ export class CourseModel {
             )
           )
         ) <= $4
+        ${hide.clause}
       ORDER BY distance ASC, c.created_at DESC
       LIMIT $5 OFFSET $6
     `;
@@ -572,6 +581,7 @@ export class CourseModel {
       maxDistance,
       limit,
       offset,
+      ...hide.params,
     ];
 
     const result = await pool.query(query, values);
@@ -582,8 +592,15 @@ export class CourseModel {
   static async findByGradesNewest(
     gradeIds: string[],
     limit: number = 10,
-    offset: number = 0
+    offset: number = 0,
+    viewerStudentId?: string | null
   ): Promise<Course[]> {
+    const hide = await TeacherVisibility.sqlHideUnlessAllowed({
+      teacherIdExpr: 'u.id',
+      viewerStudentId,
+      nextParam: 4,
+    });
+
     const query = `
       SELECT
         c.*,
@@ -604,11 +621,12 @@ export class CourseModel {
         AND c.end_date >= CURRENT_DATE
         AND u.user_type = 'teacher'
         AND u.status = 'active'
+        ${hide.clause}
       ORDER BY c.created_at DESC
       LIMIT $2 OFFSET $3
     `;
 
-    const values = [gradeIds, limit, offset];
+    const values = [gradeIds, limit, offset, ...hide.params];
     const result = await pool.query(query, values);
     return result.rows;
   }

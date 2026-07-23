@@ -52,7 +52,8 @@ export class StudentTeacherController {
       query.search,
       query.gradeId,
       query.subjectId,
-      query.studyYear
+      query.studyYear,
+      req.user.id as string
     );
     res.status(200).json(ok(data, 'تم جلب بيانات المعلم'));
   }

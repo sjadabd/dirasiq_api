@@ -20,6 +20,7 @@ import { BunnyStreamService, hydrateBunnyUrl, signBunnyAssetUrl } from '../../se
 import { buildIntroPlaybackUrl } from '../intro-video-proxy.controller';
 import { ApiError, ErrorCodes } from '../../utils/api-error';
 import { ok } from '../../utils/response.util';
+import { TeacherVisibility } from '../../utils/teacher-visibility.util';
 import { VideoService } from '../../utils/video.service';
 
 const INTRO_MAX_DURATION = UserModel.INTRO_VIDEO_MAX_DURATION_SECONDS;
@@ -353,6 +354,8 @@ export class TeacherProfileController {
 
   static async getTeacherIntroVideo(req: Request, res: Response): Promise<void> {
     const { teacherId } = req.params as { teacherId: string };
+    const studentId = req.user?.id as string | undefined;
+    await TeacherVisibility.assertStudentCanSeeTeacher(studentId, teacherId);
     const teacher = await UserModel.findById(teacherId);
     if (!teacher || teacher.userType !== 'teacher') {
       throw new ApiError(404, 'المعلم غير موجود', ErrorCodes.NOT_FOUND);

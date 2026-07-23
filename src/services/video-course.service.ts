@@ -39,6 +39,7 @@ import {
 } from '../types';
 import { ApiError, ErrorCodes } from '../utils/api-error';
 import { logger } from '../utils/logger';
+import { TeacherVisibility } from '../utils/teacher-visibility.util';
 import { getNotificationService } from './services-registry';
 import { VideoCourseEvents } from './video-course-events.service';
 
@@ -169,6 +170,7 @@ export class VideoCourseService {
     ) {
       throw new ApiError(404, 'الدورة غير موجودة', ErrorCodes.NOT_FOUND);
     }
+    await TeacherVisibility.assertStudentCanSeeTeacher(null, course.teacherId);
     return course;
   }
 

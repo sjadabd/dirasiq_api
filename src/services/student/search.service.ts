@@ -1,6 +1,7 @@
 import pool from '../../config/database';
 import { StudentGradeModel } from '../../models/student-grade.model';
 import { UserModel } from '../../models/user.model';
+import { TeacherVisibility } from '../../utils/teacher-visibility.util';
 
 interface UnifiedSearchParams {
   q?: string;
@@ -95,6 +96,15 @@ export class StudentUnifiedSearchService {
       teacherOrder = ` ORDER BY distance ASC`;
     }
 
+    const teacherHide = await TeacherVisibility.sqlHideUnlessAllowed({
+      teacherIdExpr: 'u.id',
+      viewerStudentId: studentId,
+      nextParam: tParam,
+    });
+    teacherWhere += teacherHide.clause;
+    teacherValues.push(...teacherHide.params);
+    tParam = teacherHide.nextParam;
+
     const teacherQuery = `${teacherSelect}${teacherFrom} WHERE ${teacherWhere}${teacherOrder} LIMIT $${tParam} OFFSET $${tParam + 1}`;
     teacherValues.push(limit, offset);
 
@@ -129,6 +139,15 @@ export class StudentUnifiedSearchService {
       cParam++;
       courseOrder = ` ORDER BY distance ASC, c.created_at DESC`;
     }
+
+    const courseHide = await TeacherVisibility.sqlHideUnlessAllowed({
+      teacherIdExpr: 'u.id',
+      viewerStudentId: studentId,
+      nextParam: cParam,
+    });
+    courseWhere += courseHide.clause;
+    courseValues.push(...courseHide.params);
+    cParam = courseHide.nextParam;
 
     const courseQuery = `${courseSelect}${courseFrom} WHERE ${courseWhere}${courseOrder} LIMIT $${cParam} OFFSET $${cParam + 1}`;
     courseValues.push(limit, offset);

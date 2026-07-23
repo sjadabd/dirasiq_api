@@ -21,10 +21,12 @@ export const recordViewLimiter = rateLimit({
 
 export class StudentContentFeedController {
   static async feed(req: Request, res: Response): Promise<void> {
+    const studentId = req.user!.id as string;
     const studentState = req.user!.state ?? null;
     const { page, limit, offset } = parsePagination(req.query);
 
     const { items, total } = await ContentFeedService.listForStudent({
+      studentId,
       studentState,
       limit,
       offset,

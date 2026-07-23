@@ -1,6 +1,7 @@
 import pool from '../config/database';
 import type { ContentFeedItem } from '../types';
 import { STUDENT_MOBILE_VISIBLE_NEWS_TYPES } from '../utils/news-targeting.util';
+import { TeacherVisibility } from '../utils/teacher-visibility.util';
 
 type FeedRow = {
   id: string;
@@ -16,12 +17,24 @@ type FeedRow = {
 
 export class ContentFeedService {
   static async listForStudent(args: {
+    studentId: string;
     studentState: string | null;
     limit: number;
     offset: number;
   }): Promise<{ items: ContentFeedItem[]; total: number }> {
     const studentState = args.studentState?.trim() ?? null;
     const studentNewsTypes = [...STUDENT_MOBILE_VISIBLE_NEWS_TYPES];
+
+    const adHide = await TeacherVisibility.sqlHideUnlessAllowed({
+      teacherIdExpr: 'a.teacher_id',
+      viewerStudentId: args.studentId,
+      nextParam: 5,
+    });
+    const countHide = await TeacherVisibility.sqlHideUnlessAllowed({
+      teacherIdExpr: 'a.teacher_id',
+      viewerStudentId: args.studentId,
+      nextParam: 3,
+    });
 
     const countSql = `
       SELECT COUNT(*)::int AS count FROM (
@@ -41,6 +54,7 @@ export class ContentFeedService {
                AND lower(a.teacher_governorate) = lower($1::text)
              )
            )
+           ${countHide.clause}
       ) feed`;
 
     const dataSql = `
@@ -82,13 +96,24 @@ export class ContentFeedService {
               AND lower(a.teacher_governorate) = lower($1::text)
             )
           )
+          ${adHide.clause}
       ) feed
       ORDER BY published_at DESC
       LIMIT $3 OFFSET $4`;
 
     const [countR, dataR] = await Promise.all([
-      pool.query<{ count: number }>(countSql, [studentState, studentNewsTypes]),
-      pool.query<FeedRow>(dataSql, [studentState, studentNewsTypes, args.limit, args.offset]),
+      pool.query<{ count: number }>(countSql, [
+        studentState,
+        studentNewsTypes,
+        ...countHide.params,
+      ]),
+      pool.query<FeedRow>(dataSql, [
+        studentState,
+        studentNewsTypes,
+        args.limit,
+        args.offset,
+        ...adHide.params,
+      ]),
     ]);
 
     const items: ContentFeedItem[] = dataR.rows.map((r) => {
